@@ -3,6 +3,7 @@ package loopback
 import (
 	"errors"
 	"fmt"
+	"github.com/metacubex/mihomo/constant/features"
 	"net/netip"
 
 	"github.com/metacubex/mihomo/common/callback"
@@ -74,12 +75,14 @@ func (l *Detector) CheckPacketConn(metadata *C.Metadata) error {
 		return nil
 	}
 
-	isLocalIp, err := iface.IsLocalIp(connAddr.Addr())
-	if err != nil {
-		return err
-	}
-	if !isLocalIp && !connAddr.Addr().IsLoopback() {
-		return nil
+	if !features.Android {
+		isLocalIp, err := iface.IsLocalIp(connAddr.Addr())
+		if err != nil {
+			return err
+		}
+		if !isLocalIp && !connAddr.Addr().IsLoopback() {
+			return nil
+		}
 	}
 
 	if _, ok := l.packetConnMap.Load(connAddr.Port()); ok {

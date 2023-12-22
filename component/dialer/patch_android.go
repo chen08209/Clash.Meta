@@ -1,4 +1,4 @@
-//go:build android && cmfa
+//go:build android
 
 package dialer
 
@@ -24,7 +24,7 @@ func dialContextHooked(ctx context.Context, network string, destination netip.Ad
 	}
 
 	if t, ok := conn.(*net.TCPConn); ok {
-		t.SetKeepAlive(false)
+		_ = t.SetKeepAlive(false)
 	}
 
 	return conn, nil

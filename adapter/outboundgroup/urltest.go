@@ -88,7 +88,8 @@ func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata, opts ..
 
 // ListenPacketContext implements C.ProxyAdapter
 func (u *URLTest) ListenPacketContext(ctx context.Context, metadata *C.Metadata, opts ...dialer.Option) (C.PacketConn, error) {
-	pc, err := u.fast(true).ListenPacketContext(ctx, metadata, u.Base.DialOptions(opts...)...)
+	proxy := u.fast(true)
+	pc, err := proxy.ListenPacketContext(ctx, metadata, u.Base.DialOptions(opts...)...)
 	if err == nil {
 		pc.AppendToChains(u)
 	}
@@ -102,7 +103,6 @@ func (u *URLTest) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 }
 
 func (u *URLTest) fast(touch bool) C.Proxy {
-
 	proxies := u.GetProxies(touch)
 	if u.selected != "" {
 		for _, proxy := range proxies {

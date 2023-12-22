@@ -198,8 +198,12 @@ func (hc *HealthCheck) execute(b *batch.Batch[bool], url, uid string, option *ex
 			ctx, cancel := context.WithTimeout(context.Background(), hc.timeout)
 			defer cancel()
 			log.Debugln("Health Checking, proxy: %s, url: %s, id: {%s}", p.Name(), url, uid)
-			_, _ = p.URLTest(ctx, url, expectedStatus)
-			log.Debugln("Health Checked, proxy: %s, url: %s, alive: %t, delay: %d ms uid: {%s}", p.Name(), url, p.AliveForTestUrl(url), p.LastDelayForTestUrl(url), uid)
+			delay, _ := p.URLTest(ctx, url, expectedStatus)
+			name := p.Name()
+			if HealthcheckHook != nil {
+				HealthcheckHook(name, delay)
+			}
+			log.Debugln("Health Checked, proxy: %s, url: %s, alive: %t, delay: %d ms uid: {%s}", name, url, p.AliveForTestUrl(url), delay, uid)
 			return false, nil
 		})
 	}

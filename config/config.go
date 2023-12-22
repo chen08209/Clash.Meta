@@ -30,7 +30,6 @@ import (
 	"github.com/metacubex/mihomo/component/trie"
 	"github.com/metacubex/mihomo/component/updater"
 	C "github.com/metacubex/mihomo/constant"
-	"github.com/metacubex/mihomo/constant/features"
 	providerTypes "github.com/metacubex/mihomo/constant/provider"
 	snifferTypes "github.com/metacubex/mihomo/constant/sniffer"
 	"github.com/metacubex/mihomo/dns"
@@ -234,11 +233,6 @@ type RawFallbackFilter struct {
 	GeoSite   []string `yaml:"geosite" json:"geosite"`
 }
 
-type RawClashForAndroid struct {
-	AppendSystemDNS   bool   `yaml:"append-system-dns" json:"append-system-dns"`
-	UiSubtitlePattern string `yaml:"ui-subtitle-pattern" json:"ui-subtitle-pattern"`
-}
-
 type RawTun struct {
 	Enable              bool       `yaml:"enable" json:"enable"`
 	Device              string     `yaml:"device" json:"device"`
@@ -316,7 +310,7 @@ type RawConfig struct {
 	UnifiedDelay            bool              `yaml:"unified-delay" json:"unified-delay"`
 	LogLevel                log.LogLevel      `yaml:"log-level" json:"log-level"`
 	IPv6                    bool              `yaml:"ipv6" json:"ipv6"`
-	ExternalController      string            `yaml:"external-controller"`
+	ExternalController      string            `yaml:"external-controller" json:"external-controller"`
 	ExternalControllerUnix  string            `yaml:"external-controller-unix"`
 	ExternalControllerTLS   string            `yaml:"external-controller-tls"`
 	ExternalUI              string            `yaml:"external-ui"`
@@ -356,8 +350,6 @@ type RawConfig struct {
 	SubRules      map[string][]string       `yaml:"sub-rules"`
 	RawTLS        TLS                       `yaml:"tls"`
 	Listeners     []map[string]any          `yaml:"listeners"`
-
-	ClashForAndroid RawClashForAndroid `yaml:"clash-for-android" json:"clash-for-android"`
 }
 
 type GeoXUrl struct {
@@ -406,9 +398,8 @@ func Parse(buf []byte) (*Config, error) {
 	return ParseRawConfig(rawCfg)
 }
 
-func UnmarshalRawConfig(buf []byte) (*RawConfig, error) {
-	// config with default value
-	rawCfg := &RawConfig{
+func DefaultRawConfig() *RawConfig {
+	return &RawConfig{
 		AllowLan:          false,
 		BindAddress:       "*",
 		LanAllowedIPs:     []netip.Prefix{netip.MustParsePrefix("0.0.0.0/0"), netip.MustParsePrefix("::/0")},
@@ -523,6 +514,11 @@ func UnmarshalRawConfig(buf []byte) (*RawConfig, error) {
 		},
 		ExternalUIURL: "https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-pages.zip",
 	}
+}
+
+func UnmarshalRawConfig(buf []byte) (*RawConfig, error) {
+	// config with default value
+	rawCfg := DefaultRawConfig()
 
 	if err := yaml.Unmarshal(buf, rawCfg); err != nil {
 		return nil, err
@@ -600,11 +596,9 @@ func ParseRawConfig(rawCfg *RawConfig) (*Config, error) {
 	config.DNS = dnsCfg
 
 	err = parseTun(rawCfg.Tun, config.General)
-	if !features.CMFA && err != nil {
-		return nil, err
-	}
 
 	err = parseTuicServer(rawCfg.TuicServer, config.General)
+
 	if err != nil {
 		return nil, err
 	}

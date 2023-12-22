@@ -6,7 +6,6 @@ import (
 	"github.com/metacubex/mihomo/adapter/inbound"
 	"github.com/metacubex/mihomo/common/lru"
 	C "github.com/metacubex/mihomo/constant"
-	"github.com/metacubex/mihomo/constant/features"
 )
 
 type Listener struct {
@@ -68,10 +67,8 @@ func NewWithAuthenticate(addr string, tunnel C.Tunnel, authenticate bool, additi
 				}
 				continue
 			}
-			if features.CMFA {
-				if t, ok := conn.(*net.TCPConn); ok {
-					t.SetKeepAlive(false)
-				}
+			if t, ok := conn.(*net.TCPConn); ok {
+				_ = t.SetKeepAlive(false)
 			}
 			if isDefault { // only apply on default listener
 				if !inbound.IsRemoteAddrDisAllowed(conn.RemoteAddr()) {

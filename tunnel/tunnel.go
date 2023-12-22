@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/metacubex/mihomo/constant/features"
 	"net"
 	"net/netip"
 	"path/filepath"
@@ -21,7 +22,6 @@ import (
 	"github.com/metacubex/mihomo/component/slowdown"
 	"github.com/metacubex/mihomo/component/sniffer"
 	C "github.com/metacubex/mihomo/constant"
-	"github.com/metacubex/mihomo/constant/features"
 	"github.com/metacubex/mihomo/constant/provider"
 	icontext "github.com/metacubex/mihomo/context"
 	"github.com/metacubex/mihomo/log"
@@ -306,6 +306,10 @@ func resolveMetadata(metadata *C.Metadata) (proxy C.Proxy, rule C.Rule, err erro
 		return
 	}
 
+	if findProcessMode.Always() {
+		findPackageName(metadata)
+	}
+
 	switch mode {
 	case Direct:
 		proxy = proxies["DIRECT"]
@@ -316,6 +320,27 @@ func resolveMetadata(metadata *C.Metadata) (proxy C.Proxy, rule C.Rule, err erro
 		proxy, rule, err = match(metadata)
 	}
 	return
+}
+
+func findPackageName(metadata *C.Metadata) {
+	if !features.Android {
+		// normal check for process
+		uid, path, err := P.FindProcessName(metadata.NetWork.String(), metadata.SrcIP, int(metadata.SrcPort))
+		if err != nil {
+			log.Debugln("[Process] find process %s error: %v", metadata.String(), err)
+		} else {
+			metadata.Process = filepath.Base(path)
+			metadata.ProcessPath = path
+			metadata.Uid = uid
+		}
+	} else {
+		pkg, err := P.FindPackageName(metadata)
+		if err != nil {
+			log.Debugln("[Process] find process %s error: %v", metadata.String(), err)
+		} else {
+			metadata.Process = pkg
+		}
+	}
 }
 
 func handleUDPConn(packet C.PacketAdapter) {
@@ -586,8 +611,7 @@ func match(metadata *C.Metadata) (C.Proxy, C.Rule, error) {
 	configMux.RLock()
 	defer configMux.RUnlock()
 	var (
-		resolved             bool
-		attemptProcessLookup = metadata.Type != C.INNER
+		resolved bool
 	)
 
 	if node, ok := resolver.DefaultHosts.Search(metadata.Host, false); ok {
@@ -609,29 +633,6 @@ func match(metadata *C.Metadata) (C.Proxy, C.Rule, error) {
 				}
 				resolved = true
 			}()
-		}
-
-		if attemptProcessLookup && !findProcessMode.Off() && (findProcessMode.Always() || rule.ShouldFindProcess()) {
-			attemptProcessLookup = false
-			if !features.CMFA {
-				// normal check for process
-				uid, path, err := P.FindProcessName(metadata.NetWork.String(), metadata.SrcIP, int(metadata.SrcPort))
-				if err != nil {
-					log.Debugln("[Process] find process %s error: %v", metadata.String(), err)
-				} else {
-					metadata.Process = filepath.Base(path)
-					metadata.ProcessPath = path
-					metadata.Uid = uid
-				}
-			} else {
-				// check package names
-				pkg, err := P.FindPackageName(metadata)
-				if err != nil {
-					log.Debugln("[Process] find process %s error: %v", metadata.String(), err)
-				} else {
-					metadata.Process = pkg
-				}
-			}
 		}
 
 		if matched, ada := rule.Match(metadata); matched {
