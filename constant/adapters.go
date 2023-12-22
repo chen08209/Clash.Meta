@@ -51,8 +51,9 @@ const (
 	DefaultUDPTimeout = dialer.DefaultUDPTimeout
 	DefaultDropTime   = 12 * DefaultTCPTimeout
 	DefaultTLSTimeout = DefaultTCPTimeout
-	DefaultTestURL    = "https://www.gstatic.com/generate_204"
 )
+
+var DefaultTestURL = "https://www.gstatic.com/generate_204"
 
 var ErrNotSupport = errors.New("no support")
 

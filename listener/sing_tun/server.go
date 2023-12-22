@@ -418,12 +418,6 @@ func New(options LC.Tun, tunnel C.Tunnel, additions ...inbound.Addition) (l *Lis
 		}
 
 	}
-
-	err = l.buildAndroidRules(&tunOptions)
-	if err != nil {
-		err = E.Cause(err, "build android rules")
-		return
-	}
 	tunIf, err := tunNew(tunOptions)
 	if err != nil {
 		err = E.Cause(err, "configure tun interface")
