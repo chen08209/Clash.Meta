@@ -169,6 +169,7 @@ func (r *Resolver) ExchangeContext(ctx context.Context, m *D.Msg) (msg *D.Msg, e
 	msg, expireTime, hit := getMsgFromCache(r.cache, q)
 	if hit {
 		log.Debugln("[DNS] cache hit %s --> %s, expire at %s", domain, msgToLogString(msg), expireTime.Format("2006-01-02 15:04:05"))
+		r.traceCacheHit(ctx, q, msg)
 		now := time.Now()
 		if expireTime.Before(now) {
 			setMsgTTL(msg, uint32(1)) // Continue fetch
@@ -188,9 +189,11 @@ func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.M
 
 	retryNum := 0
 	retryMax := 3
+	initiator := queryInitiator(ctx)
 	fn := func() (result *D.Msg, err error) {
 		ctx, cancel := context.WithTimeout(context.Background(), resolver.DefaultDNSTimeout) // reset timeout in singleflight
 		defer cancel()
+		ctx, trace := r.traceExchange(ctx, q, initiator)
 		cache := false
 
 		defer func() {
@@ -205,6 +208,7 @@ func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.M
 				putMsgToCache(r.cache, q, result)
 			}
 		}()
+		defer func() { trace.finish(result, err) }()
 
 		isIPReq := isIPRequest(q)
 		if isIPReq {
