@@ -236,7 +236,7 @@ func (f *Fetcher[V]) updateCallback(path string) {
 func (f *Fetcher[V]) updateWithLog() {
 	_, same, err := f.Update()
 	if err != nil {
-		log.Errorln("[Provider] %s pull error: %s", f.Name(), err.Error())
+		log.Warnln("[Provider] %s pull error: %s", f.Name(), err.Error())
 		return
 	}
 
