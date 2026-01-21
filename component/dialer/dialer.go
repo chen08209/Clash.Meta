@@ -385,6 +385,7 @@ func parseAddr(ctx context.Context, network, address string, preferResolver reso
 
 	if preferResolver == nil {
 		preferResolver = resolver.ProxyServerHostResolver
+		ctx = resolver.WithInitiator(ctx, resolver.InitiatorProxy)
 	}
 
 	var ips []netip.Addr

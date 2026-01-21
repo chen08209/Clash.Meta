@@ -26,18 +26,27 @@ func init() {
 }
 
 type Manager struct {
-	connections   xsync.Map[string, Tracker]
-	uploadTemp    atomic.Int64
-	downloadTemp  atomic.Int64
-	uploadBlip    atomic.Int64
-	downloadBlip  atomic.Int64
-	uploadTotal   atomic.Int64
-	downloadTotal atomic.Int64
-	pid           int32
-	memory        uint64
+	connections        xsync.Map[string, Tracker]
+	uploadTemp         atomic.Int64
+	downloadTemp       atomic.Int64
+	uploadBlip         atomic.Int64
+	downloadBlip       atomic.Int64
+	uploadTotal        atomic.Int64
+	downloadTotal      atomic.Int64
+	proxyUploadTemp    atomic.Int64
+	proxyDownloadTemp  atomic.Int64
+	proxyUploadBlip    atomic.Int64
+	proxyDownloadBlip  atomic.Int64
+	proxyUploadTotal   atomic.Int64
+	proxyDownloadTotal atomic.Int64
+	pid                int32
+	memory             uint64
 }
 
 func (m *Manager) Join(c Tracker) {
+	if DefaultRequestNotify != nil {
+		DefaultRequestNotify(c)
+	}
 	m.connections.Store(c.ID(), c)
 }
 
@@ -58,12 +67,20 @@ func (m *Manager) Range(f func(c Tracker) bool) {
 	})
 }
 
-func (m *Manager) PushUploaded(size int64) {
+func (m *Manager) PushUploaded(lastChain string, size int64) {
+	if lastChain != "DIRECT" {
+		m.proxyUploadTemp.Add(size)
+		m.proxyUploadTotal.Add(size)
+	}
 	m.uploadTemp.Add(size)
 	m.uploadTotal.Add(size)
 }
 
-func (m *Manager) PushDownloaded(size int64) {
+func (m *Manager) PushDownloaded(lastChain string, size int64) {
+	if lastChain != "DIRECT" {
+		m.proxyDownloadTemp.Add(size)
+		m.proxyDownloadTotal.Add(size)
+	}
 	m.downloadTemp.Add(size)
 	m.downloadTotal.Add(size)
 }
@@ -110,6 +127,14 @@ func (m *Manager) ResetStatistic() {
 	m.downloadTemp.Store(0)
 	m.downloadBlip.Store(0)
 	m.downloadTotal.Store(0)
+
+	m.proxyUploadTemp.Store(0)
+	m.proxyUploadBlip.Store(0)
+	m.proxyUploadTotal.Store(0)
+	m.proxyDownloadTemp.Store(0)
+	m.proxyDownloadBlip.Store(0)
+	m.proxyDownloadTotal.Store(0)
+
 }
 
 func (m *Manager) handle() {
@@ -118,6 +143,8 @@ func (m *Manager) handle() {
 	for range ticker.C {
 		m.uploadBlip.Store(m.uploadTemp.Swap(0))
 		m.downloadBlip.Store(m.downloadTemp.Swap(0))
+		m.proxyUploadBlip.Store(m.proxyUploadTemp.Swap(0))
+		m.proxyDownloadBlip.Store(m.proxyDownloadTemp.Swap(0))
 	}
 }
 
