@@ -20,6 +20,10 @@ type byNameProxyDialer struct {
 }
 
 func (d byNameProxyDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	ctx, err := enterDial(ctx, d.proxyName, address)
+	if err != nil {
+		return nil, err
+	}
 	tunnel, _ := d.tunnel.(Tunnel)
 	if tunnel == nil {
 		return nil, fmt.Errorf("tunnel is invalid, must be proxydialer.Tunnel, but got: %T", d.tunnel)
@@ -33,6 +37,10 @@ func (d byNameProxyDialer) DialContext(ctx context.Context, network, address str
 }
 
 func (d byNameProxyDialer) ListenPacket(ctx context.Context, network, address string, rAddrPort netip.AddrPort) (net.PacketConn, error) {
+	ctx, err := enterDial(ctx, d.proxyName, rAddrPort.String())
+	if err != nil {
+		return nil, err
+	}
 	tunnel, _ := d.tunnel.(Tunnel)
 	if tunnel == nil {
 		return nil, fmt.Errorf("tunnel is invalid, must be proxydialer.Tunnel, but got: %T", d.tunnel)
