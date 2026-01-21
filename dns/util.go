@@ -421,6 +421,7 @@ func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.M
 	for _, client := range clients {
 		if _, isRCodeClient := client.(rcodeClient); isRCodeClient {
 			msg, err = client.ExchangeContext(ctx, m)
+			traceAnswer(ctx, msg, client.Address())
 			return msg, false, err
 		}
 		client := client // shadow define client to ensure the value captured by the closure will not be changed in the next loop
@@ -435,6 +436,7 @@ func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.M
 				return nil, errors.New("server failure: " + D.RcodeToString[m.Rcode])
 			}
 			log.Debugln("[DNS] %s --> %s from %s", domain, msgToLogString(m), client.Address())
+			traceAnswer(ctx, m, client.Address())
 			return m, nil
 		})
 	}

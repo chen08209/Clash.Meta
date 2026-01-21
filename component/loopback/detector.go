@@ -17,7 +17,7 @@ import (
 var disableLoopBackDetector, _ = strconv.ParseBool(os.Getenv("DISABLE_LOOPBACK_DETECTOR"))
 
 func init() {
-	if features.CMFA {
+	if features.Android {
 		disableLoopBackDetector = true
 	}
 }
