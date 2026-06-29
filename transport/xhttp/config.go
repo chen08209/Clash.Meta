@@ -88,9 +88,6 @@ func (c *Config) NormalizedPath() string {
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
-	if !strings.HasSuffix(path, "/") {
-		path += "/"
-	}
 	return path
 }
 
