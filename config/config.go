@@ -271,7 +271,7 @@ type RawTun struct {
 	Stack               C.TUNStack `yaml:"stack" json:"stack"`
 	DNSHijack           []string   `yaml:"dns-hijack" json:"dns-hijack"`
 	AutoRoute           bool       `yaml:"auto-route" json:"auto-route"`
-	AutoDetectInterface bool       `yaml:"auto-detect-interface"`
+	AutoDetectInterface bool       `yaml:"auto-detect-interface" json:"auto-detect-interface"`
 
 	MTU        uint32 `yaml:"mtu" json:"mtu,omitempty"`
 	GSO        bool   `yaml:"gso" json:"gso,omitempty"`
