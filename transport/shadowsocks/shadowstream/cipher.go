@@ -73,3 +73,22 @@ func (k rc4Md5Key) Decrypter(iv []byte) cipher.Stream {
 func RC4MD5(key []byte) (Cipher, error) {
 	return rc4Md5Key(key), nil
 }
+
+type rc4Key []byte
+
+func (k rc4Key) IVSize() int {
+	return 0
+}
+
+func (k rc4Key) Encrypter(_ []byte) cipher.Stream {
+	c, _ := rc4.NewCipher(k)
+	return c
+}
+
+func (k rc4Key) Decrypter(iv []byte) cipher.Stream {
+	return k.Encrypter(iv)
+}
+
+func RC4(key []byte) (Cipher, error) {
+	return rc4Key(key), nil
+}
