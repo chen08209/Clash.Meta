@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/metacubex/mihomo/common/callback"
@@ -24,11 +23,10 @@ type Fallback struct {
 	selectedMu     sync.RWMutex
 	selected       string
 	expectedStatus string
-	hasAlternative atomic.Bool
 }
 
 func (f *Fallback) Now() string {
-	proxy := f.findAliveProxy(false)
+	proxy, _ := f.findAliveProxy(false)
 	return proxy.Name()
 }
 
@@ -67,8 +65,8 @@ func (f *Fallback) markProxyFailed(proxy C.Proxy, err error) {
 
 // DialContext implements C.ProxyAdapter
 func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, error) {
-	proxy := f.findAliveProxy(true)
-	ctx, cancel := failoverContext(ctx, f.hasAlternative.Load())
+	proxy, hasAlternative := f.findAliveProxy(true)
+	ctx, cancel := failoverContext(ctx, hasAlternative)
 	defer cancel()
 	c, err := proxy.DialContext(ctx, metadata)
 	if err == nil {
@@ -94,8 +92,8 @@ func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Con
 
 // ListenPacketContext implements C.ProxyAdapter
 func (f *Fallback) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (C.PacketConn, error) {
-	proxy := f.findAliveProxy(true)
-	ctx, cancel := failoverContext(ctx, f.hasAlternative.Load())
+	proxy, hasAlternative := f.findAliveProxy(true)
+	ctx, cancel := failoverContext(ctx, hasAlternative)
 	defer cancel()
 	pc, err := proxy.ListenPacketContext(ctx, metadata)
 	if err == nil {
@@ -114,13 +112,14 @@ func (f *Fallback) SupportUDP() bool {
 		return false
 	}
 
-	proxy := f.findAliveProxy(false)
+	proxy, _ := f.findAliveProxy(false)
 	return proxy.SupportUDP()
 }
 
 // IsL3Protocol implements C.ProxyAdapter
 func (f *Fallback) IsL3Protocol(metadata *C.Metadata) bool {
-	return f.findAliveProxy(false).IsL3Protocol(metadata)
+	proxy, _ := f.findAliveProxy(false)
+	return proxy.IsL3Protocol(metadata)
 }
 
 // MarshalJSON implements C.ProxyAdapter
@@ -144,14 +143,14 @@ func (f *Fallback) MarshalJSON() ([]byte, error) {
 
 // Unwrap implements C.ProxyAdapter
 func (f *Fallback) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
-	proxy := f.findAliveProxy(touch)
+	proxy, _ := f.findAliveProxy(touch)
 	return proxy
 }
 
-func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
+func (f *Fallback) findAliveProxy(touch bool) (C.Proxy, bool) {
 	proxies := f.GetProxies(touch)
 	if len(proxies) == 0 {
-		return f.EmptyFallback()
+		return f.EmptyFallback(), false
 	}
 
 	selectedName := f.selectedName()
@@ -173,19 +172,18 @@ func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
 			break
 		}
 	}
-	f.hasAlternative.Store(aliveCount > 1)
-
+	hasAlternative := aliveCount > 1
 	if selectedProxy != nil {
-		return selectedProxy
+		return selectedProxy, hasAlternative
 	}
 	if selectedName != "" {
 		f.clearSelected(selectedName)
 	}
 	if firstAlive != nil {
-		return firstAlive
+		return firstAlive, hasAlternative
 	}
 
-	return proxies[0]
+	return proxies[0], hasAlternative
 }
 
 func (f *Fallback) Set(name string) error {

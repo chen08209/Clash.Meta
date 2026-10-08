@@ -321,11 +321,16 @@ func (gb *GroupBase) healthCheck() {
 
 	wg.Wait()
 	gb.failedTesting.Store(false)
+	gb.failedTestMux.Lock()
 	gb.failedTimes = 0
+	gb.failedTestMux.Unlock()
 }
 
 func (gb *GroupBase) onDialSuccess() {
-	if !gb.failedTesting.Load() {
-		gb.failedTimes = 0
+	if gb.failedTesting.Load() {
+		return
 	}
+	gb.failedTestMux.Lock()
+	gb.failedTimes = 0
+	gb.failedTestMux.Unlock()
 }
