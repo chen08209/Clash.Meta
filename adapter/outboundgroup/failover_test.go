@@ -147,6 +147,39 @@ func TestURLTestRotatesWhenNoProxyIsAlive(t *testing.T) {
 	require.Equal(t, "node-3", third.Name())
 }
 
+func TestFallbackRotatesWhenNoProxyIsAlive(t *testing.T) {
+	nodes := []*adapter.Proxy{
+		failoverProxy("node-1").(*adapter.Proxy),
+		failoverProxy("node-2").(*adapter.Proxy),
+		failoverProxy("node-3").(*adapter.Proxy),
+	}
+	proxies := make([]C.Proxy, 0, len(nodes))
+	for _, proxy := range nodes {
+		proxy.SetAliveForTestUrl(testUrl, false)
+		proxies = append(proxies, proxy)
+	}
+	emptyFallback := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "COMPATIBLE"}))
+
+	group, err := NewFallback(
+		GroupCommonOption{Name: "fallback", URL: testUrl, TestTimeout: 1000},
+		FallbackOption{},
+		emptyFallback,
+		[]P.ProxyProvider{failoverProvider(t, proxies)},
+	)
+	require.NoError(t, err)
+
+	first, _ := group.findAliveProxy(true)
+	require.Equal(t, "node-1", first.Name())
+	group.markProxyFailed(first, errors.New("dial failed"))
+
+	second, _ := group.findAliveProxy(true)
+	require.Equal(t, "node-2", second.Name())
+	group.markProxyFailed(second, errors.New("dial failed"))
+
+	third, _ := group.findAliveProxy(true)
+	require.Equal(t, "node-3", third.Name())
+}
+
 func TestFallbackUsesBoundedAttemptWhenAlternativeIsAlive(t *testing.T) {
 	deadline := make(chan time.Time, 1)
 	failing := adapter.NewProxy(&recordingDeadlineProxy{

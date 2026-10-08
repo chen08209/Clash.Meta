@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/metacubex/mihomo/common/callback"
@@ -23,6 +24,8 @@ type Fallback struct {
 	selectedMu     sync.RWMutex
 	selected       string
 	expectedStatus string
+	rotateProbe    atomic.Bool
+	probeCursor    atomic.Uint32
 }
 
 func (f *Fallback) Now() string {
@@ -60,6 +63,7 @@ func (f *Fallback) markProxyFailed(proxy C.Proxy, err error) {
 		return
 	}
 	f.clearSelected(proxy.Name())
+	f.rotateProbe.Store(true)
 	notifyRouteChange()
 }
 
@@ -183,7 +187,12 @@ func (f *Fallback) findAliveProxy(touch bool) (C.Proxy, bool) {
 		return firstAlive, hasAlternative
 	}
 
-	return proxies[0], hasAlternative
+	index := 0
+	if f.rotateProbe.Swap(false) {
+		index = int(f.probeCursor.Load()) % len(proxies)
+	}
+	f.probeCursor.Store(uint32((index + 1) % len(proxies)))
+	return proxies[index], false
 }
 
 func (f *Fallback) Set(name string) error {
