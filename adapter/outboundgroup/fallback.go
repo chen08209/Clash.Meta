@@ -17,6 +17,16 @@ import (
 
 type FallbackOption struct{}
 
+type fallbackSelection struct {
+	proxy          C.Proxy
+	hasAlternative bool
+	at             time.Time
+}
+
+// A resolved pick is reused briefly like URLTest fast node, so a large
+// fallback group does not walk its members on every connection.
+const fallbackSelectionTTL = 10 * time.Second
+
 type Fallback struct {
 	*GroupBase
 	disableUDP     bool
@@ -26,6 +36,8 @@ type Fallback struct {
 	expectedStatus string
 	rotateProbe    atomic.Bool
 	probeCursor    atomic.Uint32
+	selectionMu    sync.Mutex
+	selection      *fallbackSelection
 }
 
 func (f *Fallback) Now() string {
@@ -34,7 +46,9 @@ func (f *Fallback) Now() string {
 }
 
 func (f *Fallback) healthCheck() {
+	f.clearSelection()
 	f.GroupBase.healthCheck()
+	f.clearSelection()
 	notifyRouteChange()
 }
 
@@ -48,6 +62,7 @@ func (f *Fallback) setSelected(name string) {
 	f.selectedMu.Lock()
 	f.selected = name
 	f.selectedMu.Unlock()
+	f.clearSelection()
 }
 
 func (f *Fallback) clearSelected(name string) {
@@ -56,6 +71,7 @@ func (f *Fallback) clearSelected(name string) {
 		f.selected = ""
 	}
 	f.selectedMu.Unlock()
+	f.clearSelection()
 }
 
 func (f *Fallback) markProxyFailed(proxy C.Proxy, err error) {
@@ -84,7 +100,7 @@ func (f *Fallback) scheduleRecoveryProbe(proxy C.Proxy) {
 
 // DialContext implements C.ProxyAdapter
 func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, error) {
-	proxy, hasAlternative := f.findAliveProxyState(true, true)
+	proxy, hasAlternative := f.findAliveProxyState(true)
 	ctx, cancel := failoverContext(ctx, hasAlternative)
 	defer cancel()
 	c, err := proxy.DialContext(ctx, metadata)
@@ -111,7 +127,7 @@ func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Con
 
 // ListenPacketContext implements C.ProxyAdapter
 func (f *Fallback) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (C.PacketConn, error) {
-	proxy, hasAlternative := f.findAliveProxyState(true, true)
+	proxy, hasAlternative := f.findAliveProxyState(true)
 	ctx, cancel := failoverContext(ctx, hasAlternative)
 	defer cancel()
 	pc, err := proxy.ListenPacketContext(ctx, metadata)
@@ -165,12 +181,52 @@ func (f *Fallback) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 	return f.findAliveProxy(touch)
 }
 
+func (f *Fallback) clearSelection() {
+	f.selectionMu.Lock()
+	f.selection = nil
+	f.selectionMu.Unlock()
+}
+
+func (f *Fallback) cachedSelection() (fallbackSelection, bool) {
+	f.selectionMu.Lock()
+	defer f.selectionMu.Unlock()
+	selection := f.selection
+	if selection == nil || time.Since(selection.at) >= fallbackSelectionTTL {
+		return fallbackSelection{}, false
+	}
+	return *selection, true
+}
+
+func (f *Fallback) storeSelection(proxy C.Proxy, hasAlternative bool) {
+	f.selectionMu.Lock()
+	f.selection = &fallbackSelection{
+		proxy:          proxy,
+		hasAlternative: hasAlternative,
+		at:             time.Now(),
+	}
+	f.selectionMu.Unlock()
+}
+
 func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
-	proxy, _ := f.findAliveProxyState(touch, false)
+	proxy, _ := f.findAliveProxyState(touch)
 	return proxy
 }
 
-func (f *Fallback) findAliveProxyState(touch bool, needAlternative bool) (C.Proxy, bool) {
+func (f *Fallback) findAliveProxyState(touch bool) (C.Proxy, bool) {
+	if selection, ok := f.cachedSelection(); ok {
+		if touch {
+			f.Touch()
+		}
+		return selection.proxy, selection.hasAlternative
+	}
+	proxy, hasAlternative := f.resolveAliveProxyState(touch)
+	if proxy != f.EmptyFallback() && proxy.AliveForTestUrl(f.testUrl) {
+		f.storeSelection(proxy, hasAlternative)
+	}
+	return proxy, hasAlternative
+}
+
+func (f *Fallback) resolveAliveProxyState(touch bool) (C.Proxy, bool) {
 	proxies := f.GetProxies(touch)
 	if len(proxies) == 0 {
 		return f.EmptyFallback(), false
@@ -190,15 +246,6 @@ func (f *Fallback) findAliveProxyState(touch bool, needAlternative bool) (C.Prox
 		}
 		if selectedName != "" && proxy.Name() == selectedName {
 			selectedProxy = proxy
-		}
-		if !needAlternative {
-			if selectedName == "" || selectedProxy != nil {
-				f.rotateProbe.Store(false)
-				if selectedProxy != nil {
-					return selectedProxy, false
-				}
-				return firstAlive, false
-			}
 		}
 		if aliveCount >= 2 && (selectedName == "" || selectedProxy != nil) {
 			break

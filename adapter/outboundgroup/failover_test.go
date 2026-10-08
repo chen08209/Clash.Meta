@@ -474,3 +474,23 @@ func TestDirectMemberFailureIsNotBenched(t *testing.T) {
 	group.markProxyFailed(direct, errors.New("dial failed"))
 	require.True(t, direct.AliveForTestUrl(testUrl))
 }
+
+func TestFallbackSelectionChangeDropsTheCachedResolution(t *testing.T) {
+	first := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "first"}))
+	second := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "second"}))
+	proxies := []C.Proxy{first, second}
+	emptyFallback := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "COMPATIBLE"}))
+
+	group, err := NewFallback(
+		GroupCommonOption{Name: "fallback", URL: testUrl, TestTimeout: 1000},
+		FallbackOption{},
+		emptyFallback,
+		[]P.ProxyProvider{failoverProvider(t, proxies)},
+	)
+	require.NoError(t, err)
+
+	require.Equal(t, "first", group.findAliveProxy(true).Name())
+
+	group.ForceSet("second")
+	require.Equal(t, "second", group.findAliveProxy(true).Name())
+}
