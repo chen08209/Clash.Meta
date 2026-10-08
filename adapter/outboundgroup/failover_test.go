@@ -142,6 +142,27 @@ func TestOnDialFailedHonorsSingleFailureThreshold(t *testing.T) {
 	}
 }
 
+func TestOnDialFailedRecoversPanic(t *testing.T) {
+	group := NewGroupBase(GroupBaseOption{
+		Name:           "group",
+		Type:           C.Selector,
+		TestTimeout:    1000,
+		MaxFailedTimes: 1,
+	})
+	finished := make(chan struct{})
+	group.onDialFailed(C.Shadowsocks, errors.New("dial failed"), func() {
+		defer close(finished)
+		panic("boom")
+	})
+
+	select {
+	case <-finished:
+		time.Sleep(10 * time.Millisecond)
+	case <-time.After(time.Second):
+		t.Fatal("failure handler did not run")
+	}
+}
+
 func TestProxyFailureForOneTestURLKeepsOtherURLsAlive(t *testing.T) {
 	proxy := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "node"}))
 

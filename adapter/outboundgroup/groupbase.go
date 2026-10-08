@@ -289,6 +289,12 @@ func (gb *GroupBase) onDialFailed(adapterType C.AdapterType, err error, fn func(
 	}
 
 	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				log.Errorln("ProxyGroup: %s failure handler panic: %v", gb.Name(), recovered)
+			}
+		}()
+
 		if isConnectionRefused(err) {
 			fn()
 			return
