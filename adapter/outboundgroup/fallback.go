@@ -177,6 +177,9 @@ func (f *Fallback) findAliveProxy(touch bool) (C.Proxy, bool) {
 		}
 	}
 	hasAlternative := aliveCount > 1
+	if aliveCount > 0 {
+		f.rotateProbe.Store(false)
+	}
 	if selectedProxy != nil {
 		return selectedProxy, hasAlternative
 	}

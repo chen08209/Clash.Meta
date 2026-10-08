@@ -173,6 +173,9 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 			}
 		}
 		u.fastAliveCount.Store(aliveCount)
+		if aliveCount > 0 {
+			u.rotateProbe.Store(false)
+		}
 
 		if selectedProxy != nil {
 			u.fastNode = selectedProxy
