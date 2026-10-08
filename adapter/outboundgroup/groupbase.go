@@ -331,10 +331,10 @@ func (gb *GroupBase) healthCheck() {
 	}
 
 	wg.Wait()
-	gb.failedTesting.Store(false)
 	gb.failedTestMux.Lock()
 	gb.failedTimes = 0
 	gb.failedTestMux.Unlock()
+	gb.failedTesting.Store(false)
 }
 
 func (gb *GroupBase) onDialSuccess() {
