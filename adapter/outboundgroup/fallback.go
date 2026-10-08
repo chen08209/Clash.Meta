@@ -226,7 +226,11 @@ func (f *Fallback) Set(name string) error {
 
 	f.setSelected(name)
 	if !p.AliveForTestUrl(f.testUrl) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(5000))
+		timeout := time.Duration(f.testTimeout) * time.Millisecond
+		if timeout <= 0 {
+			timeout = 5 * time.Second
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		expectedStatus, _ := utils.NewUnsignedRanges[uint16](f.expectedStatus)
 		_, _ = p.URLTest(ctx, f.testUrl, expectedStatus)
