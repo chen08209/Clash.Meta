@@ -147,6 +147,32 @@ func TestURLTestRotatesWhenNoProxyIsAlive(t *testing.T) {
 	require.Equal(t, "node-3", third.Name())
 }
 
+func TestLoadBalanceRotatesWhenNoProxyIsAlive(t *testing.T) {
+	nodes := []*adapter.Proxy{
+		failoverProxy("node-1").(*adapter.Proxy),
+		failoverProxy("node-2").(*adapter.Proxy),
+		failoverProxy("node-3").(*adapter.Proxy),
+	}
+	proxies := make([]C.Proxy, 0, len(nodes))
+	for _, proxy := range nodes {
+		proxy.SetAliveForTestUrl(testUrl, false)
+		proxies = append(proxies, proxy)
+	}
+	emptyFallback := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "COMPATIBLE"}))
+
+	group, err := NewLoadBalance(
+		GroupCommonOption{Name: "balance", URL: testUrl, TestTimeout: 1000},
+		LoadBalanceOption{Strategy: "round-robin"},
+		emptyFallback,
+		[]P.ProxyProvider{failoverProvider(t, proxies)},
+	)
+	require.NoError(t, err)
+
+	require.Equal(t, "node-1", group.Unwrap(nil, false).Name())
+	require.Equal(t, "node-2", group.Unwrap(nil, false).Name())
+	require.Equal(t, "node-3", group.Unwrap(nil, false).Name())
+}
+
 func TestFallbackRotatesWhenNoProxyIsAlive(t *testing.T) {
 	nodes := []*adapter.Proxy{
 		failoverProxy("node-1").(*adapter.Proxy),

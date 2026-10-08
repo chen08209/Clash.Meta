@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/metacubex/mihomo/common/callback"
@@ -30,6 +31,7 @@ type LoadBalance struct {
 	strategyFn     strategyFn
 	testUrl        string
 	expectedStatus string
+	probeCursor    atomic.Uint32
 }
 
 type strategyFn = func(proxies []C.Proxy, metadata *C.Metadata, touch bool) C.Proxy
@@ -262,7 +264,14 @@ func strategyStickySessions(url string, keyOf keyFn) strategyFn {
 // Unwrap implements C.ProxyAdapter
 func (lb *LoadBalance) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 	proxies := lb.GetProxies(touch)
-	return lb.strategyFn(proxies, metadata, touch)
+	proxy := lb.strategyFn(proxies, metadata, touch)
+	if proxy == nil || proxy.AliveForTestUrl(lb.testUrl) || len(proxies) == 0 {
+		return proxy
+	}
+
+	index := int(lb.probeCursor.Load()) % len(proxies)
+	lb.probeCursor.Store(uint32((index + 1) % len(proxies)))
+	return proxies[index]
 }
 
 // MarshalJSON implements C.ProxyAdapter
