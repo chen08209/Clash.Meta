@@ -22,17 +22,17 @@ type URLTestOption struct {
 
 type URLTest struct {
 	*GroupBase
-	selectedMu     sync.RWMutex
-	selected       string
-	testUrl        string
-	expectedStatus string
-	tolerance      uint16
-	disableUDP     bool
-	fastNode       C.Proxy
-	fastSingle     *singledo.Single[C.Proxy]
-	fastAliveCount atomic.Int32
-	rotateProbe    atomic.Bool
-	probeCursor    atomic.Uint32
+	selectedMu         sync.RWMutex
+	selected           string
+	testUrl            string
+	expectedStatus     string
+	tolerance          uint16
+	disableUDP         bool
+	fastNode           C.Proxy
+	fastSingle         *singledo.Single[C.Proxy]
+	fastHasAlternative atomic.Bool
+	rotateProbe        atomic.Bool
+	probeCursor        atomic.Uint32
 }
 
 func (u *URLTest) Now() string {
@@ -85,7 +85,7 @@ func (u *URLTest) markProxyFailed(proxy C.Proxy, err error) {
 // DialContext implements C.ProxyAdapter
 func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Conn, err error) {
 	proxy := u.fast(true)
-	ctx, cancel := failoverContext(ctx, u.fastAliveCount.Load() > 1)
+	ctx, cancel := failoverContext(ctx, u.fastHasAlternative.Load())
 	defer cancel()
 	c, err = proxy.DialContext(ctx, metadata)
 	if err == nil {
@@ -110,7 +110,7 @@ func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Co
 // ListenPacketContext implements C.ProxyAdapter
 func (u *URLTest) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (C.PacketConn, error) {
 	proxy := u.fast(true)
-	ctx, cancel := failoverContext(ctx, u.fastAliveCount.Load() > 1)
+	ctx, cancel := failoverContext(ctx, u.fastHasAlternative.Load())
 	defer cancel()
 	pc, err := proxy.ListenPacketContext(ctx, metadata)
 	if err == nil {
@@ -145,7 +145,7 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 	elm, _, shared := u.fastSingle.Do(func() (C.Proxy, error) {
 		proxies := u.GetProxies(touch)
 		if len(proxies) == 0 {
-			u.fastAliveCount.Store(0)
+			u.fastHasAlternative.Store(false)
 			return u.EmptyFallback(), nil
 		}
 
@@ -167,13 +167,16 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 			if proxy.Name() == selectedName {
 				selectedProxy = proxy
 			}
+			if selectedProxy != nil && aliveCount >= 2 {
+				break
+			}
 			delay := proxy.LastDelayForTestUrl(u.testUrl)
 			if fast == nil || delay < minDelay {
 				fast = proxy
 				minDelay = delay
 			}
 		}
-		u.fastAliveCount.Store(aliveCount)
+		u.fastHasAlternative.Store(aliveCount > 1)
 		if aliveCount > 0 {
 			u.rotateProbe.Store(false)
 		}
