@@ -145,6 +145,7 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 	elm, _, shared := u.fastSingle.Do(func() (C.Proxy, error) {
 		proxies := u.GetProxies(touch)
 		if len(proxies) == 0 {
+			u.fastAliveCount.Store(0)
 			return u.EmptyFallback(), nil
 		}
 
