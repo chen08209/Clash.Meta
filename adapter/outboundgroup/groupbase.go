@@ -305,7 +305,8 @@ func (gb *GroupBase) onDialFailed(adapterType C.AdapterType, err error, fn func(
 		}
 
 		log.Debugln("ProxyGroup: %s failed count: %d", gb.Name(), gb.failedTimes)
-		shouldHealthCheck = gb.failedTimes >= gb.maxFailedTimes
+		shouldHealthCheck = gb.failedTimes >= gb.maxFailedTimes &&
+			!gb.failedTesting.Load()
 		gb.failedTestMux.Unlock()
 
 		if shouldHealthCheck {
