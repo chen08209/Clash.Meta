@@ -91,6 +91,15 @@ func TestLoadBalanceMarksFailedProxyDown(t *testing.T) {
 	require.Equal(t, healthy.Name(), group.Unwrap(nil, false).Name())
 }
 
+func TestURLTestFailureForOneURLKeepsOtherURLsAlive(t *testing.T) {
+	proxy := failoverProxy("failing")
+
+	_, err := proxy.URLTest(context.Background(), "https://one.example/204", nil)
+	require.Error(t, err)
+	require.False(t, proxy.AliveForTestUrl("https://one.example/204"))
+	require.True(t, proxy.AliveForTestUrl("https://two.example/204"))
+}
+
 func TestProxyFailureForOneTestURLKeepsOtherURLsAlive(t *testing.T) {
 	proxy := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "node"}))
 

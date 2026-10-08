@@ -195,7 +195,9 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 			record.Delay = t
 		}
 
-		p.alive.Store(alive)
+		if url == "" {
+			p.alive.Store(alive)
+		}
 		p.history.Put(record)
 		if p.history.Len() > defaultHistoriesNum {
 			p.history.Pop()
