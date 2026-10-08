@@ -254,15 +254,15 @@ func TestFallbackRotatesWhenNoProxyIsAlive(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	first, _ := group.findAliveProxy(true)
+	first := group.findAliveProxy(true)
 	require.Equal(t, "node-1", first.Name())
 	group.markProxyFailed(first, errors.New("dial failed"))
 
-	second, _ := group.findAliveProxy(true)
+	second := group.findAliveProxy(true)
 	require.Equal(t, "node-2", second.Name())
 	group.markProxyFailed(second, errors.New("dial failed"))
 
-	third, _ := group.findAliveProxy(true)
+	third := group.findAliveProxy(true)
 	require.Equal(t, "node-3", third.Name())
 }
 

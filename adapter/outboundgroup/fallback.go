@@ -29,7 +29,7 @@ type Fallback struct {
 }
 
 func (f *Fallback) Now() string {
-	proxy, _ := f.findAliveProxy(false)
+	proxy := f.findAliveProxy(false)
 	return proxy.Name()
 }
 
@@ -69,7 +69,7 @@ func (f *Fallback) markProxyFailed(proxy C.Proxy, err error) {
 
 // DialContext implements C.ProxyAdapter
 func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, error) {
-	proxy, hasAlternative := f.findAliveProxy(true)
+	proxy, hasAlternative := f.findAliveProxyState(true, true)
 	ctx, cancel := failoverContext(ctx, hasAlternative)
 	defer cancel()
 	c, err := proxy.DialContext(ctx, metadata)
@@ -96,7 +96,7 @@ func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Con
 
 // ListenPacketContext implements C.ProxyAdapter
 func (f *Fallback) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (C.PacketConn, error) {
-	proxy, hasAlternative := f.findAliveProxy(true)
+	proxy, hasAlternative := f.findAliveProxyState(true, true)
 	ctx, cancel := failoverContext(ctx, hasAlternative)
 	defer cancel()
 	pc, err := proxy.ListenPacketContext(ctx, metadata)
@@ -116,13 +116,13 @@ func (f *Fallback) SupportUDP() bool {
 		return false
 	}
 
-	proxy, _ := f.findAliveProxy(false)
+	proxy := f.findAliveProxy(false)
 	return proxy.SupportUDP()
 }
 
 // IsL3Protocol implements C.ProxyAdapter
 func (f *Fallback) IsL3Protocol(metadata *C.Metadata) bool {
-	proxy, _ := f.findAliveProxy(false)
+	proxy := f.findAliveProxy(false)
 	return proxy.IsL3Protocol(metadata)
 }
 
@@ -147,11 +147,15 @@ func (f *Fallback) MarshalJSON() ([]byte, error) {
 
 // Unwrap implements C.ProxyAdapter
 func (f *Fallback) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
-	proxy, _ := f.findAliveProxy(touch)
+	return f.findAliveProxy(touch)
+}
+
+func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
+	proxy, _ := f.findAliveProxyState(touch, false)
 	return proxy
 }
 
-func (f *Fallback) findAliveProxy(touch bool) (C.Proxy, bool) {
+func (f *Fallback) findAliveProxyState(touch bool, needAlternative bool) (C.Proxy, bool) {
 	proxies := f.GetProxies(touch)
 	if len(proxies) == 0 {
 		return f.EmptyFallback(), false
@@ -171,6 +175,15 @@ func (f *Fallback) findAliveProxy(touch bool) (C.Proxy, bool) {
 		}
 		if selectedName != "" && proxy.Name() == selectedName {
 			selectedProxy = proxy
+		}
+		if !needAlternative {
+			if selectedName == "" || selectedProxy != nil {
+				f.rotateProbe.Store(false)
+				if selectedProxy != nil {
+					return selectedProxy, true
+				}
+				return firstAlive, true
+			}
 		}
 		if aliveCount >= 2 && (selectedName == "" || selectedProxy != nil) {
 			break
