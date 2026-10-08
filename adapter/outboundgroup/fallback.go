@@ -22,7 +22,7 @@ type Fallback struct {
 	testUrl        string
 	selected       string
 	expectedStatus string
-	aliveCount     atomic.Int32
+	hasAlternative atomic.Bool
 }
 
 func (f *Fallback) Now() string {
@@ -49,7 +49,7 @@ func (f *Fallback) markProxyFailed(proxy C.Proxy, err error) {
 // DialContext implements C.ProxyAdapter
 func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, error) {
 	proxy := f.findAliveProxy(true)
-	ctx, cancel := failoverContext(ctx, f.aliveCount.Load())
+	ctx, cancel := failoverContext(ctx, f.hasAlternative.Load())
 	defer cancel()
 	c, err := proxy.DialContext(ctx, metadata)
 	if err == nil {
@@ -76,7 +76,7 @@ func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Con
 // ListenPacketContext implements C.ProxyAdapter
 func (f *Fallback) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (C.PacketConn, error) {
 	proxy := f.findAliveProxy(true)
-	ctx, cancel := failoverContext(ctx, f.aliveCount.Load())
+	ctx, cancel := failoverContext(ctx, f.hasAlternative.Load())
 	defer cancel()
 	pc, err := proxy.ListenPacketContext(ctx, metadata)
 	if err == nil {
@@ -153,7 +153,7 @@ func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
 			break
 		}
 	}
-	f.aliveCount.Store(aliveCount)
+	f.hasAlternative.Store(aliveCount > 1)
 
 	if selectedProxy != nil {
 		return selectedProxy

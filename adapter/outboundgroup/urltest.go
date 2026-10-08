@@ -72,7 +72,7 @@ func (u *URLTest) markProxyFailed(proxy C.Proxy, err error) {
 // DialContext implements C.ProxyAdapter
 func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Conn, err error) {
 	proxy := u.fast(true)
-	ctx, cancel := failoverContext(ctx, u.fastAlive.Load())
+	ctx, cancel := failoverContext(ctx, u.fastAlive.Load() > 1)
 	defer cancel()
 	c, err = proxy.DialContext(ctx, metadata)
 	if err == nil {
@@ -97,7 +97,7 @@ func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Co
 // ListenPacketContext implements C.ProxyAdapter
 func (u *URLTest) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (C.PacketConn, error) {
 	proxy := u.fast(true)
-	ctx, cancel := failoverContext(ctx, u.fastAlive.Load())
+	ctx, cancel := failoverContext(ctx, u.fastAlive.Load() > 1)
 	defer cancel()
 	pc, err := proxy.ListenPacketContext(ctx, metadata)
 	if err == nil {

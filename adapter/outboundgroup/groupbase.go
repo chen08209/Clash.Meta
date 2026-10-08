@@ -57,52 +57,6 @@ type GroupBaseOption struct {
 	UsePosition    map[string]int
 }
 
-// A blackholed first member must not spend the whole tunnel dial budget before
-// another alive member gets a chance.
-const fastFailoverAttemptTimeout = 2 * time.Second
-
-type aliveStateSetter interface {
-	SetAliveForTestUrl(string, bool)
-}
-
-var (
-	routeInvalidateMu sync.RWMutex
-	routeInvalidate   func()
-)
-
-// SetRouteInvalidate installs a process-wide hook for a pick that may have
-// moved without going through a selector write.
-func SetRouteInvalidate(fn func()) {
-	routeInvalidateMu.Lock()
-	routeInvalidate = fn
-	routeInvalidateMu.Unlock()
-}
-
-func notifyRouteChange() {
-	routeInvalidateMu.RLock()
-	hook := routeInvalidate
-	routeInvalidateMu.RUnlock()
-	if hook != nil {
-		hook()
-	}
-}
-
-func markProxyUnavailable(proxy C.Proxy, testURL string) {
-	if proxy == nil {
-		return
-	}
-	if setter, ok := proxy.(aliveStateSetter); ok {
-		setter.SetAliveForTestUrl(testURL, false)
-	}
-}
-
-func failoverContext(ctx context.Context, candidates int32) (context.Context, context.CancelFunc) {
-	if candidates <= 1 {
-		return ctx, func() {}
-	}
-	return context.WithTimeout(ctx, fastFailoverAttemptTimeout)
-}
-
 func NewGroupBase(opt GroupBaseOption) *GroupBase {
 	var excludeTypeArray []string
 	if opt.ExcludeType != "" {
