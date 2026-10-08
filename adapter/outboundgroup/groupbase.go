@@ -304,11 +304,9 @@ func (gb *GroupBase) onDialFailed(adapterType C.AdapterType, err error, fn func(
 }
 
 func (gb *GroupBase) healthCheck() {
-	if gb.failedTesting.Load() {
+	if !gb.failedTesting.CompareAndSwap(false, true) {
 		return
 	}
-
-	gb.failedTesting.Store(true)
 	wg := sync.WaitGroup{}
 	for _, proxyProvider := range gb.providers {
 		wg.Add(1)
