@@ -71,8 +71,9 @@ func (u *URLTest) ForceSet(name string) {
 	u.fastSingle.Reset()
 }
 
-// markProxyFailed stops selecting a proxy after a failed dial. The periodic
-// health check can restore it later if the proxy becomes reachable again.
+// markProxyFailed stops selecting a proxy after a failed dial, then lets the
+// group re-check it soon so a transient failure does not park it until the
+// periodic health check.
 func (u *URLTest) markProxyFailed(proxy C.Proxy, err error) {
 	if !shouldMarkProxyFailed(proxy, err) || !markProxyUnavailable(proxy, u.testUrl) {
 		return
@@ -80,6 +81,24 @@ func (u *URLTest) markProxyFailed(proxy C.Proxy, err error) {
 	u.fastSingle.Reset()
 	u.rotateProbe.Store(true)
 	notifyRouteChange()
+	u.scheduleRecoveryProbe(proxy)
+}
+
+func (u *URLTest) scheduleRecoveryProbe(proxy C.Proxy) {
+	expectedStatus, err := utils.NewUnsignedRanges[uint16](u.expectedStatus)
+	if err != nil {
+		return
+	}
+	scheduleFailedProxyProbe(
+		proxy,
+		u.testUrl,
+		expectedStatus,
+		time.Duration(u.testTimeout)*time.Millisecond,
+		func() {
+			u.fastSingle.Reset()
+			notifyRouteChange()
+		},
+	)
 }
 
 // DialContext implements C.ProxyAdapter

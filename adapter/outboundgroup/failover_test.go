@@ -3,6 +3,8 @@ package outboundgroup
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -25,6 +27,16 @@ func (p *recordingDeadlineProxy) DialContext(ctx context.Context, _ *C.Metadata)
 		p.deadline <- deadline
 	}
 	return nil, errors.New("dial failed")
+}
+
+// testNodeProxy dials like DIRECT but reports a proxy type, so the failover
+// tests can reach a local test server while still looking like a node.
+type testNodeProxy struct {
+	C.ProxyAdapter
+}
+
+func (p *testNodeProxy) Type() C.AdapterType {
+	return C.Shadowsocks
 }
 
 func failoverProxy(name string) C.Proxy {
@@ -362,4 +374,103 @@ func TestURLTestUsesBoundedAttemptWhenAlternativeIsAlive(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("first dial did not receive a bounded attempt deadline")
 	}
+}
+
+func shrinkFailoverRecoveryDelay(t *testing.T) {
+	t.Helper()
+	previous := fastFailoverRecoveryDelay
+	fastFailoverRecoveryDelay = 10 * time.Millisecond
+	t.Cleanup(func() { fastFailoverRecoveryDelay = previous })
+}
+
+func recoveryTestServer(t *testing.T) string {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(server.Close)
+	return server.URL
+}
+
+func recoveringFailoverProxy(name string) C.Proxy {
+	return adapter.NewProxy(&testNodeProxy{ProxyAdapter: outbound.NewDirectWithOption(outbound.DirectOption{Name: name})})
+}
+
+func TestURLTestRechecksProxyItBenched(t *testing.T) {
+	shrinkFailoverRecoveryDelay(t)
+	testServerURL := recoveryTestServer(t)
+
+	benched := recoveringFailoverProxy("benched")
+	healthy := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "healthy"}))
+	emptyFallback := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "COMPATIBLE"}))
+	group, err := NewURLTest(
+		GroupCommonOption{Name: "auto", URL: testServerURL, TestTimeout: 1000, ExpectedStatus: "204"},
+		URLTestOption{},
+		emptyFallback,
+		[]P.ProxyProvider{failoverProvider(t, []C.Proxy{benched, healthy})},
+	)
+	require.NoError(t, err)
+
+	group.markProxyFailed(benched, errors.New("dial failed"))
+	require.False(t, benched.AliveForTestUrl(testServerURL))
+
+	require.Eventually(t, func() bool { return benched.AliveForTestUrl(testServerURL) }, 3*time.Second, 10*time.Millisecond)
+}
+
+func TestFallbackRechecksProxyItBenched(t *testing.T) {
+	shrinkFailoverRecoveryDelay(t)
+	testServerURL := recoveryTestServer(t)
+
+	benched := recoveringFailoverProxy("benched-fallback")
+	healthy := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "healthy-fallback"}))
+	emptyFallback := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "COMPATIBLE"}))
+	group, err := NewFallback(
+		GroupCommonOption{Name: "fallback", URL: testServerURL, TestTimeout: 1000, ExpectedStatus: "204"},
+		FallbackOption{},
+		emptyFallback,
+		[]P.ProxyProvider{failoverProvider(t, []C.Proxy{benched, healthy})},
+	)
+	require.NoError(t, err)
+
+	group.markProxyFailed(benched, errors.New("dial failed"))
+	require.False(t, benched.AliveForTestUrl(testServerURL))
+
+	require.Eventually(t, func() bool { return benched.AliveForTestUrl(testServerURL) }, 3*time.Second, 10*time.Millisecond)
+}
+
+func TestLoadBalanceRechecksProxyItBenched(t *testing.T) {
+	shrinkFailoverRecoveryDelay(t)
+	testServerURL := recoveryTestServer(t)
+
+	benched := recoveringFailoverProxy("benched-balance")
+	healthy := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "healthy-balance"}))
+	emptyFallback := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "COMPATIBLE"}))
+	group, err := NewLoadBalance(
+		GroupCommonOption{Name: "balance", URL: testServerURL, TestTimeout: 1000, ExpectedStatus: "204"},
+		LoadBalanceOption{Strategy: "round-robin"},
+		emptyFallback,
+		[]P.ProxyProvider{failoverProvider(t, []C.Proxy{benched, healthy})},
+	)
+	require.NoError(t, err)
+
+	group.markProxyFailed(benched, errors.New("dial failed"))
+	require.False(t, benched.AliveForTestUrl(testServerURL))
+
+	require.Eventually(t, func() bool { return benched.AliveForTestUrl(testServerURL) }, 3*time.Second, 10*time.Millisecond)
+}
+
+func TestDirectMemberFailureIsNotBenched(t *testing.T) {
+	direct := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "direct"}))
+	healthy := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "healthy"}))
+	emptyFallback := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "COMPATIBLE"}))
+	group, err := NewURLTest(
+		GroupCommonOption{Name: "auto", URL: testUrl, TestTimeout: 1000},
+		URLTestOption{},
+		emptyFallback,
+		[]P.ProxyProvider{failoverProvider(t, []C.Proxy{direct, healthy})},
+	)
+	require.NoError(t, err)
+
+	group.markProxyFailed(direct, errors.New("dial failed"))
+	require.True(t, direct.AliveForTestUrl(testUrl))
 }

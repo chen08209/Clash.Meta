@@ -65,6 +65,21 @@ func (f *Fallback) markProxyFailed(proxy C.Proxy, err error) {
 	f.clearSelected(proxy.Name())
 	f.rotateProbe.Store(true)
 	notifyRouteChange()
+	f.scheduleRecoveryProbe(proxy)
+}
+
+func (f *Fallback) scheduleRecoveryProbe(proxy C.Proxy) {
+	expectedStatus, err := utils.NewUnsignedRanges[uint16](f.expectedStatus)
+	if err != nil {
+		return
+	}
+	scheduleFailedProxyProbe(
+		proxy,
+		f.testUrl,
+		expectedStatus,
+		time.Duration(f.testTimeout)*time.Millisecond,
+		notifyRouteChange,
+	)
 }
 
 // DialContext implements C.ProxyAdapter
