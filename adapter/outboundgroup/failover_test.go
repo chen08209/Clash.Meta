@@ -100,6 +100,29 @@ func TestURLTestFailureForOneURLKeepsOtherURLsAlive(t *testing.T) {
 	require.True(t, proxy.AliveForTestUrl("https://two.example/204"))
 }
 
+func TestOnDialFailedReleasesFailureLockBeforeHealthCheck(t *testing.T) {
+	group := NewGroupBase(GroupBaseOption{
+		Name:           "group",
+		Type:           C.Selector,
+		TestTimeout:    1000,
+		MaxFailedTimes: 1,
+	})
+	called := make(chan struct{})
+	healthCheck := func() {
+		group.failedTestMux.Lock()
+		group.failedTestMux.Unlock()
+		close(called)
+	}
+	group.onDialFailed(C.Shadowsocks, errors.New("dial failed"), healthCheck)
+	group.onDialFailed(C.Shadowsocks, errors.New("dial failed"), healthCheck)
+
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Fatal("health-check callback deadlocked on the failure mutex")
+	}
+}
+
 func TestProxyFailureForOneTestURLKeepsOtherURLsAlive(t *testing.T) {
 	proxy := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "node"}))
 

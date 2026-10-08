@@ -291,9 +291,8 @@ func (gb *GroupBase) onDialFailed(adapterType C.AdapterType, err error, fn func(
 			return
 		}
 
+		shouldHealthCheck := false
 		gb.failedTestMux.Lock()
-		defer gb.failedTestMux.Unlock()
-
 		gb.failedTimes++
 		if gb.failedTimes == 1 {
 			log.Debugln("ProxyGroup: %s first failed", gb.Name())
@@ -301,14 +300,18 @@ func (gb *GroupBase) onDialFailed(adapterType C.AdapterType, err error, fn func(
 		} else {
 			if time.Since(gb.failedTime) > time.Duration(gb.testTimeout)*time.Millisecond {
 				gb.failedTimes = 0
+				gb.failedTestMux.Unlock()
 				return
 			}
 
 			log.Debugln("ProxyGroup: %s failed count: %d", gb.Name(), gb.failedTimes)
-			if gb.failedTimes >= gb.maxFailedTimes {
-				log.Warnln("because %s failed multiple times, activate health check", gb.Name())
-				fn()
-			}
+			shouldHealthCheck = gb.failedTimes >= gb.maxFailedTimes
+		}
+		gb.failedTestMux.Unlock()
+
+		if shouldHealthCheck {
+			log.Warnln("because %s failed multiple times, activate health check", gb.Name())
+			fn()
 		}
 	}()
 }
