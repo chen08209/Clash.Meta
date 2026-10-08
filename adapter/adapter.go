@@ -52,6 +52,24 @@ func (p *Proxy) AliveForTestUrl(url string) bool {
 	return p.alive.Load()
 }
 
+// SetAliveForTestUrl records a locally observed dial result for the test URL.
+// A URL-specific result must not overwrite the global fallback state used by
+// groups that have not initialized their own URL-specific state yet.
+func (p *Proxy) SetAliveForTestUrl(url string, alive bool) {
+	if url == "" {
+		p.alive.Store(alive)
+		return
+	}
+
+	state, _ := p.extra.LoadOrStoreFn(url, func() *internalProxyState {
+		return &internalProxyState{
+			history: queue.New[C.DelayHistory](defaultHistoriesNum),
+			alive:   atomic.NewBool(alive),
+		}
+	})
+	state.alive.Store(alive)
+}
+
 // DialContext implements C.ProxyAdapter
 func (p *Proxy) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, error) {
 	conn, err := p.ProxyAdapter.DialContext(ctx, metadata)
