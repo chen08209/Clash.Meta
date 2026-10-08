@@ -107,11 +107,11 @@ func TestOnDialFailedReleasesFailureLockBeforeHealthCheck(t *testing.T) {
 		TestTimeout:    1000,
 		MaxFailedTimes: 1,
 	})
-	called := make(chan struct{})
+	called := make(chan struct{}, 2)
 	healthCheck := func() {
 		group.failedTestMux.Lock()
 		group.failedTestMux.Unlock()
-		close(called)
+		called <- struct{}{}
 	}
 	group.onDialFailed(C.Shadowsocks, errors.New("dial failed"), healthCheck)
 	group.onDialFailed(C.Shadowsocks, errors.New("dial failed"), healthCheck)
@@ -120,6 +120,25 @@ func TestOnDialFailedReleasesFailureLockBeforeHealthCheck(t *testing.T) {
 	case <-called:
 	case <-time.After(time.Second):
 		t.Fatal("health-check callback deadlocked on the failure mutex")
+	}
+}
+
+func TestOnDialFailedHonorsSingleFailureThreshold(t *testing.T) {
+	group := NewGroupBase(GroupBaseOption{
+		Name:           "group",
+		Type:           C.Selector,
+		TestTimeout:    1000,
+		MaxFailedTimes: 1,
+	})
+	called := make(chan struct{})
+	group.onDialFailed(C.Shadowsocks, errors.New("dial failed"), func() {
+		close(called)
+	})
+
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Fatal("single failure did not trigger the configured threshold")
 	}
 }
 
