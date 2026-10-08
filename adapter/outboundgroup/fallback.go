@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync/atomic"
 	"time"
 
 	"github.com/metacubex/mihomo/common/callback"
@@ -21,6 +22,7 @@ type Fallback struct {
 	testUrl        string
 	selected       string
 	expectedStatus string
+	aliveCount     atomic.Int32
 }
 
 func (f *Fallback) Now() string {
@@ -28,13 +30,32 @@ func (f *Fallback) Now() string {
 	return proxy.Name()
 }
 
+func (f *Fallback) healthCheck() {
+	f.GroupBase.healthCheck()
+	notifyRouteChange()
+}
+
+func (f *Fallback) markProxyFailed(proxy C.Proxy, err error) {
+	if proxy == nil || errors.Is(err, C.ErrNotSupport) || errors.Is(err, context.Canceled) {
+		return
+	}
+	markProxyUnavailable(proxy, f.testUrl)
+	if f.selected == proxy.Name() {
+		f.selected = ""
+	}
+	notifyRouteChange()
+}
+
 // DialContext implements C.ProxyAdapter
 func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, error) {
 	proxy := f.findAliveProxy(true)
+	ctx, cancel := failoverContext(ctx, f.aliveCount.Load())
+	defer cancel()
 	c, err := proxy.DialContext(ctx, metadata)
 	if err == nil {
 		c.AppendToChains(f)
 	} else {
+		f.markProxyFailed(proxy, err)
 		f.onDialFailed(proxy.Type(), err, f.healthCheck)
 	}
 
@@ -43,6 +64,7 @@ func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Con
 			if err == nil {
 				f.onDialSuccess()
 			} else {
+				f.markProxyFailed(proxy, err)
 				f.onDialFailed(proxy.Type(), err, f.healthCheck)
 			}
 		})
@@ -54,9 +76,14 @@ func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Con
 // ListenPacketContext implements C.ProxyAdapter
 func (f *Fallback) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (C.PacketConn, error) {
 	proxy := f.findAliveProxy(true)
+	ctx, cancel := failoverContext(ctx, f.aliveCount.Load())
+	defer cancel()
 	pc, err := proxy.ListenPacketContext(ctx, metadata)
 	if err == nil {
 		pc.AppendToChains(f)
+	} else {
+		f.markProxyFailed(proxy, err)
+		f.onDialFailed(proxy.Type(), err, f.healthCheck)
 	}
 
 	return pc, err
@@ -104,20 +131,38 @@ func (f *Fallback) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 
 func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
 	proxies := f.GetProxies(touch)
+	if len(proxies) == 0 {
+		return nil
+	}
+
+	var selectedProxy C.Proxy
+	var firstAlive C.Proxy
+	aliveCount := int32(0)
 	for _, proxy := range proxies {
-		if len(f.selected) == 0 {
-			if proxy.AliveForTestUrl(f.testUrl) {
-				return proxy
-			}
-		} else {
-			if proxy.Name() == f.selected {
-				if proxy.AliveForTestUrl(f.testUrl) {
-					return proxy
-				} else {
-					f.selected = ""
-				}
-			}
+		if !proxy.AliveForTestUrl(f.testUrl) {
+			continue
 		}
+		aliveCount++
+		if firstAlive == nil {
+			firstAlive = proxy
+		}
+		if f.selected != "" && proxy.Name() == f.selected {
+			selectedProxy = proxy
+		}
+		if aliveCount >= 2 && (f.selected == "" || selectedProxy != nil) {
+			break
+		}
+	}
+	f.aliveCount.Store(aliveCount)
+
+	if selectedProxy != nil {
+		return selectedProxy
+	}
+	if f.selected != "" {
+		f.selected = ""
+	}
+	if firstAlive != nil {
+		return firstAlive
 	}
 
 	return proxies[0]

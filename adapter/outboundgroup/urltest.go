@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync/atomic"
 	"time"
 
 	"github.com/metacubex/mihomo/common/callback"
@@ -27,6 +28,9 @@ type URLTest struct {
 	disableUDP     bool
 	fastNode       C.Proxy
 	fastSingle     *singledo.Single[C.Proxy]
+	fastAlive      atomic.Int32
+	rotateProbe    atomic.Bool
+	probeCursor    atomic.Uint32
 }
 
 func (u *URLTest) Now() string {
@@ -53,9 +57,23 @@ func (u *URLTest) ForceSet(name string) {
 	u.fastSingle.Reset()
 }
 
+// markProxyFailed stops selecting a proxy after a failed dial. The periodic
+// health check can restore it later if the proxy becomes reachable again.
+func (u *URLTest) markProxyFailed(proxy C.Proxy, err error) {
+	if proxy == nil || errors.Is(err, C.ErrNotSupport) || errors.Is(err, context.Canceled) {
+		return
+	}
+	markProxyUnavailable(proxy, u.testUrl)
+	u.fastSingle.Reset()
+	u.rotateProbe.Store(true)
+	notifyRouteChange()
+}
+
 // DialContext implements C.ProxyAdapter
 func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Conn, err error) {
 	proxy := u.fast(true)
+	ctx, cancel := failoverContext(ctx, u.fastAlive.Load())
+	defer cancel()
 	c, err = proxy.DialContext(ctx, metadata)
 	if err == nil {
 		c.AppendToChains(u)
@@ -79,6 +97,8 @@ func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Co
 // ListenPacketContext implements C.ProxyAdapter
 func (u *URLTest) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (C.PacketConn, error) {
 	proxy := u.fast(true)
+	ctx, cancel := failoverContext(ctx, u.fastAlive.Load())
+	defer cancel()
 	pc, err := proxy.ListenPacketContext(ctx, metadata)
 	if err == nil {
 		pc.AppendToChains(u)
@@ -98,42 +118,53 @@ func (u *URLTest) healthCheck() {
 	u.fastSingle.Reset()
 	u.GroupBase.healthCheck()
 	u.fastSingle.Reset()
+	notifyRouteChange()
 }
 
 func (u *URLTest) fast(touch bool) C.Proxy {
 	elm, _, shared := u.fastSingle.Do(func() (C.Proxy, error) {
 		proxies := u.GetProxies(touch)
-		if u.selected != "" {
-			for _, proxy := range proxies {
-				if !proxy.AliveForTestUrl(u.testUrl) {
-					continue
-				}
-				if proxy.Name() == u.selected {
-					u.fastNode = proxy
-					return proxy, nil
-				}
-			}
+		if len(proxies) == 0 {
+			return u.EmptyFallback(), nil
 		}
 
-		fast := proxies[0]
-		minDelay := fast.LastDelayForTestUrl(u.testUrl)
+		var selectedProxy C.Proxy
+		var fast C.Proxy
+		var minDelay uint16
 		fastNotExist := true
+		aliveCount := int32(0)
 
-		for _, proxy := range proxies[1:] {
+		for _, proxy := range proxies {
 			if u.fastNode != nil && proxy.Name() == u.fastNode.Name() {
 				fastNotExist = false
 			}
-
 			if !proxy.AliveForTestUrl(u.testUrl) {
 				continue
 			}
-
+			aliveCount++
+			if proxy.Name() == u.selected {
+				selectedProxy = proxy
+			}
 			delay := proxy.LastDelayForTestUrl(u.testUrl)
-			if delay < minDelay {
+			if fast == nil || delay < minDelay {
 				fast = proxy
 				minDelay = delay
 			}
+		}
+		u.fastAlive.Store(aliveCount)
 
+		if selectedProxy != nil {
+			u.fastNode = selectedProxy
+			return selectedProxy, nil
+		}
+
+		if fast == nil {
+			index := 0
+			if u.rotateProbe.Swap(false) {
+				index = int(u.probeCursor.Load()) % len(proxies)
+			}
+			fast = proxies[index]
+			u.probeCursor.Store(uint32((index + 1) % len(proxies)))
 		}
 		// tolerance
 		if u.fastNode == nil || fastNotExist || !u.fastNode.AliveForTestUrl(u.testUrl) || u.fastNode.LastDelayForTestUrl(u.testUrl) > fast.LastDelayForTestUrl(u.testUrl)+u.tolerance {
@@ -147,7 +178,6 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 
 	return elm
 }
-
 // SupportUDP implements C.ProxyAdapter
 func (u *URLTest) SupportUDP() bool {
 	if u.disableUDP {

@@ -118,6 +118,13 @@ func jumpHash(key uint64, buckets int32) int32 {
 	return int32(b)
 }
 
+func (lb *LoadBalance) markProxyFailed(proxy C.Proxy, err error) {
+	if proxy == nil || errors.Is(err, C.ErrNotSupport) || errors.Is(err, context.Canceled) {
+		return
+	}
+	markProxyUnavailable(proxy, lb.testUrl)
+}
+
 // DialContext implements C.ProxyAdapter
 func (lb *LoadBalance) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Conn, err error) {
 	proxy := lb.Unwrap(metadata, true)
@@ -126,6 +133,7 @@ func (lb *LoadBalance) DialContext(ctx context.Context, metadata *C.Metadata) (c
 	if err == nil {
 		c.AppendToChains(lb)
 	} else {
+		lb.markProxyFailed(proxy, err)
 		lb.onDialFailed(proxy.Type(), err, lb.healthCheck)
 	}
 
@@ -134,6 +142,7 @@ func (lb *LoadBalance) DialContext(ctx context.Context, metadata *C.Metadata) (c
 			if err == nil {
 				lb.onDialSuccess()
 			} else {
+				lb.markProxyFailed(proxy, err)
 				lb.onDialFailed(proxy.Type(), err, lb.healthCheck)
 			}
 		})
@@ -144,14 +153,15 @@ func (lb *LoadBalance) DialContext(ctx context.Context, metadata *C.Metadata) (c
 
 // ListenPacketContext implements C.ProxyAdapter
 func (lb *LoadBalance) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (pc C.PacketConn, err error) {
-	defer func() {
-		if err == nil {
-			pc.AppendToChains(lb)
-		}
-	}()
-
 	proxy := lb.Unwrap(metadata, true)
-	return proxy.ListenPacketContext(ctx, metadata)
+	pc, err = proxy.ListenPacketContext(ctx, metadata)
+	if err == nil {
+		pc.AppendToChains(lb)
+	} else {
+		lb.markProxyFailed(proxy, err)
+		lb.onDialFailed(proxy.Type(), err, lb.healthCheck)
+	}
+	return pc, err
 }
 
 // SupportUDP implements C.ProxyAdapter
