@@ -180,9 +180,9 @@ func (f *Fallback) findAliveProxyState(touch bool, needAlternative bool) (C.Prox
 			if selectedName == "" || selectedProxy != nil {
 				f.rotateProbe.Store(false)
 				if selectedProxy != nil {
-					return selectedProxy, true
+					return selectedProxy, false
 				}
-				return firstAlive, true
+				return firstAlive, false
 			}
 		}
 		if aliveCount >= 2 && (selectedName == "" || selectedProxy != nil) {
