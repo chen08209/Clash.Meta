@@ -2,6 +2,7 @@ package outboundgroup
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	C "github.com/metacubex/mihomo/constant"
@@ -15,13 +16,22 @@ type aliveStateSetter interface {
 	SetAliveForTestUrl(string, bool)
 }
 
-func markProxyUnavailable(proxy C.Proxy, testURL string) {
+func shouldMarkProxyFailed(proxy C.Proxy, err error) bool {
+	return proxy != nil &&
+		!errors.Is(err, C.ErrNotSupport) &&
+		!errors.Is(err, context.Canceled)
+}
+
+func markProxyUnavailable(proxy C.Proxy, testURL string) bool {
 	if proxy == nil {
-		return
+		return false
 	}
-	if setter, ok := proxy.(aliveStateSetter); ok {
-		setter.SetAliveForTestUrl(testURL, false)
+	setter, ok := proxy.(aliveStateSetter)
+	if !ok {
+		return false
 	}
+	setter.SetAliveForTestUrl(testURL, false)
+	return true
 }
 
 func failoverContext(ctx context.Context, hasAlternative bool) (context.Context, context.CancelFunc) {

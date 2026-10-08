@@ -119,10 +119,9 @@ func jumpHash(key uint64, buckets int32) int32 {
 }
 
 func (lb *LoadBalance) markProxyFailed(proxy C.Proxy, err error) {
-	if proxy == nil || errors.Is(err, C.ErrNotSupport) || errors.Is(err, context.Canceled) {
-		return
+	if shouldMarkProxyFailed(proxy, err) {
+		markProxyUnavailable(proxy, lb.testUrl)
 	}
-	markProxyUnavailable(proxy, lb.testUrl)
 }
 
 // DialContext implements C.ProxyAdapter

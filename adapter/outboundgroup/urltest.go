@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -21,6 +22,7 @@ type URLTestOption struct {
 
 type URLTest struct {
 	*GroupBase
+	selectedMu     sync.RWMutex
 	selected       string
 	testUrl        string
 	expectedStatus string
@@ -28,7 +30,7 @@ type URLTest struct {
 	disableUDP     bool
 	fastNode       C.Proxy
 	fastSingle     *singledo.Single[C.Proxy]
-	fastAlive      atomic.Int32
+	fastAliveCount atomic.Int32
 	rotateProbe    atomic.Bool
 	probeCursor    atomic.Uint32
 }
@@ -52,18 +54,29 @@ func (u *URLTest) Set(name string) error {
 	return nil
 }
 
-func (u *URLTest) ForceSet(name string) {
+func (u *URLTest) selectedName() string {
+	u.selectedMu.RLock()
+	defer u.selectedMu.RUnlock()
+	return u.selected
+}
+
+func (u *URLTest) setSelected(name string) {
+	u.selectedMu.Lock()
 	u.selected = name
+	u.selectedMu.Unlock()
+}
+
+func (u *URLTest) ForceSet(name string) {
+	u.setSelected(name)
 	u.fastSingle.Reset()
 }
 
 // markProxyFailed stops selecting a proxy after a failed dial. The periodic
 // health check can restore it later if the proxy becomes reachable again.
 func (u *URLTest) markProxyFailed(proxy C.Proxy, err error) {
-	if proxy == nil || errors.Is(err, C.ErrNotSupport) || errors.Is(err, context.Canceled) {
+	if !shouldMarkProxyFailed(proxy, err) || !markProxyUnavailable(proxy, u.testUrl) {
 		return
 	}
-	markProxyUnavailable(proxy, u.testUrl)
 	u.fastSingle.Reset()
 	u.rotateProbe.Store(true)
 	notifyRouteChange()
@@ -72,7 +85,7 @@ func (u *URLTest) markProxyFailed(proxy C.Proxy, err error) {
 // DialContext implements C.ProxyAdapter
 func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Conn, err error) {
 	proxy := u.fast(true)
-	ctx, cancel := failoverContext(ctx, u.fastAlive.Load() > 1)
+	ctx, cancel := failoverContext(ctx, u.fastAliveCount.Load() > 1)
 	defer cancel()
 	c, err = proxy.DialContext(ctx, metadata)
 	if err == nil {
@@ -97,7 +110,7 @@ func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Co
 // ListenPacketContext implements C.ProxyAdapter
 func (u *URLTest) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (C.PacketConn, error) {
 	proxy := u.fast(true)
-	ctx, cancel := failoverContext(ctx, u.fastAlive.Load() > 1)
+	ctx, cancel := failoverContext(ctx, u.fastAliveCount.Load() > 1)
 	defer cancel()
 	pc, err := proxy.ListenPacketContext(ctx, metadata)
 	if err == nil {
@@ -121,6 +134,13 @@ func (u *URLTest) healthCheck() {
 	notifyRouteChange()
 }
 
+func (u *URLTest) shouldReplaceFastNode(fast C.Proxy, fastNotExist bool) bool {
+	if u.fastNode == nil || fastNotExist || !u.fastNode.AliveForTestUrl(u.testUrl) {
+		return true
+	}
+	return u.fastNode.LastDelayForTestUrl(u.testUrl) > fast.LastDelayForTestUrl(u.testUrl)+u.tolerance
+}
+
 func (u *URLTest) fast(touch bool) C.Proxy {
 	elm, _, shared := u.fastSingle.Do(func() (C.Proxy, error) {
 		proxies := u.GetProxies(touch)
@@ -128,6 +148,7 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 			return u.EmptyFallback(), nil
 		}
 
+		selectedName := u.selectedName()
 		var selectedProxy C.Proxy
 		var fast C.Proxy
 		var minDelay uint16
@@ -142,7 +163,7 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 				continue
 			}
 			aliveCount++
-			if proxy.Name() == u.selected {
+			if proxy.Name() == selectedName {
 				selectedProxy = proxy
 			}
 			delay := proxy.LastDelayForTestUrl(u.testUrl)
@@ -151,7 +172,7 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 				minDelay = delay
 			}
 		}
-		u.fastAlive.Store(aliveCount)
+		u.fastAliveCount.Store(aliveCount)
 
 		if selectedProxy != nil {
 			u.fastNode = selectedProxy
@@ -166,8 +187,7 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 			fast = proxies[index]
 			u.probeCursor.Store(uint32((index + 1) % len(proxies)))
 		}
-		// tolerance
-		if u.fastNode == nil || fastNotExist || !u.fastNode.AliveForTestUrl(u.testUrl) || u.fastNode.LastDelayForTestUrl(u.testUrl) > fast.LastDelayForTestUrl(u.testUrl)+u.tolerance {
+		if u.shouldReplaceFastNode(fast, fastNotExist) {
 			u.fastNode = fast
 		}
 		return u.fastNode, nil
@@ -203,7 +223,7 @@ func (u *URLTest) MarshalJSON() ([]byte, error) {
 		"all":            all,
 		"testUrl":        u.testUrl,
 		"expectedStatus": u.expectedStatus,
-		"fixed":          u.selected,
+		"fixed":          u.selectedName(),
 		"hidden":         u.Hidden(),
 		"icon":           u.Icon(),
 		"emptyFallback":  u.EmptyFallback().Name(),

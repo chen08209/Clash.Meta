@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -20,6 +21,7 @@ type Fallback struct {
 	*GroupBase
 	disableUDP     bool
 	testUrl        string
+	selectedMu     sync.RWMutex
 	selected       string
 	expectedStatus string
 	hasAlternative atomic.Bool
@@ -35,14 +37,31 @@ func (f *Fallback) healthCheck() {
 	notifyRouteChange()
 }
 
-func (f *Fallback) markProxyFailed(proxy C.Proxy, err error) {
-	if proxy == nil || errors.Is(err, C.ErrNotSupport) || errors.Is(err, context.Canceled) {
-		return
-	}
-	markProxyUnavailable(proxy, f.testUrl)
-	if f.selected == proxy.Name() {
+func (f *Fallback) selectedName() string {
+	f.selectedMu.RLock()
+	defer f.selectedMu.RUnlock()
+	return f.selected
+}
+
+func (f *Fallback) setSelected(name string) {
+	f.selectedMu.Lock()
+	f.selected = name
+	f.selectedMu.Unlock()
+}
+
+func (f *Fallback) clearSelected(name string) {
+	f.selectedMu.Lock()
+	if f.selected == name {
 		f.selected = ""
 	}
+	f.selectedMu.Unlock()
+}
+
+func (f *Fallback) markProxyFailed(proxy C.Proxy, err error) {
+	if !shouldMarkProxyFailed(proxy, err) || !markProxyUnavailable(proxy, f.testUrl) {
+		return
+	}
+	f.clearSelected(proxy.Name())
 	notifyRouteChange()
 }
 
@@ -116,7 +135,7 @@ func (f *Fallback) MarshalJSON() ([]byte, error) {
 		"all":            all,
 		"testUrl":        f.testUrl,
 		"expectedStatus": f.expectedStatus,
-		"fixed":          f.selected,
+		"fixed":          f.selectedName(),
 		"hidden":         f.Hidden(),
 		"icon":           f.Icon(),
 		"emptyFallback":  f.EmptyFallback().Name(),
@@ -132,9 +151,10 @@ func (f *Fallback) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
 	proxies := f.GetProxies(touch)
 	if len(proxies) == 0 {
-		return nil
+		return f.EmptyFallback()
 	}
 
+	selectedName := f.selectedName()
 	var selectedProxy C.Proxy
 	var firstAlive C.Proxy
 	aliveCount := int32(0)
@@ -146,10 +166,10 @@ func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
 		if firstAlive == nil {
 			firstAlive = proxy
 		}
-		if f.selected != "" && proxy.Name() == f.selected {
+		if selectedName != "" && proxy.Name() == selectedName {
 			selectedProxy = proxy
 		}
-		if aliveCount >= 2 && (f.selected == "" || selectedProxy != nil) {
+		if aliveCount >= 2 && (selectedName == "" || selectedProxy != nil) {
 			break
 		}
 	}
@@ -158,8 +178,8 @@ func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
 	if selectedProxy != nil {
 		return selectedProxy
 	}
-	if f.selected != "" {
-		f.selected = ""
+	if selectedName != "" {
+		f.clearSelected(selectedName)
 	}
 	if firstAlive != nil {
 		return firstAlive
@@ -181,7 +201,7 @@ func (f *Fallback) Set(name string) error {
 		return errors.New("proxy not exist")
 	}
 
-	f.selected = name
+	f.setSelected(name)
 	if !p.AliveForTestUrl(f.testUrl) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(5000))
 		defer cancel()
@@ -193,7 +213,7 @@ func (f *Fallback) Set(name string) error {
 }
 
 func (f *Fallback) ForceSet(name string) {
-	f.selected = name
+	f.setSelected(name)
 }
 
 func (f *Fallback) Providers() []P.ProxyProvider {
