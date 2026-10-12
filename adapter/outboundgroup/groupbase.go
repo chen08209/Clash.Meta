@@ -34,6 +34,7 @@ type GroupBase struct {
 	testTimeout       int
 	maxFailedTimes    int
 	emptyFallback     C.Proxy
+	usePosition       map[string]int
 
 	// for GetProxies
 	getProxiesMutex  sync.Mutex
@@ -53,6 +54,7 @@ type GroupBaseOption struct {
 	MaxFailedTimes int
 	EmptyFallback  C.Proxy
 	Providers      []P.ProxyProvider
+	UsePosition    map[string]int
 }
 
 func NewGroupBase(opt GroupBaseOption) *GroupBase {
@@ -89,6 +91,7 @@ func NewGroupBase(opt GroupBaseOption) *GroupBase {
 		testTimeout:       opt.TestTimeout,
 		maxFailedTimes:    opt.MaxFailedTimes,
 		emptyFallback:     opt.EmptyFallback,
+		usePosition:       opt.UsePosition,
 	}
 
 	if gb.testTimeout == 0 {
@@ -137,15 +140,15 @@ func (gb *GroupBase) GetProxies(touch bool) []C.Proxy {
 		return gb.providerProxies
 	}
 
-	var proxies []C.Proxy
+	parts := make([][]C.Proxy, len(gb.providers))
 	if len(gb.filterRegs) == 0 {
-		for _, pd := range gb.providers {
-			proxies = append(proxies, pd.Proxies()...)
+		for i, pd := range gb.providers {
+			parts[i] = pd.Proxies()
 		}
 	} else {
-		for _, pd := range gb.providers {
+		for i, pd := range gb.providers {
 			if pd.VehicleType() == P.Compatible { // compatible provider unneeded filter
-				proxies = append(proxies, pd.Proxies()...)
+				parts[i] = pd.Proxies()
 				continue
 			}
 
@@ -162,9 +165,10 @@ func (gb *GroupBase) GetProxies(touch bool) []C.Proxy {
 					}
 				}
 			}
-			proxies = append(proxies, newProxies...)
+			parts[i] = newProxies
 		}
 	}
+	proxies := gb.joinProviderProxies(parts)
 
 	// Multiple filers means that proxies are sorted in the order in which the filers appear.
 	// Although the filter has been performed once in the previous process,

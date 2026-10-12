@@ -319,6 +319,7 @@ func NewLoadBalance(option GroupCommonOption, loadBalanceOption LoadBalanceOptio
 			MaxFailedTimes: option.MaxFailedTimes,
 			EmptyFallback:  emptyFallback,
 			Providers:      providers,
+			UsePosition:    option.UsePosition,
 		}),
 		strategyFn:     strategyFn,
 		disableUDP:     option.DisableUDP,
