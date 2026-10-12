@@ -173,6 +173,7 @@ func NewFallback(option GroupCommonOption, fallbackOption FallbackOption, emptyF
 			MaxFailedTimes: option.MaxFailedTimes,
 			EmptyFallback:  emptyFallback,
 			Providers:      providers,
+			UsePosition:    option.UsePosition,
 		}),
 		disableUDP:     option.DisableUDP,
 		testUrl:        option.URL,
