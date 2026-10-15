@@ -502,6 +502,47 @@ func TestURLTestRechecksProxyItBenched(t *testing.T) {
 	require.Eventually(t, func() bool { return benched.AliveForTestUrl(testServerURL) }, 3*time.Second, 10*time.Millisecond)
 }
 
+func TestRecoveryProbesAreScopedToProxyIdentity(t *testing.T) {
+	shrinkFailoverRecoveryDelay(t)
+	testServerURL := recoveryTestServer(t)
+	first := recoveringFailoverProxy("same-name")
+	second := recoveringFailoverProxy("same-name")
+	firstRecovered := make(chan struct{}, 1)
+	secondRecovered := make(chan struct{}, 1)
+
+	scheduleFailedProxyProbe(
+		first,
+		testServerURL,
+		nil,
+		time.Second,
+		func() { firstRecovered <- struct{}{} },
+	)
+	scheduleFailedProxyProbe(
+		second,
+		testServerURL,
+		nil,
+		time.Second,
+		func() { secondRecovered <- struct{}{} },
+	)
+
+	require.Eventually(t, func() bool {
+		select {
+		case <-firstRecovered:
+			return true
+		default:
+			return false
+		}
+	}, 3*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool {
+		select {
+		case <-secondRecovered:
+			return true
+		default:
+			return false
+		}
+	}, 3*time.Second, 10*time.Millisecond)
+}
+
 func TestFallbackRechecksProxyItBenched(t *testing.T) {
 	shrinkFailoverRecoveryDelay(t)
 	testServerURL := recoveryTestServer(t)

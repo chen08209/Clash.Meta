@@ -77,6 +77,11 @@ var fastFailoverRecoveryDelay = 10 * time.Second
 
 var failoverRecoveryProbes sync.Map
 
+type failoverRecoveryKey struct {
+	proxy   C.Proxy
+	testURL string
+}
+
 // scheduleFailedProxyProbe re-tests a proxy this process marked unavailable,
 // so it can return to rotation before the next periodic health check.
 // Concurrent failures of one proxy and URL share a single probe; a probe
@@ -91,7 +96,7 @@ func scheduleFailedProxyProbe(
 	if proxy == nil || testURL == "" {
 		return
 	}
-	key := proxy.Name() + "\x00" + testURL
+	key := failoverRecoveryKey{proxy: proxy, testURL: testURL}
 	if _, loaded := failoverRecoveryProbes.LoadOrStore(key, struct{}{}); loaded {
 		return
 	}
