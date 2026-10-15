@@ -103,6 +103,31 @@ func TestLoadBalanceMarksFailedProxyDown(t *testing.T) {
 	require.Equal(t, healthy.Name(), group.Unwrap(nil, false).Name())
 }
 
+func TestURLTestMarksFailedProxyDownAndSelectsHealthy(t *testing.T) {
+	failing := failoverProxy("failing")
+	healthy := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "healthy"}))
+	proxies := []C.Proxy{failing, healthy}
+	emptyFallback := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "COMPATIBLE"}))
+
+	group, err := NewURLTest(
+		GroupCommonOption{Name: "auto", URL: testUrl, TestTimeout: 1000},
+		URLTestOption{},
+		emptyFallback,
+		[]P.ProxyProvider{failoverProvider(t, proxies)},
+	)
+	require.NoError(t, err)
+
+	group.ForceSet(failing.Name())
+	_, err = group.DialContext(context.Background(), &C.Metadata{
+		NetWork: C.TCP,
+		Host:    "example.com",
+		DstPort: 80,
+	})
+	require.Error(t, err)
+	require.False(t, failing.AliveForTestUrl(testUrl))
+	require.Equal(t, healthy.Name(), group.Now())
+}
+
 func TestURLTestFailureForOneURLKeepsOtherURLsAlive(t *testing.T) {
 	proxy := failoverProxy("failing")
 
