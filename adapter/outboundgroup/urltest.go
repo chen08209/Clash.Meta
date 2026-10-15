@@ -33,6 +33,8 @@ type URLTest struct {
 	fastHasAlternative atomic.Bool
 	rotateProbe        atomic.Bool
 	probeCursor        atomic.Uint32
+	versionsMu         sync.Mutex
+	knownVersions      []uint32
 }
 
 func (u *URLTest) Now() string {
@@ -110,6 +112,7 @@ func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Co
 	if err == nil {
 		c.AppendToChains(u)
 	} else {
+		u.markProxyFailed(proxy, err)
 		u.onDialFailed(proxy.Type(), err, u.healthCheck)
 	}
 
@@ -118,6 +121,7 @@ func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Co
 			if err == nil {
 				u.onDialSuccess()
 			} else {
+				u.markProxyFailed(proxy, err)
 				u.onDialFailed(proxy.Type(), err, u.healthCheck)
 			}
 		})
@@ -135,6 +139,7 @@ func (u *URLTest) ListenPacketContext(ctx context.Context, metadata *C.Metadata)
 	if err == nil {
 		pc.AppendToChains(u)
 	} else {
+		u.markProxyFailed(proxy, err)
 		u.onDialFailed(proxy.Type(), err, u.healthCheck)
 	}
 
@@ -157,10 +162,15 @@ func (u *URLTest) shouldReplaceFastNode(fast C.Proxy, fastNotExist bool) bool {
 	if u.fastNode == nil || fastNotExist || !u.fastNode.AliveForTestUrl(u.testUrl) {
 		return true
 	}
-	return u.fastNode.LastDelayForTestUrl(u.testUrl) > fast.LastDelayForTestUrl(u.testUrl)+u.tolerance
+	return improvesOnCachedDelay(
+		u.fastNode.LastDelayForTestUrl(u.testUrl),
+		fast.LastDelayForTestUrl(u.testUrl),
+		u.tolerance,
+	)
 }
 
 func (u *URLTest) fast(touch bool) C.Proxy {
+	u.dropCacheForProviderSwap()
 	elm, _, shared := u.fastSingle.Do(func() (C.Proxy, error) {
 		proxies := u.GetProxies(touch)
 		if len(proxies) == 0 {
@@ -223,6 +233,19 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 	}
 
 	return elm
+}
+
+// dropCacheForProviderSwap forgets the cached fast node when a provider has
+// replaced its list underneath it: the cached node may no longer be a member,
+// and its delay says nothing about the members that took its place.
+func (u *URLTest) dropCacheForProviderSwap() {
+	u.versionsMu.Lock()
+	defer u.versionsMu.Unlock()
+	if u.providerVersionsEqual(u.knownVersions) {
+		return
+	}
+	u.knownVersions = u.providerVersionsNow()
+	u.fastSingle.Reset()
 }
 // SupportUDP implements C.ProxyAdapter
 func (u *URLTest) SupportUDP() bool {

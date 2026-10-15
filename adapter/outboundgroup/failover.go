@@ -15,6 +15,10 @@ import (
 // another alive member gets a chance.
 const fastFailoverAttemptTimeout = 2 * time.Second
 
+// LastDelayForTestUrl answers with the maximum delay when a proxy has no
+// successful measurement, or is not alive.
+const unknownDelay = ^uint16(0)
+
 type aliveStateSetter interface {
 	SetAliveForTestUrl(string, bool)
 }
@@ -24,7 +28,9 @@ type aliveStateSetter interface {
 // destination, not a node.
 func dialFailureMarksNode(adapterType C.AdapterType) bool {
 	switch adapterType {
-	case C.Direct, C.Compatible, C.Reject, C.Pass, C.RejectDrop:
+	case C.Direct, C.Reject, C.RejectDrop, C.Compatible, C.Pass, C.PassRule,
+		C.Rematch, C.Dns, C.Relay, C.Selector, C.Fallback, C.URLTest,
+		C.LoadBalance:
 		return false
 	}
 	return true
@@ -47,6 +53,21 @@ func markProxyUnavailable(proxy C.Proxy, testURL string) bool {
 	}
 	setter.SetAliveForTestUrl(testURL, false)
 	return true
+}
+
+// improvesOnCachedDelay reports whether a candidate the group just measured
+// should take the fast node over from the cached one. A candidate with no
+// measurement cannot beat a measured node, and the tolerance sum is taken in
+// int: adding it to the maximum delay wraps around uint16 and would read as the
+// fastest possible result.
+func improvesOnCachedDelay(cachedDelay, candidateDelay, tolerance uint16) bool {
+	if candidateDelay == unknownDelay {
+		return false
+	}
+	if cachedDelay == unknownDelay {
+		return true
+	}
+	return int(cachedDelay) > int(candidateDelay)+int(tolerance)
 }
 
 // A node benched by a local dial failure is only re-tested by the periodic

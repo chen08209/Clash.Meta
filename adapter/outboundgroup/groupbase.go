@@ -239,6 +239,32 @@ func (gb *GroupBase) GetProxies(touch bool) []C.Proxy {
 	return proxies
 }
 
+// providerVersionsNow reads the versions a pick is about to be resolved from,
+// so a group that caches the pick can tell whether its providers have since
+// replaced the list underneath it.
+func (gb *GroupBase) providerVersionsNow() []uint32 {
+	versions := make([]uint32, len(gb.providers))
+	for i, pd := range gb.providers {
+		versions[i] = pd.Version()
+	}
+	return versions
+}
+
+// providerVersionsEqual reports whether the providers still carry [versions].
+// A provider that swapped its list bumps its version, which is how a cached
+// answer learns that the proxy it names may no longer be a member.
+func (gb *GroupBase) providerVersionsEqual(versions []uint32) bool {
+	if len(versions) != len(gb.providers) {
+		return false
+	}
+	for i, pd := range gb.providers {
+		if pd.Version() != versions[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func (gb *GroupBase) URLTest(ctx context.Context, url string, expectedStatus utils.IntRanges[uint16]) (map[string]uint16, error) {
 	var wg sync.WaitGroup
 	var lock sync.Mutex

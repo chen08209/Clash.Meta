@@ -5,17 +5,64 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/metacubex/mihomo/adapter"
 	"github.com/metacubex/mihomo/adapter/outbound"
 	"github.com/metacubex/mihomo/adapter/provider"
+	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
 
 	"github.com/stretchr/testify/require"
 )
+
+// swapProvider replaces its list the way a provider reload does: a new list
+// under the same name and a bumped version.
+type swapProvider struct {
+	mu      sync.Mutex
+	name    string
+	proxies []C.Proxy
+	version uint32
+}
+
+func newSwapProvider(name string, proxies []C.Proxy) *swapProvider {
+	return &swapProvider{name: name, proxies: proxies, version: 1}
+}
+
+func (p *swapProvider) Name() string               { return p.name }
+func (p *swapProvider) VehicleType() P.VehicleType { return P.HTTP }
+func (p *swapProvider) Type() P.ProviderType       { return P.Proxy }
+func (p *swapProvider) Initial() error             { return nil }
+func (p *swapProvider) Update() error              { return nil }
+func (p *swapProvider) Touch()                     {}
+func (p *swapProvider) HealthCheck()               {}
+func (p *swapProvider) HealthCheckURL() string     { return "" }
+func (p *swapProvider) Count() int                 { return len(p.Proxies()) }
+
+func (p *swapProvider) Proxies() []C.Proxy {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.proxies
+}
+
+func (p *swapProvider) Version() uint32 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.version
+}
+
+func (p *swapProvider) RegisterHealthCheckTask(string, utils.IntRanges[uint16], string, uint) {
+}
+
+func (p *swapProvider) swap(proxies []C.Proxy) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.proxies = proxies
+	p.version++
+}
 
 type recordingDeadlineProxy struct {
 	*outbound.Base
@@ -52,6 +99,44 @@ func failoverProvider(t *testing.T, proxies []C.Proxy) P.ProxyProvider {
 	pd, err := provider.NewCompatibleProvider("test-provider", proxies, health)
 	require.NoError(t, err)
 	return pd
+}
+
+func TestFallbackFollowsAProviderSwapInsteadOfACachedPick(t *testing.T) {
+	first := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "first"}))
+	second := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "second"}))
+	emptyFallback := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "COMPATIBLE"}))
+	pd := newSwapProvider("swap", []C.Proxy{first})
+
+	group, err := NewFallback(
+		GroupCommonOption{Name: "fallback", URL: testUrl, TestTimeout: 1000},
+		FallbackOption{},
+		emptyFallback,
+		[]P.ProxyProvider{pd},
+	)
+	require.NoError(t, err)
+
+	require.Equal(t, first.Name(), group.Now())
+	pd.swap([]C.Proxy{second})
+	require.Equal(t, second.Name(), group.Now())
+}
+
+func TestURLTestFollowsAProviderSwapInsteadOfACachedPick(t *testing.T) {
+	first := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "first"}))
+	second := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "second"}))
+	emptyFallback := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "COMPATIBLE"}))
+	pd := newSwapProvider("swap", []C.Proxy{first})
+
+	group, err := NewURLTest(
+		GroupCommonOption{Name: "url-test", URL: testUrl, TestTimeout: 1000},
+		URLTestOption{},
+		emptyFallback,
+		[]P.ProxyProvider{pd},
+	)
+	require.NoError(t, err)
+
+	require.Equal(t, first.Name(), group.Now())
+	pd.swap([]C.Proxy{second})
+	require.Equal(t, second.Name(), group.Now())
 }
 
 func TestFallbackMarksFailedProxyDownAndSelectsHealthy(t *testing.T) {
@@ -473,6 +558,93 @@ func TestDirectMemberFailureIsNotBenched(t *testing.T) {
 
 	group.markProxyFailed(direct, errors.New("dial failed"))
 	require.True(t, direct.AliveForTestUrl(testUrl))
+}
+
+func TestNestedGroupFailureIsNotBenchedByItsParent(t *testing.T) {
+	nestedNode := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "nested-node"}))
+	healthy := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "healthy"}))
+	nestedEmptyFallback := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "NESTED-COMPATIBLE"}))
+	nested, err := NewURLTest(
+		GroupCommonOption{Name: "nested", URL: testUrl, TestTimeout: 1000},
+		URLTestOption{},
+		nestedEmptyFallback,
+		[]P.ProxyProvider{failoverProvider(t, []C.Proxy{nestedNode})},
+	)
+	require.NoError(t, err)
+	nestedProxy := adapter.NewProxy(nested)
+
+	emptyFallback := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "COMPATIBLE"}))
+	group, err := NewURLTest(
+		GroupCommonOption{Name: "auto", URL: testUrl, TestTimeout: 1000},
+		URLTestOption{},
+		emptyFallback,
+		[]P.ProxyProvider{failoverProvider(t, []C.Proxy{nestedProxy, healthy})},
+	)
+	require.NoError(t, err)
+
+	group.markProxyFailed(nestedProxy, errors.New("dial failed"))
+	require.True(t, nestedProxy.AliveForTestUrl(testUrl))
+}
+
+func TestAFastNodeOnlyLosesToAMeasuredCandidate(t *testing.T) {
+	tests := []struct {
+		name                              string
+		cachedDelay, candidate, tolerance uint16
+		want                              bool
+	}{
+		{
+			name:        "an unmeasured candidate never takes over",
+			cachedDelay: 120,
+			candidate:   unknownDelay,
+			tolerance:   50,
+			want:        false,
+		},
+		{
+			name:        "a measured candidate replaces an unmeasured node",
+			cachedDelay: unknownDelay,
+			candidate:   120,
+			tolerance:   50,
+			want:        true,
+		},
+		{
+			name:        "two unmeasured nodes keep the cached one",
+			cachedDelay: unknownDelay,
+			candidate:   unknownDelay,
+			tolerance:   50,
+			want:        false,
+		},
+		{
+			name:        "a candidate inside the tolerance stays out",
+			cachedDelay: 100,
+			candidate:   80,
+			tolerance:   50,
+			want:        false,
+		},
+		{
+			name:        "a candidate past the tolerance takes over",
+			cachedDelay: 200,
+			candidate:   100,
+			tolerance:   50,
+			want:        true,
+		},
+		{
+			name:        "a slow candidate cannot win by wrapping the sum",
+			cachedDelay: 300,
+			candidate:   0xffe0,
+			tolerance:   0x30,
+			want:        false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, improvesOnCachedDelay(
+				tt.cachedDelay,
+				tt.candidate,
+				tt.tolerance,
+			))
+		})
+	}
 }
 
 func TestFallbackSelectionChangeDropsTheCachedResolution(t *testing.T) {

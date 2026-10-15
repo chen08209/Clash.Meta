@@ -21,6 +21,7 @@ type fallbackSelection struct {
 	proxy          C.Proxy
 	hasAlternative bool
 	at             time.Time
+	versions       []uint32
 }
 
 // A resolved pick is reused briefly like URLTest fast node, so a large
@@ -194,15 +195,23 @@ func (f *Fallback) cachedSelection() (fallbackSelection, bool) {
 	if selection == nil || time.Since(selection.at) >= fallbackSelectionTTL {
 		return fallbackSelection{}, false
 	}
+	if !f.providerVersionsEqual(selection.versions) {
+		return fallbackSelection{}, false
+	}
 	return *selection, true
 }
 
-func (f *Fallback) storeSelection(proxy C.Proxy, hasAlternative bool) {
+func (f *Fallback) storeSelection(
+	proxy C.Proxy,
+	hasAlternative bool,
+	versions []uint32,
+) {
 	f.selectionMu.Lock()
 	f.selection = &fallbackSelection{
 		proxy:          proxy,
 		hasAlternative: hasAlternative,
 		at:             time.Now(),
+		versions:       versions,
 	}
 	f.selectionMu.Unlock()
 }
@@ -219,9 +228,12 @@ func (f *Fallback) findAliveProxyState(touch bool) (C.Proxy, bool) {
 		}
 		return selection.proxy, selection.hasAlternative
 	}
+	// Read the versions before resolving: a swap that lands mid-resolve leaves
+	// versions a later check will not match, which only drops the cache again.
+	versions := f.providerVersionsNow()
 	proxy, hasAlternative := f.resolveAliveProxyState(touch)
 	if proxy != f.EmptyFallback() && proxy.AliveForTestUrl(f.testUrl) {
-		f.storeSelection(proxy, hasAlternative)
+		f.storeSelection(proxy, hasAlternative, versions)
 	}
 	return proxy, hasAlternative
 }
