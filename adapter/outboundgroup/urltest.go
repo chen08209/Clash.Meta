@@ -28,6 +28,7 @@ type URLTest struct {
 	expectedStatus     string
 	tolerance          uint16
 	disableUDP         bool
+	fastMu             sync.Mutex
 	fastNode           C.Proxy
 	fastSingle         *singledo.Single[C.Proxy]
 	fastHasAlternative atomic.Bool
@@ -70,7 +71,7 @@ func (u *URLTest) setSelected(name string) {
 
 func (u *URLTest) ForceSet(name string) {
 	u.setSelected(name)
-	u.fastSingle.Reset()
+	u.resetFastNode()
 }
 
 // markProxyFailed stops selecting a proxy after a failed dial, then lets the
@@ -80,7 +81,7 @@ func (u *URLTest) markProxyFailed(proxy C.Proxy, err error) {
 	if !shouldMarkProxyFailed(proxy, err) || !markProxyUnavailable(proxy, u.testUrl) {
 		return
 	}
-	u.fastSingle.Reset()
+	u.resetFastNode()
 	u.rotateProbe.Store(true)
 	notifyRouteChange()
 	u.scheduleRecoveryProbe(proxy)
@@ -97,7 +98,7 @@ func (u *URLTest) scheduleRecoveryProbe(proxy C.Proxy) {
 		expectedStatus,
 		time.Duration(u.testTimeout)*time.Millisecond,
 		func() {
-			u.fastSingle.Reset()
+			u.resetFastNode()
 			notifyRouteChange()
 		},
 	)
@@ -152,9 +153,8 @@ func (u *URLTest) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 }
 
 func (u *URLTest) healthCheck() {
-	u.fastSingle.Reset()
 	u.GroupBase.healthCheck()
-	u.fastSingle.Reset()
+	u.resetFastNode()
 	notifyRouteChange()
 }
 
@@ -172,6 +172,8 @@ func (u *URLTest) shouldReplaceFastNode(fast C.Proxy, fastNotExist bool) bool {
 func (u *URLTest) fast(touch bool) C.Proxy {
 	u.dropCacheForProviderSwap()
 	elm, _, shared := u.fastSingle.Do(func() (C.Proxy, error) {
+		u.fastMu.Lock()
+		defer u.fastMu.Unlock()
 		proxies := u.GetProxies(touch)
 		if len(proxies) == 0 {
 			u.fastHasAlternative.Store(false)
@@ -186,7 +188,7 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 		aliveCount := int32(0)
 
 		for _, proxy := range proxies {
-			if u.fastNode != nil && proxy.Name() == u.fastNode.Name() {
+			if u.fastNode != nil && proxy == u.fastNode {
 				fastNotExist = false
 			}
 			if !proxy.AliveForTestUrl(u.testUrl) {
@@ -245,6 +247,13 @@ func (u *URLTest) dropCacheForProviderSwap() {
 		return
 	}
 	u.knownVersions = u.providerVersionsNow()
+	u.resetFastNode()
+}
+
+func (u *URLTest) resetFastNode() {
+	u.fastMu.Lock()
+	defer u.fastMu.Unlock()
+	u.fastNode = nil
 	u.fastSingle.Reset()
 }
 // SupportUDP implements C.ProxyAdapter

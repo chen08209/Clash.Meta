@@ -97,6 +97,17 @@ func TestLoadBalanceHashKeyInUserSeparatesJobsSharingASourceAddress(t *testing.T
 		"without a supplied key the two jobs are one session")
 }
 
+func TestStickySessionsFallsBackToAnAliveProxy(t *testing.T) {
+	proxies := balancedProxies(2)
+	proxies[0].SetAliveForTestUrl(testUrl, false)
+	strategy := strategyStickySessions(testUrl, getKeyWithSrcAndDst)
+	metadata := request("job-1", "a.example.com")
+
+	for i := 0; i < 100; i++ {
+		require.Same(t, proxies[1], strategy(proxies, metadata, true))
+	}
+}
+
 // An unauthenticated request keeps the strategy's own key. Returning a constant
 // instead would herd every anonymous request onto one member.
 func TestLoadBalanceHashKeyInUserFallsBackWhenUnauthenticated(t *testing.T) {

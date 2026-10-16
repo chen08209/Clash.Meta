@@ -32,6 +32,7 @@ type LoadBalance struct {
 	testUrl        string
 	expectedStatus string
 	probeCursor    atomic.Uint32
+	hasAlternative atomic.Bool
 }
 
 type strategyFn = func(proxies []C.Proxy, metadata *C.Metadata, touch bool) C.Proxy
@@ -144,6 +145,8 @@ func (lb *LoadBalance) scheduleRecoveryProbe(proxy C.Proxy) {
 // DialContext implements C.ProxyAdapter
 func (lb *LoadBalance) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Conn, err error) {
 	proxy := lb.Unwrap(metadata, true)
+	ctx, cancel := failoverContext(ctx, lb.hasAlternative.Load())
+	defer cancel()
 	c, err = proxy.DialContext(ctx, metadata)
 
 	if err == nil {
@@ -170,6 +173,8 @@ func (lb *LoadBalance) DialContext(ctx context.Context, metadata *C.Metadata) (c
 // ListenPacketContext implements C.ProxyAdapter
 func (lb *LoadBalance) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (pc C.PacketConn, err error) {
 	proxy := lb.Unwrap(metadata, true)
+	ctx, cancel := failoverContext(ctx, lb.hasAlternative.Load())
+	defer cancel()
 	pc, err = proxy.ListenPacketContext(ctx, metadata)
 	if err == nil {
 		pc.AppendToChains(lb)
@@ -271,6 +276,13 @@ func strategyStickySessions(url string, keyOf keyFn) strategyFn {
 			}
 		}
 
+		for index, proxy := range proxies {
+			if proxy.AliveForTestUrl(url) {
+				lruCache.Set(key, index)
+				return proxy
+			}
+		}
+
 		lruCache.Set(key, 0)
 		return proxies[0]
 	}
@@ -279,6 +291,16 @@ func strategyStickySessions(url string, keyOf keyFn) strategyFn {
 // Unwrap implements C.ProxyAdapter
 func (lb *LoadBalance) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 	proxies := lb.GetProxies(touch)
+	aliveCount := 0
+	for _, proxy := range proxies {
+		if proxy.AliveForTestUrl(lb.testUrl) {
+			aliveCount++
+			if aliveCount > 1 {
+				break
+			}
+		}
+	}
+	lb.hasAlternative.Store(aliveCount > 1)
 	proxy := lb.strategyFn(proxies, metadata, touch)
 	if proxy == nil || proxy.AliveForTestUrl(lb.testUrl) || len(proxies) == 0 {
 		return proxy

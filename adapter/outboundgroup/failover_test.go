@@ -139,6 +139,25 @@ func TestURLTestFollowsAProviderSwapInsteadOfACachedPick(t *testing.T) {
 	require.Equal(t, second.Name(), group.Now())
 }
 
+func TestURLTestReplacesASameNameProviderNode(t *testing.T) {
+	first := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "same"}))
+	second := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "same"}))
+	emptyFallback := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "COMPATIBLE"}))
+	pd := newSwapProvider("swap", []C.Proxy{first})
+
+	group, err := NewURLTest(
+		GroupCommonOption{Name: "url-test", URL: testUrl, TestTimeout: 1000},
+		URLTestOption{},
+		emptyFallback,
+		[]P.ProxyProvider{pd},
+	)
+	require.NoError(t, err)
+
+	require.Same(t, first, group.fast(true))
+	pd.swap([]C.Proxy{second})
+	require.Same(t, second, group.fast(true))
+}
+
 func TestFallbackMarksFailedProxyDownAndSelectsHealthy(t *testing.T) {
 	failing := failoverProxy("failing")
 	healthy := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "healthy"}))
