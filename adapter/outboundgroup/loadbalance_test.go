@@ -99,7 +99,7 @@ func TestLoadBalanceHashKeyInUserSeparatesJobsSharingASourceAddress(t *testing.T
 
 func TestStickySessionsFallsBackToAnAliveProxy(t *testing.T) {
 	proxies := balancedProxies(2)
-	proxies[0].SetAliveForTestUrl(testUrl, false)
+	proxies[0].(aliveStateSetter).SetAliveForTestUrl(testUrl, false)
 	strategy := strategyStickySessions(testUrl, getKeyWithSrcAndDst)
 	metadata := request("job-1", "a.example.com")
 
