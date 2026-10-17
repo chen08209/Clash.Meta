@@ -352,6 +352,24 @@
 - [x] Benchmark the argument construction with `benchstat`.
 - [x] Run `go test ./component/sniffer -count=1`, `go test -race`, and the full suite.
 
+### Task 22: Fail Fast On Refused Dials
+
+**Files:**
+- Modify: `tunnel/tunnel.go`
+- Create: `component/dialer/dialerror.go`
+- Test: `tunnel/retry_test.go`, `component/dialer/dialerror_test.go`
+- Modify: `adapter/outboundgroup/groupbase.go`
+
+**Interfaces:**
+- Produces: `dialer.IsConnectionRefused`.
+- Preserves: retry behaviour for timeouts and every other error class; group dead-node marking.
+
+- [x] Extract the refused-dial test from `GroupBase` into the dialer package.
+- [x] Stop the dial retry loop on a refused connection.
+- [x] Test classification, the single-attempt connection path, and the Windows message fallback.
+- [x] Benchmark the refused-dial connection path.
+- [x] Run `go test ./tunnel ./adapter/outboundgroup ./component/dialer -count=1`, `-race`, and the full suite.
+
 ### Task 14: Reusable UDP Write-Back Address (rejected)
 
 Investigated and dropped: `listener/inner/udp.go` enqueues the `net.Addr` into a channel and hands the

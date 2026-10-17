@@ -15,6 +15,7 @@ import (
 	"github.com/metacubex/mihomo/common/maphash"
 	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/common/utils"
+	"github.com/metacubex/mihomo/component/dialer"
 	"github.com/metacubex/mihomo/component/loopback"
 	"github.com/metacubex/mihomo/component/nat"
 	"github.com/metacubex/mihomo/component/process"
@@ -734,6 +735,11 @@ func shouldStopRetry(err error) bool {
 		return true
 	}
 	if errors.Is(err, loopback.ErrReject) {
+		return true
+	}
+	// A refused destination will not start listening inside the retry budget,
+	// so waiting seconds for it stalls every request on that route.
+	if dialer.IsConnectionRefused(err) {
 		return true
 	}
 	return false
