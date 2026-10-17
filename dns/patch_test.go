@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/metacubex/mihomo/component/resolver"
+	"github.com/metacubex/mihomo/component/trie"
 	icontext "github.com/metacubex/mihomo/context"
 
 	D "github.com/miekg/dns"
@@ -230,5 +231,81 @@ func TestAnswersThatSkipTheResolverAreNotRecorded(t *testing.T) {
 
 	if got := records(); len(got) != 0 {
 		t.Fatalf("records = %+v", got)
+	}
+}
+
+func useDefaultResolver(t *testing.T, rs Resolvers) {
+	t.Helper()
+	previous := resolver.DefaultResolver
+	resolver.DefaultResolver = rs
+	t.Cleanup(func() { resolver.DefaultResolver = previous })
+}
+
+func TestClearAllDropsEveryCachedAnswer(t *testing.T) {
+	bootstrap := newAnsweringResolver("udp://192.0.2.53:53")
+	main := newAnsweringResolver("https://dns.example/dns-query")
+	main.defaultResolver = bootstrap
+	proxy := newAnsweringResolver("tls://192.0.2.1:853")
+	useDefaultResolver(t, Resolvers{Resolver: main, ProxyResolver: proxy})
+	for _, r := range []*Resolver{bootstrap, main, proxy} {
+		if _, err := r.LookupIPv4(context.Background(), "cached.example"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ClearAll()
+
+	question := D.Question{Name: "cached.example.", Qtype: D.TypeA, Qclass: D.ClassINET}
+	for name, r := range map[string]*Resolver{"default-nameserver": bootstrap, "main": main, "proxy": proxy} {
+		if _, _, hit := getMsgFromCache(r.cache, question); hit {
+			t.Errorf("the %s answer outlived ClearAll", name)
+		}
+	}
+}
+
+type resetCountingClient struct {
+	address string
+	resets  int
+}
+
+func (c *resetCountingClient) ExchangeContext(context.Context, *D.Msg) (*D.Msg, error) {
+	return nil, errors.New("not exchanged in this test")
+}
+
+func (c *resetCountingClient) Address() string { return c.address }
+
+func (c *resetCountingClient) ResetConnection() { c.resets++ }
+
+func TestClearAllResetsEachClientOnce(t *testing.T) {
+	shared := &resetCountingClient{address: "https://shared.example/dns-query"}
+	policyOnly := &resetCountingClient{address: "https://policy.example/dns-query"}
+	bootstrapOnly := &resetCountingClient{address: "udp://192.0.2.53:53"}
+	domains := trie.New[[]dnsClient]()
+	for _, domain := range []string{"a.example", "b.example"} {
+		if err := domains.Insert(domain, []dnsClient{shared, policyOnly}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	domains.Optimize()
+	system := newSystemClient()
+	system.lastFlush = time.Now()
+	useDefaultResolver(t, Resolvers{Resolver: &Resolver{
+		main:            []dnsClient{shared, system},
+		defaultResolver: &Resolver{main: []dnsClient{bootstrapOnly}},
+		policy: []dnsPolicy{
+			domainTriePolicy{domains},
+			domainMatcherPolicy{dnsClients: []dnsClient{clientWithDisableTypes{dnsClient: policyOnly}}},
+		},
+	}})
+
+	ClearAll()
+
+	for name, c := range map[string]*resetCountingClient{"shared": shared, "policy-only": policyOnly, "default-nameserver": bootstrapOnly} {
+		if c.resets != 1 {
+			t.Errorf("%s client reset %d times, want 1", name, c.resets)
+		}
+	}
+	if !system.lastFlush.IsZero() {
+		t.Error("the system resolver keeps the nameservers it read before ClearAll")
 	}
 }
