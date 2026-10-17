@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 
+	"github.com/metacubex/mihomo/common/atomic"
 	"github.com/metacubex/mihomo/common/utils"
 	"github.com/metacubex/mihomo/transport/vless"
 	"github.com/metacubex/mihomo/transport/vless/vision"
@@ -154,11 +155,11 @@ func flowName(value string) string {
 
 type serverConn struct {
 	N.ExtendedConn
-	responseWritten bool
+	responseWritten atomic.Bool
 }
 
 func (c *serverConn) Write(b []byte) (n int, err error) {
-	if !c.responseWritten {
+	if c.responseWritten.CompareAndSwap(false, true) {
 		buffer := buf.NewSize(2 + len(b))
 		buffer.WriteByte(vless.Version)
 		buffer.WriteByte(0)
@@ -168,24 +169,22 @@ func (c *serverConn) Write(b []byte) (n int, err error) {
 		if err == nil {
 			n = len(b)
 		}
-		c.responseWritten = true
 		return
 	}
 	return c.ExtendedConn.Write(b)
 }
 
 func (c *serverConn) WriteBuffer(buffer *buf.Buffer) error {
-	if !c.responseWritten {
+	if c.responseWritten.CompareAndSwap(false, true) {
 		header := buffer.ExtendHeader(2)
 		header[0] = vless.Version
 		header[1] = 0
-		c.responseWritten = true
 	}
 	return c.ExtendedConn.WriteBuffer(buffer)
 }
 
 func (c *serverConn) FrontHeadroom() int {
-	if c.responseWritten {
+	if c.responseWritten.Load() {
 		return 0
 	}
 	return 2
@@ -196,7 +195,7 @@ func (c *serverConn) ReaderReplaceable() bool {
 }
 
 func (c *serverConn) WriterReplaceable() bool {
-	return c.responseWritten
+	return c.responseWritten.Load()
 }
 
 func (c *serverConn) NeedAdditionalReadDeadline() bool {
