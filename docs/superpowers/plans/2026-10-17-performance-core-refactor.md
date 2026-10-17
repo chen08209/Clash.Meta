@@ -168,3 +168,18 @@
 - [x] Cover disabled wrappers, duplicate payloads, PASS, sub-rules, overlapping exact/suffix rules, and intervening non-domain rules.
 - [x] Compare 6 benchmark samples against commit `bf2846b6` with `benchstat`.
 - [x] Run full main-module tests and `go test -race ./tunnel`.
+
+### Task 10: UDP Origin Map Key
+
+**Files:**
+- Modify: `tunnel/connection.go`
+- Test: `tunnel/connection_perf_test.go`
+
+**Interfaces:**
+- Produces: `packetOriginKey(*C.Metadata) packetOrigin`.
+- Preserves: host-first key semantics and the existing target/origin NAT mappings.
+
+- [x] Add a red test proving the key must map without formatting metadata.
+- [x] Replace the string map key with a comparable host-or-IP key.
+- [x] Benchmark 6 samples against commit `92889146` with `benchstat`.
+- [x] Run focused tests and `go test -race ./tunnel`.

@@ -19,9 +19,21 @@ type packetSender struct {
 	ch     chan C.PacketAdapter
 
 	// destination NAT mapping
-	originToTarget map[string]netip.Addr
+	originToTarget map[packetOrigin]netip.Addr
 	targetToOrigin map[netip.Addr]netip.Addr
 	mappingMutex   sync.RWMutex
+}
+
+type packetOrigin struct {
+	host string
+	ip   netip.Addr
+}
+
+func packetOriginKey(metadata *C.Metadata) packetOrigin {
+	if metadata.Host != "" {
+		return packetOrigin{host: metadata.Host}
+	}
+	return packetOrigin{ip: metadata.DstIP}
 }
 
 // newPacketSender return a chan based C.PacketSender
@@ -34,7 +46,7 @@ func newPacketSender() C.PacketSender {
 		cancel: cancel,
 		ch:     ch,
 
-		originToTarget: make(map[string]netip.Addr),
+		originToTarget: make(map[packetOrigin]netip.Addr),
 		targetToOrigin: make(map[netip.Addr]netip.Addr),
 	}
 }
@@ -42,7 +54,7 @@ func newPacketSender() C.PacketSender {
 func (s *packetSender) AddMapping(originMetadata *C.Metadata, metadata *C.Metadata) {
 	s.mappingMutex.Lock()
 	defer s.mappingMutex.Unlock()
-	originKey := originMetadata.String()
+	originKey := packetOriginKey(originMetadata)
 	originAddr := originMetadata.DstIP
 	targetAddr := metadata.DstIP
 	if addr := s.originToTarget[originKey]; !addr.IsValid() { // overwrite only if the record is illegal
@@ -69,7 +81,7 @@ func (s *packetSender) processPacket(pc C.PacketConn, packet C.PacketAdapter) {
 	var addr *net.UDPAddr
 
 	s.mappingMutex.RLock()
-	targetAddr := s.originToTarget[metadata.String()]
+	targetAddr := s.originToTarget[packetOriginKey(metadata)]
 	s.mappingMutex.RUnlock()
 
 	if targetAddr.IsValid() {
