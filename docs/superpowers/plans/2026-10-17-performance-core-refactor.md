@@ -250,6 +250,22 @@
 - [x] Benchmark 6 samples against commit `d35c609a` with `benchstat`.
 - [x] Run `go test ./component/nat ./tunnel/... -count=1` and `go test -race`.
 
+### Task 16: Rate-Limited UDP Deadline Refresh
+
+**Files:**
+- Modify: `tunnel/connection.go`
+- Test: `tunnel/connection_perf_test.go`
+
+**Interfaces:**
+- Produces: `shouldRefreshDeadline(last int64, now time.Time) bool` and `refreshReadDeadline`.
+- Preserves: the UDP idle timeout, packet ordering, and the read loop's deadline-before-read guarantee.
+
+- [x] Refresh the read deadline only once the current one is more than half consumed.
+- [x] Track the deadline per direction with no cross-goroutine sharing (read loop local, sender field).
+- [x] Test the decision function across unset, fresh, half, and expired deadlines.
+- [x] Benchmark per-packet deadline cost against the unconditional shape with `benchstat`.
+- [x] Run `go test ./tunnel -count=1`, `go test -race ./tunnel`, and the full suite.
+
 ### Task 14: Reusable UDP Write-Back Address (rejected)
 
 Investigated and dropped: `listener/inner/udp.go` enqueues the `net.Addr` into a channel and hands the

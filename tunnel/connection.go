@@ -21,6 +21,9 @@ type packetSender struct {
 
 	mappingMutex sync.Mutex
 	mappings     atomic.Pointer[packetMappings]
+
+	// Only the Process goroutine touches this; the read loop keeps its own copy.
+	readDeadline int64
 }
 
 type packetOrigin struct {
@@ -131,7 +134,12 @@ func (s *packetSender) processPacket(pc C.PacketConn, packet C.PacketAdapter) {
 		s.AddMapping(originMetadata, metadata)
 		addr = metadata.UDPAddr()
 	}
-	_ = handleUDPToRemote(packet, pc, addr)
+	if err := handleUDPToRemote(packet, pc, addr); err != nil {
+		return
+	}
+	if shouldRefreshDeadline(s.readDeadline, time.Now()) {
+		s.readDeadline = refreshReadDeadline(pc, time.Now())
+	}
 }
 
 func (s *packetSender) Process(pc C.PacketConn, proxy C.WriteBackProxy) {
@@ -192,10 +200,22 @@ func handleUDPToRemote(packet C.UDPPacket, pc C.PacketConn, addr *net.UDPAddr) e
 	if _, err := pc.WriteTo(packet.Data(), addr); err != nil {
 		return err
 	}
-	// reset timeout
-	_ = pc.SetReadDeadline(time.Now().Add(udpTimeout))
 
 	return nil
+}
+
+// shouldRefreshDeadline reports whether the idle deadline tracked by last
+// (unix nanoseconds, zero when unset) is closer than half the timeout. A busy
+// flow then pays one atomic-free load per packet instead of a runtime deadline
+// update, and closes between udpTimeout/2 and udpTimeout after its last packet.
+func shouldRefreshDeadline(last int64, now time.Time) bool {
+	return last == 0 || now.UnixNano() >= last-int64(udpTimeout/2)
+}
+
+func refreshReadDeadline(pc C.PacketConn, now time.Time) int64 {
+	next := now.Add(udpTimeout)
+	_ = pc.SetReadDeadline(next)
+	return next.UnixNano()
 }
 
 func handleUDPToLocal(
@@ -212,8 +232,14 @@ func handleUDPToLocal(
 		natTable.DeleteForFlow(key)
 	}()
 
+	// The read loop is the only goroutine refreshing on inbound packets, so the
+	// tracked deadline needs no synchronisation.
+	var readDeadline int64
 	for {
-		_ = pc.SetReadDeadline(time.Now().Add(udpTimeout))
+		now := time.Now()
+		if shouldRefreshDeadline(readDeadline, now) {
+			readDeadline = refreshReadDeadline(pc, now)
+		}
 		data, put, from, err := pc.WaitReadFrom()
 		if err != nil {
 			return
