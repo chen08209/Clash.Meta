@@ -11,9 +11,9 @@ var IsDirect = func(name string) bool { return name == "DIRECT" }
 
 func (m *Manager) TotalTraffic(onlyProxy bool) (up, down int64) {
 	if onlyProxy {
-		return m.proxyUploadTotal.Load(), m.proxyDownloadTotal.Load()
+		return m.totalProxyUpload(), m.totalProxyDownload()
 	}
-	return m.uploadTotal.Load(), m.downloadTotal.Load()
+	return m.totalUpload(), m.totalDownload()
 }
 
 func (m *Manager) NowTraffic(onlyProxy bool) (up, down int64) {

@@ -199,3 +199,22 @@
 - [x] Cover first-mapping semantics and concurrent access.
 - [x] Benchmark 6 samples against commit `ec2dced6` with `benchstat`.
 - [x] Run focused tests, `go test -race ./tunnel`, and the full main-module suite.
+
+### Task 12: Sharded Traffic Counters
+
+**Files:**
+- Modify: `tunnel/statistic/manager.go`
+- Modify: `tunnel/statistic/tracker.go`
+- Test: `tunnel/statistic/manager_test.go`
+- Benchmark: `tunnel/statistic/manager_bench_test.go`
+
+**Interfaces:**
+- Produces: `counterStripe`, a cache-line-isolated group of traffic counters, plus `Manager.bindStripe`.
+- Preserves: `Manager.PushUploaded/PushDownloaded`, `Total`, `Now`, `TotalTraffic`, `NowTraffic`, `ResetStatistic`, and `Snapshot` semantics.
+
+- [x] Write a test proving parallel pushes sum exactly across stripes.
+- [x] Write a test proving the one-second swap drains every stripe without losing adds.
+- [x] Bind one stripe per tracker at construction and push through it.
+- [x] Aggregate totals by summing stripes; keep blips on the ticker path only.
+- [x] Benchmark shared-counter versus striped pushes under `RunParallel`.
+- [x] Run `go test ./tunnel/statistic`, `go test -race ./tunnel`, and `go vet`.

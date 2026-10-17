@@ -108,3 +108,27 @@ func BenchmarkTrackerRead(b *testing.B) {
 	_ = tracker.Close()
 	<-writerDone
 }
+
+// BenchmarkManagerPushShared keeps every worker accounting through the manager's
+// single shared counter set, which is the shape the counters had before stripe
+// isolation.
+func BenchmarkManagerPushShared(b *testing.B) {
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			DefaultManager.PushDownloaded(false, 1460)
+		}
+	})
+}
+
+// BenchmarkManagerPushStriped binds one stripe per worker, matching how a
+// tracker holds its stripe for the lifetime of the connection.
+func BenchmarkManagerPushStriped(b *testing.B) {
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		stripe := DefaultManager.bindStripe()
+		for pb.Next() {
+			stripe.pushDownloaded(1460, false)
+		}
+	})
+}
