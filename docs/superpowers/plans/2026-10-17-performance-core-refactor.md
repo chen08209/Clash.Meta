@@ -403,6 +403,20 @@
 - [x] Pin the per-packet allocation count in a test.
 - [x] Run `go test ./adapter/inbound ./listener/... ./tunnel -count=1` and the full suite.
 
+### Task 26: Synchronise Vision Connection State
+
+**Files:**
+- Modify: `transport/vless/vision/conn.go`, `transport/vless/vision/filter.go`, `transport/vless/vision/vision.go`
+
+**Interfaces:**
+- Preserves: every read/write of the shared state, including the first-write ordering of `readProcess` and the UUID filter.
+
+- [x] Make the state shared by the read and write paths atomic.
+- [x] Keep the read-path-only state plain.
+- [x] Confirm with `-race` that no `vless.vision` frame remains in a race report.
+- [x] Measure the added instruction cost on the hot path.
+- [x] Run `go test ./transport/vless/... -count=1`, `go vet`, and the full suite.
+
 ### Task 14: Reusable UDP Write-Back Address (rejected)
 
 Investigated and dropped: `listener/inner/udp.go` enqueues the `net.Addr` into a channel and hands the
