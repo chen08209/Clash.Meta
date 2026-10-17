@@ -746,7 +746,7 @@ func shouldStopRetry(err error) bool {
 }
 
 func retry[T any](ctx context.Context, ft func(context.Context) (T, error), fe func(err error)) (t T, err error) {
-	s := slowdown.New()
+	var s *slowdown.SlowDown
 	for i := 0; i < 10; i++ {
 		t, err = ft(ctx)
 		if err != nil {
@@ -755,6 +755,9 @@ func retry[T any](ctx context.Context, ft func(context.Context) (T, error), fe f
 			}
 			if shouldStopRetry(err) {
 				return
+			}
+			if s == nil {
+				s = slowdown.New() // only a failing dial ever backs off
 			}
 			if s.Wait(ctx) == nil {
 				continue
