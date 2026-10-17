@@ -337,6 +337,21 @@
 - [x] Benchmark a mixed-rule scan against the direct walk with `benchstat`.
 - [x] Run `go test ./tunnel -count=1`, `go test -race ./tunnel`, and the full suite.
 
+### Task 21: Lazy Log Arguments In The Sniffer
+
+**Files:**
+- Modify: `component/sniffer/dispatcher.go`
+- Test: `component/sniffer/dispatcher_log_test.go`
+
+**Interfaces:**
+- Preserves: sniff outcomes, cached failures, and domain replacement at every log level.
+
+- [x] Gate the success-replacement log's `SourceDetail`/`RemoteAddress` arguments.
+- [x] Gate the failure logs' `metadata.String()` and `DstIP` arguments.
+- [x] Prove the sniffed metadata is identical across debug, info, and silent levels.
+- [x] Benchmark the argument construction with `benchstat`.
+- [x] Run `go test ./component/sniffer -count=1`, `go test -race`, and the full suite.
+
 ### Task 14: Reusable UDP Write-Back Address (rejected)
 
 Investigated and dropped: `listener/inner/udp.go` enqueues the `net.Addr` into a channel and hands the
