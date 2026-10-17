@@ -370,6 +370,22 @@
 - [x] Benchmark the refused-dial connection path.
 - [x] Run `go test ./tunnel ./adapter/outboundgroup ./component/dialer -count=1`, `-race`, and the full suite.
 
+### Task 24: Peek After The Dial, Only For Handshakes
+
+**Files:**
+- Modify: `tunnel/tunnel.go`
+- Test: `tunnel/peek_test.go`
+
+**Interfaces:**
+- Preserves: handshake conns still receive the client's first bytes; late-first-byte direct conns still relay.
+
+- [x] Fill the read buffer inside the handshake branch, after the dial.
+- [x] Drop the pre-dial peek goroutine, its mutex, and the deadline reset it required.
+- [x] Test a direct conn whose first byte arrives after the old peek deadline.
+- [x] Test that a handshake conn receives the client's hello through the new path.
+- [x] Benchmark connection setup against the pre-change code with `benchstat`.
+- [x] Run `go test ./tunnel -count=1`, `go test -race ./tunnel`, and the full suite.
+
 ### Task 14: Reusable UDP Write-Back Address (rejected)
 
 Investigated and dropped: `listener/inner/udp.go` enqueues the `net.Addr` into a channel and hands the

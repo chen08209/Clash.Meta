@@ -508,17 +508,6 @@ func handleTCPConn(connCtx C.ConnContext) {
 		return
 	}
 
-	peekMutex := sync.Mutex{}
-	if !conn.Peeked() {
-		peekMutex.Lock()
-		go func() {
-			defer peekMutex.Unlock()
-			_ = conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
-			_, _ = conn.Peek(1)
-			_ = conn.SetReadDeadline(time.Time{})
-		}()
-	}
-
 	proxy, rule, err := resolveMetadata(metadata)
 	if err != nil {
 		log.Warnln("[Metadata] parse failed: %s", err.Error())
@@ -560,8 +549,14 @@ func handleTCPConn(connCtx C.ConnContext) {
 					remoteConn = nil
 				}
 			}()
-			peekMutex.Lock()
-			defer peekMutex.Unlock()
+			if !conn.Peeked() {
+				// The remote conn exists, so the buffer can be filled now and the
+				// client's hello handed straight to it. A plain relay has no use
+				// for the peek and waits on its own first read.
+				_ = conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+				_, _ = conn.Peek(1)
+				_ = conn.SetReadDeadline(time.Time{})
+			}
 			peekBytes, _ = conn.Peek(conn.Buffered())
 			_, err = remoteConn.Write(peekBytes)
 			if err != nil {
@@ -585,9 +580,6 @@ func handleTCPConn(connCtx C.ConnContext) {
 		_ = remoteConn.Close()
 	}(remoteConn)
 
-	_ = conn.SetReadDeadline(time.Now()) // stop unfinished peek
-	peekMutex.Lock()
-	defer peekMutex.Unlock()
 	_ = conn.SetReadDeadline(time.Time{}) // reset
 	handleSocket(conn, remoteConn)
 }
