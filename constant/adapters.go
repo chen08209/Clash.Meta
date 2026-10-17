@@ -291,8 +291,9 @@ type PacketAdapter interface {
 
 type packetAdapter struct {
 	UDPPacket
-	metadata *Metadata
-	key      string
+	metadata  *Metadata
+	localAddr net.Addr
+	flowKey   netip.AddrPort
 }
 
 // Metadata returns destination metadata
@@ -302,15 +303,58 @@ func (s *packetAdapter) Metadata() *Metadata {
 
 // Key is a SNAT key
 func (s *packetAdapter) Key() string {
-	return s.key
+	return s.localAddr.String()
+}
+
+func (s *packetAdapter) FlowKey() netip.AddrPort {
+	return s.flowKey
 }
 
 func NewPacketAdapter(packet UDPPacket, metadata *Metadata) PacketAdapter {
+	localAddr := packet.LocalAddr()
 	return &packetAdapter{
-		packet,
-		metadata,
-		packet.LocalAddr().String(),
+		UDPPacket: packet,
+		metadata:  metadata,
+		localAddr: localAddr,
+		flowKey:   addrPortFromLocalAddr(localAddr),
 	}
+}
+
+func addrPortFromLocalAddr(addr net.Addr) netip.AddrPort {
+	var ip net.IP
+	var port int
+	var zone string
+	switch addr := addr.(type) {
+	case *net.UDPAddr:
+		if addr == nil {
+			return netip.AddrPort{}
+		}
+		ip, port, zone = addr.IP, addr.Port, addr.Zone
+	case *net.TCPAddr:
+		if addr == nil {
+			return netip.AddrPort{}
+		}
+		ip, port, zone = addr.IP, addr.Port, addr.Zone
+	default:
+		parsed, err := netip.ParseAddrPort(addr.String())
+		if err != nil {
+			return netip.AddrPort{}
+		}
+		return parsed
+	}
+
+	parsed, ok := netip.AddrFromSlice(ip)
+	if !ok || port < 0 || port > 65535 {
+		return netip.AddrPort{}
+	}
+	if zone != "" {
+		zoned, err := netip.ParseAddr(ip.String())
+		if err != nil {
+			return netip.AddrPort{}
+		}
+		parsed = zoned.WithZone(zone)
+	}
+	return netip.AddrPortFrom(parsed.Unmap(), uint16(port))
 }
 
 type WriteBack interface {

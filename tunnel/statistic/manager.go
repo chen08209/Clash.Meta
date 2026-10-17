@@ -7,6 +7,8 @@ import (
 	"github.com/metacubex/mihomo/common/atomic"
 	"github.com/metacubex/mihomo/common/xsync"
 	"github.com/metacubex/mihomo/component/memory"
+
+	"github.com/gofrs/uuid/v5"
 )
 
 var DefaultManager *Manager
@@ -26,7 +28,7 @@ func init() {
 }
 
 type Manager struct {
-	connections        xsync.Map[string, Tracker]
+	connections        xsync.Map[uuid.UUID, Tracker]
 	uploadTemp         atomic.Int64
 	downloadTemp       atomic.Int64
 	uploadBlip         atomic.Int64
@@ -47,22 +49,26 @@ func (m *Manager) Join(c Tracker) {
 	if DefaultRequestNotify != nil {
 		DefaultRequestNotify(c)
 	}
-	m.connections.Store(c.ID(), c)
+	m.connections.Store(c.Info().UUID, c)
 }
 
 func (m *Manager) Leave(c Tracker) {
-	m.connections.Delete(c.ID())
+	m.connections.Delete(c.Info().UUID)
 }
 
 func (m *Manager) Get(id string) (c Tracker) {
-	if value, ok := m.connections.Load(id); ok {
+	key, err := uuid.FromString(id)
+	if err != nil {
+		return nil
+	}
+	if value, ok := m.connections.Load(key); ok {
 		c = value
 	}
 	return
 }
 
 func (m *Manager) Range(f func(c Tracker) bool) {
-	m.connections.Range(func(key string, value Tracker) bool {
+	m.connections.Range(func(key uuid.UUID, value Tracker) bool {
 		return f(value)
 	})
 }

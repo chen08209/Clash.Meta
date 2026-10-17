@@ -30,66 +30,80 @@ type DomainTrie[T any] struct {
 // as well as for misplaced wildcards (see below). The error describes why the
 // invalid Clash-style domain pattern was rejected.
 func ValidAndSplitDomain(domain string) ([]string, error) {
+	normalized, err := normalizeDomain(domain)
+	if err != nil {
+		return nil, err
+	}
+	return strings.Split(normalized, domainStep), nil
+}
+
+func normalizeDomain(domain string) (string, error) {
 	originalDomain := domain
 	if domain == "" {
-		return nil, invalidDomainError(originalDomain, "domain is empty")
+		return "", invalidDomainError(originalDomain, "domain is empty")
 	}
-
-	// A trailing dot would produce an empty final segment; reject it up front.
 	if domain[len(domain)-1] == '.' {
-		return nil, invalidDomainError(originalDomain, "trailing dot is not allowed")
+		return "", invalidDomainError(originalDomain, "trailing dot is not allowed")
 	}
-	// Reject leading/trailing whitespace (a common copy-paste artifact) so it
-	// isn't silently baked into a label.
 	if r, _ := utf8.DecodeRuneInString(domain); unicode.IsSpace(r) {
-		return nil, invalidDomainError(originalDomain, "leading whitespace is not allowed")
+		return "", invalidDomainError(originalDomain, "leading whitespace is not allowed")
 	}
 	if r, _ := utf8.DecodeLastRuneInString(domain); unicode.IsSpace(r) {
-		return nil, invalidDomainError(originalDomain, "trailing whitespace is not allowed")
+		return "", invalidDomainError(originalDomain, "trailing whitespace is not allowed")
 	}
 
-	domain = strings.ToLower(domain)
-	parts := strings.Split(domain, domainStep)
-	// A single part must be non-empty (rejects ""); for multi-part domains every
-	// segment after the first must be non-empty (rejects "a..b", "a.", ".."),
-	// while an empty first segment is allowed as the ".example.com" dot-wildcard.
-	if len(parts) == 1 {
-		if parts[0] == "" {
-			return nil, invalidDomainError(originalDomain, "domain is empty")
+	normalized := strings.ToLower(domain)
+	labelCount := 0
+	labelStart := 0
+	for index := 0; index <= len(normalized); index++ {
+		if index < len(normalized) && normalized[index] != '.' {
+			continue
 		}
-	} else {
-		for i, part := range parts[1:] {
-			if part == "" {
-				return nil, invalidDomainError(originalDomain, fmt.Sprintf("label %d is empty", i+2))
-			}
+		label := normalized[labelStart:index]
+		labelNumber := labelCount + 1
+		if label == "" && labelCount > 0 {
+			return "", invalidDomainError(
+				originalDomain,
+				fmt.Sprintf("label %d is empty", labelNumber),
+			)
 		}
-	}
-
-	// Validate wildcard placement so that DomainTrie.Search (treats a stray
-	// wildcard as a literal label) and DomainSet.Has (treats the wildcard byte
-	// as a wildcard) can never disagree:
-	//   - complexWildcard "+" is only valid as a whole first segment of a
-	//     multi-part domain, i.e. the "+.example.com" form. A bare "+", or a
-	//     "+" anywhere else, is rejected.
-	//   - wildcard "*" is only valid as a whole segment; a partial wildcard such
-	//     as "*a" or "a*b" is rejected.
-	for i, part := range parts {
-		if strings.Contains(part, complexWildcard) {
+		if strings.Contains(label, complexWildcard) {
 			switch {
-			case part != complexWildcard:
-				return nil, invalidDomainError(originalDomain, fmt.Sprintf("%q wildcard must occupy the entire label %d", complexWildcard, i+1))
-			case i != 0:
-				return nil, invalidDomainError(originalDomain, fmt.Sprintf("%q wildcard is only allowed in the first label", complexWildcard))
-			case len(parts) == 1:
-				return nil, invalidDomainError(originalDomain, fmt.Sprintf("%q wildcard must be followed by another label", complexWildcard))
+			case label != complexWildcard:
+				return "", invalidDomainError(
+					originalDomain,
+					fmt.Sprintf(
+						"%q wildcard must occupy the entire label %d",
+						complexWildcard,
+						labelNumber,
+					),
+				)
+			case labelCount != 0:
+				return "", invalidDomainError(
+					originalDomain,
+					fmt.Sprintf(
+						"%q wildcard is only allowed in the first label",
+						complexWildcard,
+					),
+				)
 			}
 		}
-		if strings.Contains(part, wildcard) && part != wildcard {
-			return nil, invalidDomainError(originalDomain, fmt.Sprintf("%q wildcard must occupy the entire label %d", wildcard, i+1))
+		if strings.Contains(label, wildcard) && label != wildcard {
+			return "", invalidDomainError(
+				originalDomain,
+				fmt.Sprintf("%q wildcard must occupy the entire label %d", wildcard, labelNumber),
+			)
 		}
+		labelCount++
+		labelStart = index + 1
 	}
-
-	return parts, nil
+	if normalized == complexWildcard {
+		return "", invalidDomainError(
+			originalDomain,
+			fmt.Sprintf("%q wildcard must be followed by another label", complexWildcard),
+		)
+	}
+	return normalized, nil
 }
 
 func invalidDomainError(domain, reason string) error {
@@ -137,18 +151,46 @@ func (t *DomainTrie[T]) insert(parts []string, data T) {
 // 2. wildcard domain
 // 2. dot wildcard domain
 func (t *DomainTrie[T]) Search(domain string) *Node[T] {
-	parts, err := ValidAndSplitDomain(domain)
-	if err != nil || parts[0] == "" {
+	normalized, err := normalizeDomain(domain)
+	if err != nil || normalized[0] == '.' {
 		return nil
 	}
 
-	n := t.search(t.root, parts)
+	n := t.searchFrom(t.root, normalized, len(normalized))
 
 	if n.isEmpty() {
 		return nil
 	}
 
 	return n
+}
+
+func (t *DomainTrie[T]) searchFrom(
+	node *Node[T],
+	domain string,
+	end int,
+) *Node[T] {
+	if end == 0 {
+		return node
+	}
+	dot := strings.LastIndexByte(domain[:end], '.')
+	label := domain[dot+1 : end]
+	nextEnd := dot
+	if nextEnd < 0 {
+		nextEnd = 0
+	}
+
+	if child := node.getChild(label); child != nil {
+		if match := t.searchFrom(child, domain, nextEnd); !match.isEmpty() {
+			return match
+		}
+	}
+	if child := node.getChild(wildcard); child != nil {
+		if match := t.searchFrom(child, domain, nextEnd); !match.isEmpty() {
+			return match
+		}
+	}
+	return node.getChild(dotWildcard)
 }
 
 func (t *DomainTrie[T]) search(node *Node[T], parts []string) *Node[T] {

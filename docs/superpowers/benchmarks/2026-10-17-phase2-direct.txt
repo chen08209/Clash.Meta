@@ -1,0 +1,8 @@
+goos: windows
+goarch: amd64
+pkg: mihomo-test
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+Benchmark_Direct/Write-16         	  340166	      3393 ns/op	4828.52 MB/s	       0 B/op	       0 allocs/op
+Benchmark_Direct/Read-16          	  186536	      6427 ns/op	2549.42 MB/s	       0 B/op	       0 allocs/op
+PASS
+ok  	mihomo-test	5.966s

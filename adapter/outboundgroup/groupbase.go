@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	stdatomic "sync/atomic"
 	"syscall"
 	"time"
 
@@ -17,7 +18,6 @@ import (
 	"github.com/metacubex/mihomo/log"
 
 	"github.com/dlclark/regexp2"
-	"golang.org/x/exp/slices"
 )
 
 type GroupBase struct {
@@ -38,9 +38,13 @@ type GroupBase struct {
 	usePosition       map[string]int
 
 	// for GetProxies
-	getProxiesMutex  sync.Mutex
-	providerVersions []uint32
-	providerProxies  []C.Proxy
+	getProxiesMutex sync.Mutex
+	providerCache   stdatomic.Pointer[providerProxyCache]
+}
+
+type providerProxyCache struct {
+	versions []uint32
+	proxies  []C.Proxy
 }
 
 type GroupBaseOption struct {
@@ -124,23 +128,23 @@ func (gb *GroupBase) Touch() {
 }
 
 func (gb *GroupBase) GetProxies(touch bool) []C.Proxy {
-	providerVersions := make([]uint32, len(gb.providers))
-	for i, pd := range gb.providers {
-		if touch { // touch first
-			pd.Touch()
+	if touch { // touch first
+		for _, provider := range gb.providers {
+			provider.Touch()
 		}
-		providerVersions[i] = pd.Version()
 	}
 
-	// thread safe
+	if cache := gb.providerCache.Load(); cache != nil &&
+		gb.providerVersionsEqual(cache.versions) {
+		return cache.proxies
+	}
+
 	gb.getProxiesMutex.Lock()
 	defer gb.getProxiesMutex.Unlock()
-
-	// return the cached proxies if version not changed
-	if slices.Equal(providerVersions, gb.providerVersions) {
-		return gb.providerProxies
+	if cache := gb.providerCache.Load(); cache != nil &&
+		gb.providerVersionsEqual(cache.versions) {
+		return cache.proxies
 	}
-
 	parts := make([][]C.Proxy, len(gb.providers))
 	if len(gb.filterRegs) == 0 {
 		for i, pd := range gb.providers {
@@ -232,9 +236,14 @@ func (gb *GroupBase) GetProxies(touch bool) []C.Proxy {
 		return []C.Proxy{gb.EmptyFallback()}
 	}
 
-	// only cache when proxies not empty
-	gb.providerVersions = providerVersions
-	gb.providerProxies = proxies
+	// Version is read after the lists: a provider that swaps during this call
+	// bumps the stamped version, so the next call rebuilds rather than caching
+	// the mixed result under the old generation.
+	providerVersions := gb.providerVersionsNow()
+	gb.providerCache.Store(&providerProxyCache{
+		versions: providerVersions,
+		proxies:  proxies,
+	})
 
 	return proxies
 }

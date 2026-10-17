@@ -93,7 +93,7 @@ func failoverProxy(name string) C.Proxy {
 	})})
 }
 
-func failoverProvider(t *testing.T, proxies []C.Proxy) P.ProxyProvider {
+func failoverProvider(t testing.TB, proxies []C.Proxy) P.ProxyProvider {
 	t.Helper()
 	health := provider.NewHealthCheck(proxies, "", 0, 0, true, nil)
 	pd, err := provider.NewCompatibleProvider("test-provider", proxies, health)

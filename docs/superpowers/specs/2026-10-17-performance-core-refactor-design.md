@@ -36,9 +36,9 @@ TCP admission remains one goroutine per connection, which is the correct model f
 
 ### 3. UDP Flow Path
 
-UDP continues to hash packets to a stable worker queue so packets in one flow remain ordered. The refactored path:
+UDP continues to hash packets by source `netip.AddrPort` so packets from one source remain ordered. The refactored path:
 
-- uses `netip.AddrPort` and binary flow keys instead of formatted strings;
+- uses source `netip.AddrPort` keys instead of formatted strings;
 - stores NAT mappings in a sharded, fixed-size table with generation-based cleanup;
 - processes packets with batch reads and writes when the platform exposes them;
 - applies a timing-wheel timeout rather than one timer per session;
