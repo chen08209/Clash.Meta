@@ -183,3 +183,19 @@
 - [x] Replace the string map key with a comparable host-or-IP key.
 - [x] Benchmark 6 samples against commit `92889146` with `benchstat`.
 - [x] Run focused tests and `go test -race ./tunnel`.
+
+### Task 11: UDP Mapping Snapshot
+
+**Files:**
+- Modify: `tunnel/connection.go`
+- Test: `tunnel/connection_perf_test.go`
+
+**Interfaces:**
+- Produces: `packetMappings`, an immutable origin-to-target and target-to-origin snapshot.
+- Preserves: first-mapping semantics and concurrent read/write safety.
+
+- [x] Replace the per-packet `RWMutex` read with an atomic snapshot load.
+- [x] Keep writes serialized and publish a new immutable snapshot.
+- [x] Cover first-mapping semantics and concurrent access.
+- [x] Benchmark 6 samples against commit `ec2dced6` with `benchstat`.
+- [x] Run focused tests, `go test -race ./tunnel`, and the full main-module suite.

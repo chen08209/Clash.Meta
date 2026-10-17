@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	N "github.com/metacubex/mihomo/common/net"
@@ -18,15 +19,18 @@ type packetSender struct {
 	cancel context.CancelFunc
 	ch     chan C.PacketAdapter
 
-	// destination NAT mapping
-	originToTarget map[packetOrigin]netip.Addr
-	targetToOrigin map[netip.Addr]netip.Addr
-	mappingMutex   sync.RWMutex
+	mappingMutex sync.Mutex
+	mappings     atomic.Pointer[packetMappings]
 }
 
 type packetOrigin struct {
 	host string
 	ip   netip.Addr
+}
+
+type packetMappings struct {
+	originToTarget map[packetOrigin]netip.Addr
+	targetToOrigin map[netip.Addr]netip.Addr
 }
 
 func packetOriginKey(metadata *C.Metadata) packetOrigin {
@@ -41,34 +45,53 @@ func packetOriginKey(metadata *C.Metadata) packetOrigin {
 func newPacketSender() C.PacketSender {
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan C.PacketAdapter, senderCapacity)
-	return &packetSender{
+	sender := &packetSender{
 		ctx:    ctx,
 		cancel: cancel,
 		ch:     ch,
-
+	}
+	sender.mappings.Store(&packetMappings{
 		originToTarget: make(map[packetOrigin]netip.Addr),
 		targetToOrigin: make(map[netip.Addr]netip.Addr),
+	})
+	return sender
+}
+
+func clonePacketMap[M ~map[K]V, K comparable, V any](source M) M {
+	result := make(M, len(source))
+	for key, value := range source {
+		result[key] = value
 	}
+	return result
 }
 
 func (s *packetSender) AddMapping(originMetadata *C.Metadata, metadata *C.Metadata) {
 	s.mappingMutex.Lock()
 	defer s.mappingMutex.Unlock()
+	current := s.mappings.Load()
 	originKey := packetOriginKey(originMetadata)
 	originAddr := originMetadata.DstIP
 	targetAddr := metadata.DstIP
-	if addr := s.originToTarget[originKey]; !addr.IsValid() { // overwrite only if the record is illegal
-		s.originToTarget[originKey] = targetAddr
+	originValid := current.originToTarget[originKey].IsValid()
+	targetValid := current.targetToOrigin[targetAddr].IsValid()
+	if originValid && targetValid {
+		return
 	}
-	if addr := s.targetToOrigin[targetAddr]; !addr.IsValid() { // overwrite only if the record is illegal
-		s.targetToOrigin[targetAddr] = originAddr
+	next := &packetMappings{
+		originToTarget: clonePacketMap(current.originToTarget),
+		targetToOrigin: clonePacketMap(current.targetToOrigin),
 	}
+	if !originValid {
+		next.originToTarget[originKey] = targetAddr
+	}
+	if !targetValid {
+		next.targetToOrigin[targetAddr] = originAddr
+	}
+	s.mappings.Store(next)
 }
 
 func (s *packetSender) RestoreReadFrom(addr netip.Addr) netip.Addr {
-	s.mappingMutex.RLock()
-	defer s.mappingMutex.RUnlock()
-	if originAddr := s.targetToOrigin[addr]; originAddr.IsValid() {
+	if originAddr := s.mappings.Load().targetToOrigin[addr]; originAddr.IsValid() {
 		return originAddr
 	}
 	return addr
@@ -80,9 +103,7 @@ func (s *packetSender) processPacket(pc C.PacketConn, packet C.PacketAdapter) {
 
 	var addr *net.UDPAddr
 
-	s.mappingMutex.RLock()
-	targetAddr := s.originToTarget[packetOriginKey(metadata)]
-	s.mappingMutex.RUnlock()
+	targetAddr := s.mappings.Load().originToTarget[packetOriginKey(metadata)]
 
 	if targetAddr.IsValid() {
 		addr = net.UDPAddrFromAddrPort(netip.AddrPortFrom(targetAddr, metadata.DstPort))
