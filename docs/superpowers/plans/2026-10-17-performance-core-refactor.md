@@ -430,6 +430,18 @@
 - [x] Confirm with `-race` that no `anytls/session.Stream` frame remains in a read/write pair.
 - [x] Run `go test ./transport/anytls/... -count=1`, `go vet`, and the full suite.
 
+### Task 28: Claim The VLESS Response Header Once
+
+**Files:**
+- Modify: `listener/sing_vless/service.go`
+
+**Interfaces:**
+- Preserves: one response header per connection, the failure path, and the headroom contract.
+
+- [x] Make the response-written flag atomic.
+- [x] Upgrade the check-then-set to a compare-and-swap so exactly one writer prepends.
+- [x] Run `go test ./... -count=1`, `go vet`, and confirm the build.
+
 ### Task 14: Reusable UDP Write-Back Address (rejected)
 
 Investigated and dropped: `listener/inner/udp.go` enqueues the `net.Addr` into a channel and hands the
