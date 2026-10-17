@@ -218,3 +218,27 @@
 - [x] Aggregate totals by summing stripes; keep blips on the ticker path only.
 - [x] Benchmark shared-counter versus striped pushes under `RunParallel`.
 - [x] Run `go test ./tunnel/statistic`, `go test -race ./tunnel`, and `go vet`.
+
+### Task 13: UDP Admission Fast Path
+
+**Files:**
+- Modify: `component/nat/table.go`
+- Modify: `tunnel/tunnel.go`
+- Test: `tunnel/tunnel_bench_test.go`
+
+**Interfaces:**
+- Produces: `Table.LoadForFlow(netip.AddrPort)` (C.PacketSender, bool)`, a read-only flow lookup.
+- Preserves: first-packet precheck semantics, flow creation, sniffing, and the drop-on-overload behaviour.
+
+- [x] Add a test proving an existing flow admits a packet with no clone or precheck.
+- [x] Move the precheck clone behind the flow-miss branch.
+- [x] Benchmark an established-flow packet against commit `bfb4b8c5` with `benchstat`.
+- [x] Run `go test ./tunnel -count=1` and `go test -race ./tunnel`.
+
+### Task 14: Reusable UDP Write-Back Address (rejected)
+
+Investigated and dropped: `listener/inner/udp.go` enqueues the `net.Addr` into a channel and hands the
+pointer to the consumer in `ReadFrom`, so a per-loop reusable `*net.UDPAddr` would observe mutated
+source addresses for queued datagrams. Making that safe would mean either a new synchronous-write-back
+capability interface across every listener or moving the allocation to the inner read path, neither of
+which is a net win at this blast radius. The per-packet `net.UDPAddrFromAddrPort` stays.

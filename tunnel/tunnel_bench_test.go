@@ -2,6 +2,8 @@ package tunnel
 
 import (
 	"fmt"
+	"net"
+	"net/netip"
 	"testing"
 
 	C "github.com/metacubex/mihomo/constant"
@@ -9,6 +11,103 @@ import (
 	"github.com/metacubex/mihomo/rules/wrapper"
 	"github.com/stretchr/testify/require"
 )
+
+type benchmarkFlowPacket struct {
+	C.UDPPacket
+	localAddr net.Addr
+}
+
+func (packet benchmarkFlowPacket) LocalAddr() net.Addr { return packet.localAddr }
+func (benchmarkFlowPacket) Drop()                      {}
+
+func TestHandleUDPConnExistingFlowAdmitsPacket(t *testing.T) {
+	previous := status.Load()
+	status.Store(Running)
+	t.Cleanup(func() { status.Store(previous) })
+
+	key := netip.MustParseAddrPort("192.168.1.2:54321")
+	sender, _ := natTable.GetOrCreateForFlow(key, newPacketSender)
+	t.Cleanup(func() {
+		sender.Close()
+		natTable.DeleteForFlow(key)
+	})
+
+	packet := C.NewPacketAdapter(
+		benchmarkFlowPacket{localAddr: net.UDPAddrFromAddrPort(key)},
+		&C.Metadata{
+			NetWork: C.UDP,
+			Type:    C.SOCKS5,
+			DstIP:   netip.MustParseAddr("1.2.3.4"),
+			DstPort: 53,
+		},
+	)
+
+	handleUDPConn(packet)
+
+	select {
+	case queued := <-sender.(*packetSender).ch:
+		require.Equal(t, packet, queued)
+	default:
+		t.Fatal("packet was not admitted to the existing flow")
+	}
+}
+
+func TestHandleUDPConnExistingFlowDoesNotAllocate(t *testing.T) {
+	previous := status.Load()
+	status.Store(Running)
+	t.Cleanup(func() { status.Store(previous) })
+
+	key := netip.MustParseAddrPort("192.168.1.2:54321")
+	sender, _ := natTable.GetOrCreateForFlow(key, newPacketSender)
+	t.Cleanup(func() {
+		sender.Close()
+		natTable.DeleteForFlow(key)
+	})
+
+	packet := C.NewPacketAdapter(
+		benchmarkFlowPacket{localAddr: net.UDPAddrFromAddrPort(key)},
+		&C.Metadata{
+			NetWork: C.UDP,
+			Type:    C.SOCKS5,
+			DstIP:   netip.MustParseAddr("1.2.3.4"),
+			DstPort: 53,
+		},
+	)
+
+	allocations := testing.AllocsPerRun(100, func() {
+		handleUDPConn(packet)
+	})
+	require.EqualValues(t, 0, allocations)
+}
+
+func BenchmarkHandleUDPConnExistingFlow(b *testing.B) {
+	previous := status.Load()
+	status.Store(Running)
+	b.Cleanup(func() { status.Store(previous) })
+
+	key := netip.MustParseAddrPort("192.168.1.2:54321")
+	sender, _ := natTable.GetOrCreateForFlow(key, newPacketSender)
+	b.Cleanup(func() {
+		sender.Close()
+		natTable.DeleteForFlow(key)
+	})
+
+	packet := C.NewPacketAdapter(
+		benchmarkFlowPacket{localAddr: net.UDPAddrFromAddrPort(key)},
+		&C.Metadata{
+			NetWork: C.UDP,
+			Type:    C.SOCKS5,
+			DstIP:   netip.MustParseAddr("1.2.3.4"),
+			DstPort: 53,
+		},
+	)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		handleUDPConn(packet)
+	}
+}
 
 func benchmarkMetadata() C.Metadata {
 	return C.Metadata{

@@ -273,9 +273,12 @@ func fixMetadata(metadata *C.Metadata) {
 	// first unmap dstIP
 	metadata.DstIP = metadata.DstIP.Unmap()
 	// handle IP string on host
-	if ip, err := netip.ParseAddr(metadata.Host); err == nil {
-		metadata.DstIP = ip.Unmap()
-		metadata.Host = ""
+	// Parsing an empty host allocates an error, so only pay for it when set.
+	if metadata.Host != "" {
+		if ip, err := netip.ParseAddr(metadata.Host); err == nil {
+			metadata.DstIP = ip.Unmap()
+			metadata.Host = ""
+		}
 	}
 }
 
@@ -378,18 +381,25 @@ func handleUDPConn(packet C.PacketAdapter) {
 	}
 	fixMetadata(metadata) // fix some metadata not set via metadata.SetRemoteAddr or metadata.SetRemoteAddress
 
-	if err := preHandleMetadata(metadata.Clone()); err != nil { // precheck without modify metadata
-		packet.Drop()
-		log.Debugln("[Metadata PreHandle] error: %s", err)
-		return
-	}
-
 	key, valid := packetFlowKey(packet)
 	if !valid {
 		packet.Drop()
 		log.Warnln("[UDP] invalid source address: %#v", packet.Metadata())
 		return
 	}
+	// An existing flow already passed precheck on its first packet; repeating it
+	// per packet only clones metadata and re-queries the resolvers.
+	if sender, exist := natTable.LoadForFlow(key); exist {
+		sender.Send(packet) // nonblocking
+		return
+	}
+
+	if err := preHandleMetadata(metadata.Clone()); err != nil { // precheck without modify metadata
+		packet.Drop()
+		log.Debugln("[Metadata PreHandle] error: %s", err)
+		return
+	}
+
 	sender, loaded := natTable.GetOrCreateForFlow(key, func() C.PacketSender {
 		sender := newPacketSender()
 		if runtimeState.sniffingEnable && runtimeState.snifferDispatcher.Enable() {
@@ -398,57 +408,61 @@ func handleUDPConn(packet C.PacketAdapter) {
 		return sender
 	})
 	if !loaded {
-		dial := func() (C.PacketConn, C.WriteBackProxy, error) {
-			originMetadata := metadata  // save origin metadata
-			metadata = metadata.Clone() // don't modify PacketAdapter's metadata
-
-			if err := sender.DoSniff(metadata); err != nil {
-				log.Warnln("[UDP] DoSniff error: %s", err.Error())
-				return nil, nil, err
-			}
-
-			_ = preHandleMetadata(metadata) // error was pre-checked
-
-			proxy, rule, err := resolveMetadata(metadata)
-			if err != nil {
-				log.Warnln("[UDP] Parse metadata failed: %s", err.Error())
-				return nil, nil, err
-			}
-
-			dialMetadata := metadata.Pure()
-			ctx, cancel := context.WithTimeout(context.Background(), C.DefaultUDPTimeout)
-			defer cancel()
-			rawPc, err := retry(ctx, func(ctx context.Context) (C.PacketConn, error) {
-				return proxy.ListenPacketContext(ctx, dialMetadata)
-			}, func(err error) {
-				logMetadataErr(metadata, rule, proxy, err)
-			})
-			if err != nil {
-				return nil, nil, err
-			}
-			logMetadata(metadata, rule, rawPc)
-
-			pc := statistic.NewUDPTracker(rawPc, statistic.DefaultManager, metadata, rule, 0, 0, true)
-
-			sender.AddMapping(originMetadata, dialMetadata)
-			oAddrPort := dialMetadata.AddrPort()
-			writeBackProxy := nat.NewWriteBackProxy(packet)
-
-			go handleUDPToLocal(writeBackProxy, pc, sender, key, oAddrPort)
-			return pc, writeBackProxy, nil
-		}
-
-		go func() {
-			pc, proxy, err := dial()
-			if err != nil {
-				sender.Close()
-				natTable.DeleteForFlow(key)
-				return
-			}
-			sender.Process(pc, proxy)
-		}()
+		go startUDPSender(metadata, packet, sender, key)
 	}
 	sender.Send(packet) // nonblocking
+}
+
+// Kept as functions taking parameters rather than closures: a closure capturing
+// the per-packet metadata variable forces it onto the heap on every packet.
+func startUDPSender(metadata *C.Metadata, packet C.PacketAdapter, sender C.PacketSender, key netip.AddrPort) {
+	pc, writeBackProxy, err := dialUDPSender(metadata, packet, sender, key)
+	if err != nil {
+		sender.Close()
+		natTable.DeleteForFlow(key)
+		return
+	}
+	sender.Process(pc, writeBackProxy)
+}
+
+func dialUDPSender(metadata *C.Metadata, packet C.PacketAdapter, sender C.PacketSender, key netip.AddrPort) (C.PacketConn, C.WriteBackProxy, error) {
+	originMetadata := metadata  // save origin metadata
+	metadata = metadata.Clone() // don't modify PacketAdapter's metadata
+
+	if err := sender.DoSniff(metadata); err != nil {
+		log.Warnln("[UDP] DoSniff error: %s", err.Error())
+		return nil, nil, err
+	}
+
+	_ = preHandleMetadata(metadata) // error was pre-checked
+
+	proxy, rule, err := resolveMetadata(metadata)
+	if err != nil {
+		log.Warnln("[UDP] Parse metadata failed: %s", err.Error())
+		return nil, nil, err
+	}
+
+	dialMetadata := metadata.Pure()
+	ctx, cancel := context.WithTimeout(context.Background(), C.DefaultUDPTimeout)
+	defer cancel()
+	rawPc, err := retry(ctx, func(ctx context.Context) (C.PacketConn, error) {
+		return proxy.ListenPacketContext(ctx, dialMetadata)
+	}, func(err error) {
+		logMetadataErr(metadata, rule, proxy, err)
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	logMetadata(metadata, rule, rawPc)
+
+	pc := statistic.NewUDPTracker(rawPc, statistic.DefaultManager, metadata, rule, 0, 0, true)
+
+	sender.AddMapping(originMetadata, dialMetadata)
+	oAddrPort := dialMetadata.AddrPort()
+	writeBackProxy := nat.NewWriteBackProxy(packet)
+
+	go handleUDPToLocal(writeBackProxy, pc, sender, key, oAddrPort)
+	return pc, writeBackProxy, nil
 }
 
 func handleTCPConn(connCtx C.ConnContext) {
