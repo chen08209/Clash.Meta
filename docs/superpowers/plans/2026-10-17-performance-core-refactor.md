@@ -304,6 +304,23 @@
 - [x] Benchmark kernel-backed versus queued conns with `benchstat`.
 - [x] Run `go test ./tunnel -count=1`, `go test -race ./tunnel`, and the full suite.
 
+### Task 19: Allocation-Free DNS Cache Key
+
+**Files:**
+- Modify: `dns/resolver.go`, `dns/util.go`
+- Test: `dns/cache_key_test.go`
+- Benchmark: `dns/lookup_bench_test.go`
+
+**Interfaces:**
+- Produces: `cacheKey`, the `dnsCache` key type.
+- Preserves: cache hit/miss behaviour, including the name/qtype separation of the string key.
+
+- [x] Replace the `Question.String()` cache key with a comparable struct key.
+- [x] Drop the `Question` formatting from both get and put paths.
+- [x] Prove repeated A, AAAA, and distinct-name queries hit and miss as before.
+- [x] Benchmark cached lookups against the string key with `benchstat`.
+- [x] Run `go test ./dns -count=1`, `go test -race ./dns`, and the full suite.
+
 ### Task 14: Reusable UDP Write-Back Address (rejected)
 
 Investigated and dropped: `listener/inner/udp.go` enqueues the `net.Addr` into a channel and hands the

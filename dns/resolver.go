@@ -26,9 +26,17 @@ type dnsClient interface {
 }
 
 type dnsCache interface {
-	GetWithExpire(key string) (*D.Msg, time.Time, bool)
-	SetWithExpire(key string, value *D.Msg, expire time.Time)
+	GetWithExpire(key cacheKey) (*D.Msg, time.Time, bool)
+	SetWithExpire(key cacheKey, value *D.Msg, expire time.Time)
 	Clear()
+}
+
+// cacheKey identifies one cached answer. Formatting a question into a string
+// key cost three allocations on every lookup and every store.
+type cacheKey struct {
+	name   string
+	qtype  uint16
+	qclass uint16
 }
 
 type result struct {
@@ -497,9 +505,9 @@ func (config Config) newCache() dnsCache {
 	}
 	switch config.CacheAlgorithm {
 	case "arc":
-		return arc.New(arc.WithSize[string, *D.Msg](config.CacheMaxSize))
+		return arc.New(arc.WithSize[cacheKey, *D.Msg](config.CacheMaxSize))
 	default:
-		return lru.New(lru.WithSize[string, *D.Msg](config.CacheMaxSize), lru.WithStale[string, *D.Msg](true))
+		return lru.New(lru.WithSize[cacheKey, *D.Msg](config.CacheMaxSize), lru.WithStale[cacheKey, *D.Msg](true))
 	}
 }
 

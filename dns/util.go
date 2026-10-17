@@ -48,7 +48,7 @@ func updateTTL(records []D.RR, ttl uint32) {
 // getMsgFromCache returns a cached dns message if it exists, otherwise returns nil.
 // the returned msg is a copy of the original msg, so it can be modified without affecting the original msg.
 func getMsgFromCache(c dnsCache, q D.Question) (*D.Msg, time.Time, bool) {
-	msg, expireTime, hit := c.GetWithExpire(q.String())
+	msg, expireTime, hit := c.GetWithExpire(cacheKey{name: q.Name, qtype: q.Qtype, qclass: q.Qclass})
 	if msg != nil {
 		msg = msg.Copy() // never modify the original msg
 	}
@@ -83,7 +83,7 @@ func putMsgToCache(c dnsCache, q D.Question, msg *D.Msg) {
 		return
 	}
 
-	c.SetWithExpire(q.String(), msg, time.Now().Add(time.Duration(ttl)*time.Second))
+	c.SetWithExpire(cacheKey{name: q.Name, qtype: q.Qtype, qclass: q.Qclass}, msg, time.Now().Add(time.Duration(ttl)*time.Second))
 }
 
 func setMsgTTL(msg *D.Msg, ttl uint32) {
