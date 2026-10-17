@@ -30,12 +30,13 @@ func NewConn(conn net.Conn, tlsConn net.Conn, userUUID uuid.UUID) (*Conn, error)
 		ExtendedWriter:             N.NewExtendedWriter(conn),
 		Conn:                       conn,
 		userUUID:                   userUUID,
-		packetsToFilter:            8,
-		readProcess:                true,
-		readFilterUUID:             true,
 		writeFilterApplicationData: true,
 		writeOnceUserUUID:          userUUID.Bytes(),
 	}
+	c.readProcess.Store(true)
+	c.readFilterUUID.Store(true)
+	c.packetsToFilter.Store(8)
+	c.readProcess.Store(true)
 	var t reflect.Type
 	var p unsafe.Pointer
 	var upstream any = tlsConn
