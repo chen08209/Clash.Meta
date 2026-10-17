@@ -235,6 +235,21 @@
 - [x] Benchmark an established-flow packet against commit `bfb4b8c5` with `benchstat`.
 - [x] Run `go test ./tunnel -count=1` and `go test -race ./tunnel`.
 
+### Task 15: Allocation-Free UDP Write-Back Update
+
+**Files:**
+- Modify: `component/nat/proxy.go`
+- Test: `component/nat/proxy_test.go`
+
+**Interfaces:**
+- Preserves: `C.WriteBackProxy`, delegation to the most recently stored write-back, and the per-packet update cadence.
+
+- [x] Add a test proving the proxy still delegates to the latest write-back after an update.
+- [x] Add a test proving the per-packet update allocates nothing.
+- [x] Replace the boxed `TypedValue` store with a direct interface store.
+- [x] Benchmark 6 samples against commit `d35c609a` with `benchstat`.
+- [x] Run `go test ./component/nat ./tunnel/... -count=1` and `go test -race`.
+
 ### Task 14: Reusable UDP Write-Back Address (rejected)
 
 Investigated and dropped: `listener/inner/udp.go` enqueues the `net.Addr` into a channel and hands the
