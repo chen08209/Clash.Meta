@@ -287,6 +287,23 @@
 - [x] Benchmark cache-hit and exchange argument construction with `benchstat`.
 - [x] Run `go test ./dns ./tunnel ./log -count=1` and the full suite.
 
+### Task 18: Reused UDP Send Destination
+
+**Files:**
+- Modify: `tunnel/connection.go`
+- Test: `tunnel/connection_perf_test.go`
+
+**Interfaces:**
+- Produces: `synchronousWriteTarget(any) bool` and the per-sender destination cache.
+- Preserves: per-destination address correctness for every outbound, including queued writers.
+
+- [x] Reuse the destination address object only when the conn writes to a kernel socket.
+- [x] Rebuild the address when the destination port changes.
+- [x] Walk `Upstream()` with a typed-nil guard and a depth bound.
+- [x] Test reuse, freshness, and rebuild behaviour through `processPacket`.
+- [x] Benchmark kernel-backed versus queued conns with `benchstat`.
+- [x] Run `go test ./tunnel -count=1`, `go test -race ./tunnel`, and the full suite.
+
 ### Task 14: Reusable UDP Write-Back Address (rejected)
 
 Investigated and dropped: `listener/inner/udp.go` enqueues the `net.Addr` into a channel and hands the
