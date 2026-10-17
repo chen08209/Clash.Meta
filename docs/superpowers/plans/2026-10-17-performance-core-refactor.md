@@ -386,6 +386,23 @@
 - [x] Benchmark connection setup against the pre-change code with `benchstat`.
 - [x] Run `go test ./tunnel -count=1`, `go test -race ./tunnel`, and the full suite.
 
+### Task 25: Cut Per-Packet Inbound Metadata Allocations
+
+**Files:**
+- Modify: `adapter/inbound/packet.go`, `adapter/inbound/addition.go`, `adapter/inbound/http.go`, `adapter/inbound/https.go`
+- Modify: `listener/sing/sing.go`
+- Test: `adapter/inbound/packet_test.go`
+
+**Interfaces:**
+- Produces: `inbound.SetSrcAddr` and `inbound.SetInAddr`; the `With*` closures now delegate to them.
+- Preserves: every field the old closures set, including the domain-source case that sets `Host`.
+
+- [x] Drop the write-only `RawSrcAddr`/`RawDstAddr` assignments, one of which allocated per packet.
+- [x] Replace per-packet/per-connection `With*` closures with direct setters on the hot constructors.
+- [x] Prove `SetSrcAddr`/`SetInAddr` produce exactly what the closures produced.
+- [x] Pin the per-packet allocation count in a test.
+- [x] Run `go test ./adapter/inbound ./listener/... ./tunnel -count=1` and the full suite.
+
 ### Task 14: Reusable UDP Write-Back Address (rejected)
 
 Investigated and dropped: `listener/inner/udp.go` enqueues the `net.Addr` into a channel and hands the
