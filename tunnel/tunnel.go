@@ -604,6 +604,9 @@ func logMetadata(
 	rule C.Rule,
 	remoteConn C.Connection,
 ) {
+	if !log.InfoEnabled() {
+		return // every branch below only builds log strings
+	}
 	mode := loadRuntime().mode
 	switch {
 	case metadata.SpecialProxy != "":

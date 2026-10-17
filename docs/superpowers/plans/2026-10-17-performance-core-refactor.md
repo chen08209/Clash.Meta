@@ -266,6 +266,27 @@
 - [x] Benchmark per-packet deadline cost against the unconditional shape with `benchstat`.
 - [x] Run `go test ./tunnel -count=1`, `go test -race ./tunnel`, and the full suite.
 
+### Task 17: Lazy Log Arguments On Hot Paths
+
+**Files:**
+- Modify: `log/log.go`
+- Test: `log/log_test.go`
+- Modify: `dns/resolver.go`, `dns/util.go`
+- Modify: `tunnel/tunnel.go`, `tunnel/match_context.go`
+- Modify: `listener/sing_tun/dns.go`
+- Benchmark: `dns/log_bench_test.go`
+
+**Interfaces:**
+- Produces: `log.DebugEnabled()` and `log.InfoEnabled()`.
+- Preserves: every log line and its payload; only argument construction becomes level-gated.
+
+- [x] Add level helpers with tests covering debug, info, and silent levels.
+- [x] Gate the DNS cache-hit and exchange log arguments behind `DebugEnabled`.
+- [x] Gate the per-connection `logMetadata` body behind `InfoEnabled`.
+- [x] Gate the tun DNS hijack logs and the rule-match resolve log.
+- [x] Benchmark cache-hit and exchange argument construction with `benchstat`.
+- [x] Run `go test ./dns ./tunnel ./log -count=1` and the full suite.
+
 ### Task 14: Reusable UDP Write-Back Address (rejected)
 
 Investigated and dropped: `listener/inner/udp.go` enqueues the `net.Addr` into a channel and hands the

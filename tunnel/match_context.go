@@ -32,7 +32,9 @@ func (c *matchContext) resolveIP() {
 	if err != nil {
 		log.Debugln("[DNS] resolve %s error: %s", c.metadata.Host, err.Error())
 	} else {
-		log.Debugln("[DNS] %s --> %s", c.metadata.Host, ip.String())
+		if log.DebugEnabled() {
+			log.Debugln("[DNS] %s --> %s", c.metadata.Host, ip.String())
+		}
 		c.metadata.DstIP = ip
 	}
 	c.resolved = true

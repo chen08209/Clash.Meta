@@ -168,7 +168,9 @@ func (r *Resolver) ExchangeContext(ctx context.Context, m *D.Msg) (msg *D.Msg, e
 	domain := msgToDomain(m)
 	msg, expireTime, hit := getMsgFromCache(r.cache, q)
 	if hit {
-		log.Debugln("[DNS] cache hit %s --> %s, expire at %s", domain, msgToLogString(msg), expireTime.Format("2006-01-02 15:04:05"))
+		if log.DebugEnabled() {
+			log.Debugln("[DNS] cache hit %s --> %s, expire at %s", domain, msgToLogString(msg), expireTime.Format("2006-01-02 15:04:05"))
+		}
 		r.traceCacheHit(ctx, q, msg)
 		now := time.Now()
 		if expireTime.Before(now) {

@@ -5,6 +5,26 @@ import (
 	"time"
 )
 
+func TestLevelEnabledHelpersFollowActiveLevel(t *testing.T) {
+	oldLevel := Level()
+	defer SetLevel(oldLevel)
+
+	SetLevel(DEBUG)
+	if !DebugEnabled() || !InfoEnabled() {
+		t.Fatal("debug and info must both be enabled at debug level")
+	}
+
+	SetLevel(INFO)
+	if DebugEnabled() || !InfoEnabled() {
+		t.Fatal("debug must be gated at info level")
+	}
+
+	SetLevel(SILENT)
+	if DebugEnabled() || InfoEnabled() {
+		t.Fatal("both must be gated at silent level")
+	}
+}
+
 func TestEventsBelowActiveLevelAreDropped(t *testing.T) {
 	oldLevel := Level()
 	defer SetLevel(oldLevel)

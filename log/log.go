@@ -89,6 +89,16 @@ func Level() LogLevel {
 	return LogLevel(level.Load())
 }
 
+// DebugEnabled lets hot paths skip building log arguments that would otherwise
+// be evaluated before the level gate inside Debugln runs.
+func DebugEnabled() bool {
+	return shouldLog(DEBUG)
+}
+
+func InfoEnabled() bool {
+	return shouldLog(INFO)
+}
+
 func SetLevel(newLevel LogLevel) {
 	level.Store(int32(newLevel))
 }
