@@ -417,6 +417,19 @@
 - [x] Measure the added instruction cost on the hot path.
 - [x] Run `go test ./transport/vless/... -count=1`, `go vet`, and the full suite.
 
+### Task 27: Publish The AnyTLS Stream Error Atomically
+
+**Files:**
+- Modify: `transport/anytls/session/stream.go`
+
+**Interfaces:**
+- Preserves: the close-once semantics, the error values, and the read/write return behaviour.
+
+- [x] Store the stream's terminal error behind an atomic typed value.
+- [x] Read it on the read path and the write path without ordering.
+- [x] Confirm with `-race` that no `anytls/session.Stream` frame remains in a read/write pair.
+- [x] Run `go test ./transport/anytls/... -count=1`, `go vet`, and the full suite.
+
 ### Task 14: Reusable UDP Write-Back Address (rejected)
 
 Investigated and dropped: `listener/inner/udp.go` enqueues the `net.Addr` into a channel and hands the
