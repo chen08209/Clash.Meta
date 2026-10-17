@@ -321,6 +321,22 @@
 - [x] Benchmark cached lookups against the string key with `benchstat`.
 - [x] Run `go test ./dns -count=1`, `go test -race ./dns`, and the full suite.
 
+### Task 20: Precomputed Rule Helper Usage
+
+**Files:**
+- Modify: `tunnel/rule_index.go`, `tunnel/tunnel.go`
+- Test: `tunnel/rule_index_bench_test.go`
+
+**Interfaces:**
+- Produces: `ruleIndex.usesHelper` and `ruleIndex.usesHelperAt`.
+- Preserves: which rules receive a match helper, including wrapped rules and rematches.
+
+- [x] Precompute the helper flag while the index is built, reusing the same walk.
+- [x] Fall back to the direct walk for positions outside the index.
+- [x] Test that the precomputed flag equals the direct walk for every position.
+- [x] Benchmark a mixed-rule scan against the direct walk with `benchstat`.
+- [x] Run `go test ./tunnel -count=1`, `go test -race ./tunnel`, and the full suite.
+
 ### Task 14: Reusable UDP Write-Back Address (rejected)
 
 Investigated and dropped: `listener/inner/udp.go` enqueues the `net.Addr` into a channel and hands the

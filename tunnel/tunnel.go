@@ -643,7 +643,7 @@ func match(
 	NextRule:
 		for cursor < len(rules) {
 			rule := rules[cursor]
-			if ruleUsesMatchHelper(rule) && activeContext == nil {
+			if index.usesHelperAt(cursor, rules) && activeContext == nil {
 				activeContext = &matchContext{
 					metadata:     metadata,
 					runtimeState: runtimeState,
