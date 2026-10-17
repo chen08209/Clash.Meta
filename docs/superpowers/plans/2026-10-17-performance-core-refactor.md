@@ -150,3 +150,21 @@
 - [ ] Compare every phase against Task 1 with `benchstat`.
 - [x] Reject changes with a Direct target win but a Direct end-to-end regression.
 - [x] Record the final benchmark commands and environment.
+
+### Task 9: Large Rule-Set Index
+
+**Files:**
+- Create: `tunnel/rule_index.go`
+- Modify: `tunnel/runtime.go`, `tunnel/tunnel.go`
+- Test: `tunnel/rule_index_test.go`, `tunnel/rule_index_bench_test.go`
+
+**Interfaces:**
+- Produces: contiguous `DOMAIN` and `DOMAIN-SUFFIX` rule-run indexes with rule-position ordering.
+- Preserves: first-match order, disabled wrappers, duplicate payloads, PASS, REMATCH, sub-rules, and non-domain rule order.
+
+- [x] Add a red test proving a 10,000-rule exact-domain run must not be scanned linearly.
+- [x] Index exact names with a position-aware hash.
+- [x] Index suffixes with a reversed-label, position-aware trie.
+- [x] Cover disabled wrappers, duplicate payloads, PASS, sub-rules, overlapping exact/suffix rules, and intervening non-domain rules.
+- [x] Compare 6 benchmark samples against commit `bf2846b6` with `benchstat`.
+- [x] Run full main-module tests and `go test -race ./tunnel`.

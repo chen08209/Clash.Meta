@@ -11,8 +11,10 @@ import (
 
 type runtimeSnapshot struct {
 	rules             []C.Rule
+	ruleIndex         *ruleIndex
 	listeners         map[string]C.InboundListener
 	subRules          map[string][]C.Rule
+	subRuleIndexes    map[string]*ruleIndex
 	proxies           map[string]C.Proxy
 	providers         map[string]P.ProxyProvider
 	ruleProviders     map[string]P.RuleProvider

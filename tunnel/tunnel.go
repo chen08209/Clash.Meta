@@ -196,8 +196,10 @@ func Listeners() map[string]C.InboundListener {
 func UpdateRules(newRules []C.Rule, newSubRule map[string][]C.Rule, rp map[string]P.RuleProvider) {
 	updateRuntime(func(next *runtimeSnapshot) {
 		next.rules = cloneRules(newRules)
+		next.ruleIndex = buildRuleIndex(next.rules)
 		next.ruleProviders = cloneMap(rp)
 		next.subRules = cloneSubRules(newSubRule)
+		next.subRuleIndexes = buildSubRuleIndexes(next.subRules)
 	})
 }
 
@@ -619,8 +621,11 @@ func match(
 	for {
 		var rematchProxy C.Proxy
 		var rematchRule C.Rule
-	GetRules:
-		for _, rule := range getRules(metadata, runtimeState) {
+		rules, index := getRules(metadata, runtimeState)
+		cursor := index.next(0, metadata.RuleHost())
+	NextRule:
+		for cursor < len(rules) {
+			rule := rules[cursor]
 			if ruleUsesMatchHelper(rule) && activeContext == nil {
 				activeContext = &matchContext{
 					metadata:     metadata,
@@ -638,30 +643,34 @@ func match(
 			if matched, ada := rule.Match(metadata, helper); matched {
 				adapter, ok := runtimeState.proxies[ada]
 				if !ok {
-					continue
+					cursor = index.after(cursor, metadata.RuleHost())
+					continue NextRule
 				}
 
 				// parse multi-layer nesting
 				for adapter := adapter; adapter != nil; adapter = adapter.Unwrap(metadata, false) {
 					if adapter.Type() == C.Pass {
 						log.Debugln("%s match Pass rule", adapter.Name())
-						continue GetRules
+						cursor = index.after(cursor, metadata.RuleHost())
+						continue NextRule
 					}
 					if adapter.Type() == C.Rematch {
 						log.Debugln("%s match Rematch rule", adapter.Name())
 						rematchProxy = adapter
 						rematchRule = rule
-						break GetRules
+						break NextRule
 					}
 				}
 
 				if metadata.NetWork == C.UDP && !adapter.SupportUDP() {
 					log.Debugln("%s UDP is not supported", adapter.Name())
-					continue
+					cursor = index.after(cursor, metadata.RuleHost())
+					continue NextRule
 				}
 
 				return adapter, rule, nil
 			}
+			cursor = index.after(cursor, metadata.RuleHost())
 		}
 		if rematchProxy != nil {
 			if slices.Contains(rematchChain, rematchProxy.Name()) {
@@ -684,13 +693,16 @@ func match(
 	}
 }
 
-func getRules(metadata *C.Metadata, runtimeState *runtimeSnapshot) []C.Rule {
+func getRules(
+	metadata *C.Metadata,
+	runtimeState *runtimeSnapshot,
+) ([]C.Rule, *ruleIndex) {
 	if sr, ok := runtimeState.subRules[metadata.SpecialRules]; ok {
 		log.Debugln("[Rule] use %s rules", metadata.SpecialRules)
-		return sr
+		return sr, runtimeState.subRuleIndexes[metadata.SpecialRules]
 	} else {
 		log.Debugln("[Rule] use default rules")
-		return runtimeState.rules
+		return runtimeState.rules, runtimeState.ruleIndex
 	}
 }
 
