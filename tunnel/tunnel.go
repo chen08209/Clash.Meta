@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -23,7 +22,6 @@ import (
 	"github.com/metacubex/mihomo/component/slowdown"
 	"github.com/metacubex/mihomo/component/sniffer"
 	C "github.com/metacubex/mihomo/constant"
-	"github.com/metacubex/mihomo/constant/features"
 	P "github.com/metacubex/mihomo/constant/provider"
 	icontext "github.com/metacubex/mihomo/context"
 	"github.com/metacubex/mihomo/log"
@@ -329,81 +327,23 @@ func resolveMetadata(metadata *C.Metadata) (proxy C.Proxy, rule C.Rule, err erro
 		}
 		return
 	}
-	var (
-		resolved             bool
-		attemptProcessLookup = metadata.Type != C.INNER
-	)
+	hostsResolved := false
+	processLookupEnabled := FindProcessMode() == process.FindProcessStrict
 
 	if node, ok := resolver.DefaultHosts.Search(metadata.Host, false); ok {
 		metadata.DstIP, _ = node.RandIP()
-		resolved = true
+		hostsResolved = true
 	}
-
-	helper := C.RuleMatchHelper{
-		ResolveIP: func() {
-			if !resolved && metadata.Host != "" && !metadata.Resolved() {
-				ctx, cancel := context.WithTimeout(resolver.WithInitiator(context.Background(), resolver.InitiatorRule), resolver.DefaultDNSTimeout)
-				defer cancel()
-				ip, err := resolver.ResolveIP(ctx, metadata.Host)
-				if err != nil {
-					log.Debugln("[DNS] resolve %s error: %s", metadata.Host, err.Error())
-				} else {
-					if log.DebugEnabled() {
-						log.Debugln("[DNS] %s --> %s", metadata.Host, ip.String())
-					}
-					metadata.DstIP = ip
-				}
-				resolved = true
-			}
-		},
-		FindProcess: func() {
-			if attemptProcessLookup {
-				attemptProcessLookup = false
-				if !features.Android {
-					// normal check for process
-					uid, path, err := process.FindProcessName(metadata.NetWork.String(), metadata.SrcIP, int(metadata.SrcPort))
-					if err != nil {
-						log.Debugln("[Process] find process error for %s: %v", metadata.String(), err)
-					} else {
-						metadata.Process = filepath.Base(path)
-						metadata.ProcessPath = path
-						metadata.Uid = uid
-
-						if pkg, err := process.FindPackageName(metadata); err == nil { // for android (not CMFA) package names
-							metadata.Process = pkg
-						}
-					}
-				} else {
-					// check package names
-					pkg, err := process.FindPackageName(metadata)
-					if err != nil {
-						log.Debugln("[Process] find process error for %s: %v", metadata.String(), err)
-					} else {
-						metadata.Process = pkg
-					}
-				}
-			}
-		},
-		CheckPassRule: func(adapterName string) bool {
-			adapter, ok := proxies[adapterName]
-			if !ok {
-				return false
-			}
-			for a := adapter; a != nil; a = a.Unwrap(metadata, false) {
-				if a.Type() == C.PassRule {
-					return true
-				}
-			}
-			return false
-		},
-	}
-
 	switch FindProcessMode() {
 	case process.FindProcessAlways:
-		helper.FindProcess()
-		helper.FindProcess = nil
-	case process.FindProcessOff:
-		helper.FindProcess = nil
+		if metadata.Type != C.INNER {
+			processContext := &matchContext{
+				metadata:             metadata,
+				resolved:             hostsResolved,
+				attemptProcessLookup: true,
+			}
+			processContext.findProcess()
+		}
 	}
 
 	switch mode {
@@ -413,7 +353,7 @@ func resolveMetadata(metadata *C.Metadata) (proxy C.Proxy, rule C.Rule, err erro
 		proxy = proxies["GLOBAL"]
 	// Rule
 	default:
-		proxy, rule, err = match(metadata, helper)
+		proxy, rule, err = match(metadata, hostsResolved, processLookupEnabled)
 	}
 	return
 }
@@ -653,10 +593,12 @@ func logMetadata(metadata *C.Metadata, rule C.Rule, remoteConn C.Connection) {
 	}
 }
 
-func match(metadata *C.Metadata, helper C.RuleMatchHelper) (C.Proxy, C.Rule, error) {
+func match(metadata *C.Metadata, hostsResolved bool, processLookupEnabled bool) (C.Proxy, C.Rule, error) {
 	configMux.RLock()
 	defer configMux.RUnlock()
 
+	var activeContext *matchContext
+	var helper C.RuleMatchHelper
 	var rematchChain []string
 	for {
 		var rematchProxy C.Proxy
@@ -666,6 +608,18 @@ func match(metadata *C.Metadata, helper C.RuleMatchHelper) (C.Proxy, C.Rule, err
 	GetRules:
 		for cursor < len(rules) {
 			rule := rules[cursor]
+			if index.usesHelperAt(cursor, rules) && activeContext == nil {
+				activeContext = &matchContext{
+					metadata:             metadata,
+					resolved:             hostsResolved,
+					attemptProcessLookup: processLookupEnabled && metadata.Type != C.INNER,
+				}
+				helper = C.RuleMatchHelper{
+					ResolveIP:     activeContext.resolveIP,
+					FindProcess:   activeContext.findProcess,
+					CheckPassRule: activeContext.checkPassRule,
+				}
+			}
 			if matched, ada := rule.Match(metadata, helper); matched {
 				adapter, ok := proxies[ada]
 				if !ok {

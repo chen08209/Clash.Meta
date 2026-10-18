@@ -52,7 +52,7 @@ func BenchmarkMatchLargeExactDomainHit(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		proxy, _, err := match(metadata, C.RuleMatchHelper{})
+		proxy, _, err := match(metadata, false, false)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -73,7 +73,7 @@ func BenchmarkMatchLargeExactDomainMiss(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		proxy, _, err := match(metadata, C.RuleMatchHelper{})
+		proxy, _, err := match(metadata, false, false)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -103,7 +103,7 @@ func BenchmarkMatchLargeDomainSuffixHit(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		proxy, _, err := match(metadata, C.RuleMatchHelper{})
+		proxy, _, err := match(metadata, false, false)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -132,7 +132,7 @@ func BenchmarkMatchLargeDomainSuffixMiss(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		proxy, _, err := match(metadata, C.RuleMatchHelper{})
+		proxy, _, err := match(metadata, false, false)
 		if err != nil {
 			b.Fatal(err)
 		}

@@ -11,6 +11,7 @@ type ruleIndex struct {
 	segments          []ruleSegment
 	segmentOfPosition []int
 	nextDuplicate     map[int]int
+	usesHelper        []bool
 }
 
 type ruleSegment struct {
@@ -33,8 +34,10 @@ func buildRuleIndex(rules []C.Rule) *ruleIndex {
 		segments:          make([]ruleSegment, 0, 8),
 		segmentOfPosition: make([]int, len(rules)),
 		nextDuplicate:     make(map[int]int),
+		usesHelper:        make([]bool, len(rules)),
 	}
 	for position := 0; position < len(rules); {
+		index.usesHelper[position] = ruleUsesMatchHelper(rules[position])
 		if _, _, ok := indexedDomainPayload(rules[position]); ok {
 			segment := ruleSegment{
 				exact:  make(map[string]int),
@@ -42,6 +45,7 @@ func buildRuleIndex(rules []C.Rule) *ruleIndex {
 			}
 			last := make(map[string]int)
 			for position < len(rules) {
+				index.usesHelper[position] = ruleUsesMatchHelper(rules[position])
 				domain, exact, ok := indexedDomainPayload(rules[position])
 				if !ok {
 					break
@@ -67,6 +71,7 @@ func buildRuleIndex(rules []C.Rule) *ruleIndex {
 		}
 
 		for position < len(rules) {
+			index.usesHelper[position] = ruleUsesMatchHelper(rules[position])
 			if _, _, ok := indexedDomainPayload(rules[position]); ok {
 				break
 			}
@@ -97,6 +102,16 @@ func (index *ruleIndex) next(position int, host string) int {
 		}
 	}
 	return candidate
+}
+
+// usesHelperAt reports whether the rule at position needs the match helper.
+// The flag is precomputed at index build time so the per-connection scan stops
+// unwrapping wrappers to find out.
+func (index *ruleIndex) usesHelperAt(position int, rules []C.Rule) bool {
+	if index != nil && position < len(index.usesHelper) {
+		return index.usesHelper[position]
+	}
+	return ruleUsesMatchHelper(rules[position])
 }
 
 func (index *ruleIndex) after(position int, host string) int {
