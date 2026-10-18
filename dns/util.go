@@ -416,8 +416,6 @@ func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.M
 	cache = true
 	fast, ctx := picker.WithTimeout[*D.Msg](ctx, resolver.DefaultDNSTimeout)
 	defer fast.Close()
-	domain := msgToDomain(m)
-	_, qTypeStr := msgToQtype(m)
 	for _, client := range clients {
 		if _, isRCodeClient := client.(rcodeClient); isRCodeClient {
 			msg, err = client.ExchangeContext(ctx, m)
@@ -426,7 +424,10 @@ func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.M
 		}
 		client := client // shadow define client to ensure the value captured by the closure will not be changed in the next loop
 		fast.Go(func() (*D.Msg, error) {
-			log.Debugln("[DNS] resolve %s %s from %s", domain, qTypeStr, client.Address())
+			if log.DebugEnabled() {
+				_, qTypeStr := msgToQtype(m)
+				log.Debugln("[DNS] resolve %s %s from %s", msgToDomain(m), qTypeStr, client.Address())
+			}
 			m, err := client.ExchangeContext(ctx, m)
 			if err != nil {
 				return nil, err
@@ -435,7 +436,9 @@ func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.M
 				// so we would ignore RCode errors from RCode clients.
 				return nil, errors.New("server failure: " + D.RcodeToString[m.Rcode])
 			}
-			log.Debugln("[DNS] %s --> %s from %s", domain, msgToLogString(m), client.Address())
+			if log.DebugEnabled() {
+				log.Debugln("[DNS] %s --> %s from %s", msgToDomain(m), msgToLogString(m), client.Address())
+			}
 			traceAnswer(ctx, m, client.Address())
 			return m, nil
 		})

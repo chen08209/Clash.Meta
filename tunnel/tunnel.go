@@ -344,7 +344,9 @@ func resolveMetadata(metadata *C.Metadata) (proxy C.Proxy, rule C.Rule, err erro
 				if err != nil {
 					log.Debugln("[DNS] resolve %s error: %s", metadata.Host, err.Error())
 				} else {
-					log.Debugln("[DNS] %s --> %s", metadata.Host, ip.String())
+					if log.DebugEnabled() {
+						log.Debugln("[DNS] %s --> %s", metadata.Host, ip.String())
+					}
 					metadata.DstIP = ip
 				}
 				resolved = true
@@ -626,6 +628,9 @@ func logMetadataErr(metadata *C.Metadata, rule C.Rule, proxy C.ProxyAdapter, err
 }
 
 func logMetadata(metadata *C.Metadata, rule C.Rule, remoteConn C.Connection) {
+	if !log.InfoEnabled() {
+		return // every branch below only builds log strings
+	}
 	switch {
 	case metadata.SpecialProxy != "":
 		log.Infoln("[%s] %s --> %s using %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), remoteConn.Chains().String())
