@@ -442,6 +442,21 @@
 - [x] Upgrade the check-then-set to a compare-and-swap so exactly one writer prepends.
 - [x] Run `go test ./... -count=1`, `go vet`, and confirm the build.
 
+### Task 29: Start The Peek Buffer Small
+
+**Files:**
+- Modify: `common/net/bufconn.go`
+- Test: `common/net/bufconn_unsafe_test.go`, `common/net/bufconn_bench_test.go`, `component/sniffer/dispatcher_test.go`, `tunnel/peek_test.go`
+
+**Interfaces:**
+- Produces: `N.InitialPeekBufferSize`.
+- Preserves: every `Peek`/`Grow`/`Discard` behaviour, including reads past the initial size.
+
+- [x] Start the read buffer at 512 bytes; the sniffer grows it on demand.
+- [x] Adapt the tests that peek past the initial size to grow first.
+- [x] Pin the construction cost with a benchmark and compare with `benchstat`.
+- [x] Run `go test ./common/net ./component/sniffer ./tunnel -count=1` and the full suite.
+
 ### Task 14: Reusable UDP Write-Back Address (rejected)
 
 Investigated and dropped: `listener/inner/udp.go` enqueues the `net.Addr` into a channel and hands the

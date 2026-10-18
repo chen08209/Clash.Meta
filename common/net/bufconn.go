@@ -9,6 +9,11 @@ import (
 
 var _ ExtendedConn = (*BufferedConn)(nil)
 
+// InitialPeekBufferSize is the read buffer a BufferedConn starts with. Peeking
+// is its only reason to exist and the sniffer grows it on demand, so it starts
+// small; a relay never reads through it once it is empty.
+const InitialPeekBufferSize = 512
+
 type BufferedConn struct {
 	r *bufio.Reader
 	ExtendedConn
@@ -19,7 +24,7 @@ func NewBufferedConn(c net.Conn) *BufferedConn {
 	if bc, ok := c.(*BufferedConn); ok {
 		return bc
 	}
-	return &BufferedConn{bufio.NewReader(c), NewExtendedConn(c), false}
+	return &BufferedConn{bufio.NewReaderSize(c, InitialPeekBufferSize), NewExtendedConn(c), false}
 }
 
 func WarpConnWithBioReader(c net.Conn, br *bufio.Reader) net.Conn {

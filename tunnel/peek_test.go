@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"strconv"
 	"testing"
 	"time"
 
@@ -27,11 +28,32 @@ type peekDirectProxy struct {
 }
 
 func (peekDirectProxy) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, error) {
-	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(metadata.Host, "443"))
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(metadata.Host, strconv.Itoa(int(metadata.DstPort))))
 	if err != nil {
 		return nil, err
 	}
 	return &peekRelayConn{ExtendedConn: N.NewExtendedConn(conn)}, nil
+}
+
+func startPeekEcho(tb testing.TB) int {
+	tb.Helper()
+
+	echo, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(tb, err)
+	tb.Cleanup(func() { _ = echo.Close() })
+	go func() {
+		for {
+			c, err := echo.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				_, _ = io.Copy(c, c)
+			}()
+		}
+	}()
+	return echo.Addr().(*net.TCPAddr).Port
 }
 
 // A client that connects first and speaks later must survive: the pre-dial peek
@@ -50,23 +72,7 @@ func TestDirectConnSurvivesLateFirstByte(t *testing.T) {
 		invalidateAllProxies()
 	})
 
-	echo, err := net.Listen("tcp", "127.0.0.1:443")
-	if err != nil {
-		t.Skip("port 443 unavailable")
-	}
-	defer echo.Close()
-	go func() {
-		for {
-			c, err := echo.Accept()
-			if err != nil {
-				return
-			}
-			go func() {
-				defer c.Close()
-				_, _ = io.Copy(c, c)
-			}()
-		}
-	}()
+	port := startPeekEcho(t)
 
 	inbound, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -89,7 +95,7 @@ func TestDirectConnSurvivesLateFirstByte(t *testing.T) {
 		SrcIP:   netip.MustParseAddr("127.0.0.1"),
 		SrcPort: 12345,
 		DstIP:   netip.MustParseAddr("127.0.0.1"),
-		DstPort: 443,
+		DstPort: uint16(port),
 		Host:    "localhost",
 	}
 	go Tunnel.HandleTCPConn(<-acceptedCh, metadata)
@@ -132,7 +138,7 @@ type handshakeProxy struct {
 }
 
 func (p *handshakeProxy) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, error) {
-	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(metadata.Host, "443"))
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(metadata.Host, strconv.Itoa(int(metadata.DstPort))))
 	if err != nil {
 		return nil, err
 	}
