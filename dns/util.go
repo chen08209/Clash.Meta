@@ -431,6 +431,9 @@ func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.M
 			m, err := client.ExchangeContext(ctx, m)
 			if err != nil {
 				return nil, err
+			}
+			if m == nil {
+				return nil, errors.New("dns client returned a nil message")
 			} else if cache && (m.Rcode == D.RcodeServerFailure || m.Rcode == D.RcodeRefused) {
 				// currently, cache indicates whether this msg was from a RCode client,
 				// so we would ignore RCode errors from RCode clients.
