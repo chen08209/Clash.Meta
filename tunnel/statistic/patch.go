@@ -10,10 +10,17 @@ var DefaultRequestNotify RequestNotify
 var IsDirect = func(name string) bool { return name == "DIRECT" }
 
 func (m *Manager) TotalTraffic(onlyProxy bool) (up, down int64) {
-	if onlyProxy {
-		return m.proxyUploadTotal.Load(), m.proxyDownloadTotal.Load()
+	for i := range m.stripes {
+		s := &m.stripes[i]
+		if onlyProxy {
+			up += s.proxyUploadTotal.Load()
+			down += s.proxyDownloadTotal.Load()
+		} else {
+			up += s.uploadTotal.Load()
+			down += s.downloadTotal.Load()
+		}
 	}
-	return m.uploadTotal.Load(), m.downloadTotal.Load()
+	return
 }
 
 func (m *Manager) NowTraffic(onlyProxy bool) (up, down int64) {
