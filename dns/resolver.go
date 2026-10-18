@@ -26,9 +26,21 @@ type dnsClient interface {
 }
 
 type dnsCache interface {
-	GetWithExpire(key string) (*D.Msg, time.Time, bool)
-	SetWithExpire(key string, value *D.Msg, expire time.Time)
+	GetWithExpire(key dnsCacheKey) (*D.Msg, time.Time, bool)
+	SetWithExpire(key dnsCacheKey, value *D.Msg, expire time.Time)
 	Clear()
+}
+
+// dnsCacheKey identifies a cached answer by question name and type, the same
+// identity Question.String builds, without formatting a fresh string per lookup.
+type dnsCacheKey struct {
+	name   string
+	qtype  uint16
+	qclass uint16
+}
+
+func questionKey(q D.Question) dnsCacheKey {
+	return dnsCacheKey{name: q.Name, qtype: q.Qtype, qclass: q.Qclass}
 }
 
 type result struct {
@@ -153,34 +165,41 @@ func (r *Resolver) ExchangeContext(ctx context.Context, m *D.Msg) (msg *D.Msg, e
 	if len(m.Question) == 0 {
 		return nil, errors.New("should have one question at least")
 	}
-	continueFetch := false
-	defer func() {
-		if continueFetch || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			go func() {
-				ctx, cancel := context.WithTimeout(context.Background(), resolver.DefaultDNSTimeout)
-				defer cancel()
-				_, _ = r.exchangeWithoutCache(ctx, m) // ignore result, just for putMsgToCache
-			}()
-		}
-	}()
 
 	q := m.Question[0]
 	domain := msgToDomain(m)
 	msg, expireTime, hit := getMsgFromCache(r.cache, q)
 	if hit {
-		log.Debugln("[DNS] cache hit %s --> %s, expire at %s", domain, msgToLogString(msg), expireTime.Format("2006-01-02 15:04:05"))
+		if log.Level() <= log.DEBUG {
+			log.Debugln("[DNS] cache hit %s --> %s, expire at %s", domain, msgToLogString(msg), expireTime.Format("2006-01-02 15:04:05"))
+		}
 		r.traceCacheHit(ctx, q, msg)
 		now := time.Now()
 		if expireTime.Before(now) {
 			setMsgTTL(msg, uint32(1)) // Continue fetch
-			continueFetch = true
+			r.refreshAsync(m)
 		} else {
 			// updating TTL by subtracting common delta time from each DNS record
 			updateMsgTTL(msg, uint32(time.Until(expireTime).Seconds()))
 		}
 		return
 	}
-	return r.exchangeWithoutCache(ctx, m)
+	msg, err = r.exchangeWithoutCache(ctx, m)
+	if err != nil && (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)) {
+		r.refreshAsync(m)
+	}
+	return
+}
+
+// refreshAsync re-queries a question served from an expiring cache entry or cut
+// off by its caller, so the cache gets a fresh answer; the result only matters
+// for putMsgToCache.
+func (r *Resolver) refreshAsync(m *D.Msg) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), resolver.DefaultDNSTimeout)
+		defer cancel()
+		_, _ = r.exchangeWithoutCache(ctx, m) // ignore result, just for putMsgToCache
+	}()
 }
 
 // ExchangeWithoutCache a batch of dns request, and it do NOT GET from cache
@@ -495,9 +514,9 @@ func (config Config) newCache() dnsCache {
 	}
 	switch config.CacheAlgorithm {
 	case "arc":
-		return arc.New(arc.WithSize[string, *D.Msg](config.CacheMaxSize))
+		return arc.New(arc.WithSize[dnsCacheKey, *D.Msg](config.CacheMaxSize))
 	default:
-		return lru.New(lru.WithSize[string, *D.Msg](config.CacheMaxSize), lru.WithStale[string, *D.Msg](true))
+		return lru.New(lru.WithSize[dnsCacheKey, *D.Msg](config.CacheMaxSize), lru.WithStale[dnsCacheKey, *D.Msg](true))
 	}
 }
 
