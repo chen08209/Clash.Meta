@@ -38,17 +38,19 @@ const (
 )
 
 var (
-	status        = atomic.NewInt32Enum(Suspend)
-	udpInit       sync.Once
-	udpQueues     []chan C.PacketAdapter
-	natTable      = nat.New()
-	rules         []C.Rule
-	listeners     = make(map[string]C.InboundListener)
-	subRules      map[string][]C.Rule
-	proxies       = make(map[string]C.Proxy)
-	providers     map[string]P.ProxyProvider
-	ruleProviders map[string]P.RuleProvider
-	configMux     sync.RWMutex
+	status          = atomic.NewInt32Enum(Suspend)
+	udpInit         sync.Once
+	udpQueues       []chan C.PacketAdapter
+	natTable        = nat.New()
+	rules           []C.Rule
+	rulesIndex      *ruleIndex
+	listeners       = make(map[string]C.InboundListener)
+	subRules        map[string][]C.Rule
+	subRulesIndexes map[string]*ruleIndex
+	proxies         = make(map[string]C.Proxy)
+	providers       map[string]P.ProxyProvider
+	ruleProviders   map[string]P.RuleProvider
+	configMux       sync.RWMutex
 
 	// for compatibility, lazy init
 	tcpQueue  chan C.ConnContext
@@ -205,8 +207,10 @@ func Listeners() map[string]C.InboundListener {
 func UpdateRules(newRules []C.Rule, newSubRule map[string][]C.Rule, rp map[string]P.RuleProvider) {
 	configMux.Lock()
 	rules = newRules
+	rulesIndex = buildRuleIndex(newRules)
 	ruleProviders = rp
 	subRules = newSubRule
+	subRulesIndexes = buildSubRuleIndexes(newSubRule)
 	configMux.Unlock()
 }
 
@@ -445,7 +449,7 @@ func handleUDPConn(packet C.PacketAdapter) {
 	})
 	if !loaded {
 		dial := func() (C.PacketConn, C.WriteBackProxy, error) {
-			originMetadata := metadata  // save origin metadata
+			originMetadata := metadata // save origin metadata
 			// the session works on a clone so the PacketAdapter's metadata stays intact
 			session := metadata.Clone()
 
@@ -657,11 +661,15 @@ func match(metadata *C.Metadata, helper C.RuleMatchHelper) (C.Proxy, C.Rule, err
 	for {
 		var rematchProxy C.Proxy
 		var rematchRule C.Rule
+		rules, index := getRulesAndIndex(metadata)
+		cursor := index.next(0, metadata.RuleHost())
 	GetRules:
-		for _, rule := range getRules(metadata) {
+		for cursor < len(rules) {
+			rule := rules[cursor]
 			if matched, ada := rule.Match(metadata, helper); matched {
 				adapter, ok := proxies[ada]
 				if !ok {
+					cursor = index.after(cursor, metadata.RuleHost())
 					continue
 				}
 
@@ -669,6 +677,7 @@ func match(metadata *C.Metadata, helper C.RuleMatchHelper) (C.Proxy, C.Rule, err
 				for adapter := adapter; adapter != nil; adapter = adapter.Unwrap(metadata, false) {
 					if adapter.Type() == C.Pass {
 						log.Debugln("%s match Pass rule", adapter.Name())
+						cursor = index.after(cursor, metadata.RuleHost())
 						continue GetRules
 					}
 					if adapter.Type() == C.Rematch {
@@ -681,11 +690,13 @@ func match(metadata *C.Metadata, helper C.RuleMatchHelper) (C.Proxy, C.Rule, err
 
 				if metadata.NetWork == C.UDP && !adapter.SupportUDP() {
 					log.Debugln("%s UDP is not supported", adapter.Name())
+					cursor = index.after(cursor, metadata.RuleHost())
 					continue
 				}
 
 				return adapter, rule, nil
 			}
+			cursor = index.after(cursor, metadata.RuleHost())
 		}
 		if rematchProxy != nil {
 			if slices.Contains(rematchChain, rematchProxy.Name()) {
@@ -708,13 +719,17 @@ func match(metadata *C.Metadata, helper C.RuleMatchHelper) (C.Proxy, C.Rule, err
 	}
 }
 
-func getRules(metadata *C.Metadata) []C.Rule {
+func getRulesAndIndex(metadata *C.Metadata) ([]C.Rule, *ruleIndex) {
 	if sr, ok := subRules[metadata.SpecialRules]; ok {
-		log.Debugln("[Rule] use %s rules", metadata.SpecialRules)
-		return sr
+		if log.DebugEnabled() {
+			log.Debugln("[Rule] use %s rules", metadata.SpecialRules)
+		}
+		return sr, subRulesIndexes[metadata.SpecialRules]
 	} else {
-		log.Debugln("[Rule] use default rules")
-		return rules
+		if log.DebugEnabled() {
+			log.Debugln("[Rule] use default rules")
+		}
+		return rules, rulesIndex
 	}
 }
 
