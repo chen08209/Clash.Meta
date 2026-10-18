@@ -195,7 +195,7 @@ func TestDispatcherFeedLoop(t *testing.T) {
 			wantErr:    true,
 			errorIs:    bufio.ErrBufferFull,
 			seen:       []int{10},
-			bufferSize: 4096,
+			bufferSize: N.InitialPeekBufferSize,
 			buffered:   10,
 			chunksLeft: 2,
 		},
