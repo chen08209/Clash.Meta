@@ -12,11 +12,9 @@ import (
 	rulesCommon "github.com/metacubex/mihomo/rules/common"
 )
 
-// matchContext carries the state the lazy match helper closes over. It is
-// created once per connection, when the first rule that needs the helper is
-// visited.
 type matchContext struct {
 	metadata             *C.Metadata
+	runtimeState         *runtimeSnapshot
 	resolved             bool
 	attemptProcessLookup bool
 }
@@ -76,7 +74,7 @@ func (c *matchContext) findProcess() {
 }
 
 func (c *matchContext) checkPassRule(adapterName string) bool {
-	adapter, ok := proxies[adapterName]
+	adapter, ok := c.runtimeState.proxies[adapterName]
 	if !ok {
 		return false
 	}
@@ -88,9 +86,6 @@ func (c *matchContext) checkPassRule(adapterName string) bool {
 	return false
 }
 
-// ruleUsesMatchHelper reports whether the rule reads the match helper. The
-// listed types never touch it; everything else may, so it is treated as a
-// helper user.
 func ruleUsesMatchHelper(rule C.Rule) bool {
 	for rule != nil {
 		switch rule.(type) {

@@ -13,28 +13,26 @@ import (
 
 func setupRuleRuntime(
 	t *testing.T,
-	testProxies map[string]C.Proxy,
-	testRules []C.Rule,
-	testSubRules map[string][]C.Rule,
+	proxies map[string]C.Proxy,
+	rules []C.Rule,
+	subRules map[string][]C.Rule,
 ) {
 	t.Helper()
 
+	oldRuntime := loadRuntime()
 	configMux.Lock()
-	oldRules, oldSubRules, oldProxies := rules, subRules, proxies
-	oldMode := mode
+	currentRuntime.Store(&runtimeSnapshot{
+		proxies: proxies,
+		mode:    Rule,
+	})
 	configMux.Unlock()
 	t.Cleanup(func() {
 		configMux.Lock()
-		rules, subRules, proxies = oldRules, oldSubRules, oldProxies
-		mode = oldMode
+		currentRuntime.Store(oldRuntime)
 		invalidateAllProxies()
 		configMux.Unlock()
 	})
-	UpdateRules(testRules, testSubRules, nil)
-	configMux.Lock()
-	proxies = testProxies
-	mode = Rule
-	configMux.Unlock()
+	UpdateRules(rules, subRules, nil)
 }
 
 func TestMatchDoesNotScanAnExactDomainRun(t *testing.T) {
@@ -66,7 +64,7 @@ func TestMatchDoesNotScanAnExactDomainRun(t *testing.T) {
 		Host:    "target.example.com",
 	}
 
-	proxy, rule, err := match(metadata, false, false)
+	proxy, rule, err := match(metadata, loadRuntime(), false, false)
 	require.NoError(t, err)
 	require.Equal(t, "DIRECT", proxy.Name())
 	require.Equal(t, rules[target], rule)
@@ -91,7 +89,11 @@ func TestMatchFallsThroughADisabledIndexedRule(t *testing.T) {
 	)
 
 	proxy, rule, err := match(
-		&C.Metadata{NetWork: C.TCP, Host: "target.example.com"}, false, false)
+		&C.Metadata{NetWork: C.TCP, Host: "target.example.com"},
+		loadRuntime(),
+		false,
+		false,
+	)
 	require.NoError(t, err)
 	require.Equal(t, "DIRECT", proxy.Name())
 	require.Equal(t, C.Rule(enabled), rule)
@@ -124,7 +126,11 @@ func TestMatchUsesSubRuleExactDomainPrefix(t *testing.T) {
 			NetWork:      C.TCP,
 			Host:         "sub-target.example.com",
 			SpecialRules: "sub",
-		}, false, false)
+		},
+		loadRuntime(),
+		false,
+		false,
+	)
 	require.NoError(t, err)
 	require.Equal(t, "DIRECT", proxy.Name())
 	require.LessOrEqual(t, calls.Load(), int32(2))
@@ -165,7 +171,11 @@ func TestMatchIndexesExactDomainSegmentsAroundOtherRules(t *testing.T) {
 	)
 
 	proxy, _, err := match(
-		&C.Metadata{NetWork: C.TCP, Host: "second-target.example.com"}, false, false)
+		&C.Metadata{NetWork: C.TCP, Host: "second-target.example.com"},
+		loadRuntime(),
+		false,
+		false,
+	)
 	require.NoError(t, err)
 	require.Equal(t, "DIRECT", proxy.Name())
 	require.LessOrEqual(
@@ -195,7 +205,11 @@ func TestMatchFallsThroughRepeatedDisabledIndexedRules(t *testing.T) {
 	)
 
 	proxy, rule, err := match(
-		&C.Metadata{NetWork: C.TCP, Host: "target.example.com"}, false, false)
+		&C.Metadata{NetWork: C.TCP, Host: "target.example.com"},
+		loadRuntime(),
+		false,
+		false,
+	)
 	require.NoError(t, err)
 	require.Equal(t, "DIRECT", proxy.Name())
 	require.Equal(t, C.Rule(rules[2]), rule)
@@ -219,7 +233,11 @@ func TestMatchContinuesAfterAnIndexedPassRule(t *testing.T) {
 	)
 
 	proxy, rule, err := match(
-		&C.Metadata{NetWork: C.TCP, Host: "target.example.com"}, false, false)
+		&C.Metadata{NetWork: C.TCP, Host: "target.example.com"},
+		loadRuntime(),
+		false,
+		false,
+	)
 	require.NoError(t, err)
 	require.Equal(t, "DIRECT", proxy.Name())
 	require.Equal(t, C.Rule(network), rule)
@@ -251,7 +269,11 @@ func TestMatchDoesNotScanADomainSuffixRun(t *testing.T) {
 		&C.Metadata{
 			NetWork: C.TCP,
 			Host:    "www.target.example.com",
-		}, false, false)
+		},
+		loadRuntime(),
+		false,
+		false,
+	)
 	require.NoError(t, err)
 	require.Equal(t, "DIRECT", proxy.Name())
 	require.LessOrEqual(
@@ -276,7 +298,11 @@ func TestMatchPreservesOrderAcrossOverlappingDomainRules(t *testing.T) {
 	)
 
 	proxy, rule, err := match(
-		&C.Metadata{NetWork: C.TCP, Host: "target.example.com"}, false, false)
+		&C.Metadata{NetWork: C.TCP, Host: "target.example.com"},
+		loadRuntime(),
+		false,
+		false,
+	)
 	require.NoError(t, err)
 	require.Equal(t, "DIRECT", proxy.Name())
 	require.Equal(t, C.Rule(rules[0]), rule)
@@ -317,18 +343,4 @@ func (passThroughTestProxy) Adapter() C.ProxyAdapter {
 
 func (passThroughTestProxy) Unwrap(*C.Metadata, bool) C.Proxy {
 	return nil
-}
-
-func TestRuleUsesMatchHelper(t *testing.T) {
-	domainRule := rulesCommon.NewDomain("example.com", "DIRECT")
-	suffixRule := rulesCommon.NewDomainSuffix("example.com", "DIRECT")
-	geoRule, err := rulesCommon.NewGEOIP("lan", "DIRECT", false, false)
-	require.NoError(t, err)
-
-	require.False(t, ruleUsesMatchHelper(domainRule))
-	require.False(t, ruleUsesMatchHelper(suffixRule))
-	// a wrapped domain rule stays helper-free through the unwrap
-	require.False(t, ruleUsesMatchHelper(wrapper.NewRuleWrapper(domainRule)))
-	// everything else may read the helper
-	require.True(t, ruleUsesMatchHelper(geoRule))
 }

@@ -76,38 +76,3 @@ func TestHandleUDPConnMissingFakeRecord(t *testing.T) {
 
 	require.Eventually(t, func() bool { return packet.dropped > 0 }, 2*time.Second, 5*time.Millisecond)
 }
-
-func TestPacketSenderNATMapping(t *testing.T) {
-	sender := newPacketSender().(*packetSender)
-
-	origin := &C.Metadata{
-		NetWork: C.UDP,
-		DstIP:   netip.AddrFrom4([4]byte{1, 2, 3, 4}),
-		DstPort: 443,
-	}
-	target := &C.Metadata{
-		NetWork: C.UDP,
-		DstIP:   netip.AddrFrom4([4]byte{5, 6, 7, 8}),
-		DstPort: 443,
-	}
-	sender.AddMapping(origin, target)
-
-	// the address-keyed record survives a round trip through RestoreReadFrom
-	require.Equal(t, target.DstIP, sender.originToTarget[natKey{dstIP: origin.DstIP}])
-	require.Equal(t, origin.DstIP, sender.RestoreReadFrom(target.DstIP))
-
-	// a host-keyed origin keeps its host identity, matching Metadata.String
-	hostOrigin := &C.Metadata{
-		NetWork: C.UDP,
-		Host:    "example.com",
-		DstPort: 443,
-	}
-	hostTarget := &C.Metadata{
-		NetWork: C.UDP,
-		Host:    "example.com",
-		DstIP:   netip.AddrFrom4([4]byte{9, 9, 9, 9}),
-		DstPort: 443,
-	}
-	sender.AddMapping(hostOrigin, hostTarget)
-	require.Equal(t, hostTarget.DstIP, sender.originToTarget[natKey{host: hostOrigin.Host}])
-}

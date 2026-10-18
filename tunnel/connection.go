@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	N "github.com/metacubex/mihomo/common/net"
@@ -18,10 +19,8 @@ type packetSender struct {
 	cancel context.CancelFunc
 	ch     chan C.PacketAdapter
 
-	// destination NAT mapping
-	originToTarget map[natKey]netip.Addr
-	targetToOrigin map[netip.Addr]netip.Addr
-	mappingMutex   sync.RWMutex
+	mappingMutex sync.Mutex
+	mappings     atomic.Pointer[packetMappings]
 
 	// Only the Process goroutine touches this; the read loop keeps its own copy.
 	readDeadline int64
@@ -33,18 +32,21 @@ type packetSender struct {
 	destAddr     *net.UDPAddr
 }
 
-// natKey names an original destination by host when one is known and by
-// address otherwise, the way Metadata.String identifies a destination.
-type natKey struct {
-	host  string
-	dstIP netip.Addr
+type packetOrigin struct {
+	host string
+	ip   netip.Addr
 }
 
-func natKeyFrom(metadata *C.Metadata) natKey {
+type packetMappings struct {
+	originToTarget map[packetOrigin]netip.Addr
+	targetToOrigin map[netip.Addr]netip.Addr
+}
+
+func packetOriginKey(metadata *C.Metadata) packetOrigin {
 	if metadata.Host != "" {
-		return natKey{host: metadata.Host}
+		return packetOrigin{host: metadata.Host}
 	}
-	return natKey{dstIP: metadata.DstIP}
+	return packetOrigin{ip: metadata.DstIP}
 }
 
 // newPacketSender return a chan based C.PacketSender
@@ -52,34 +54,53 @@ func natKeyFrom(metadata *C.Metadata) natKey {
 func newPacketSender() C.PacketSender {
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan C.PacketAdapter, senderCapacity)
-	return &packetSender{
+	sender := &packetSender{
 		ctx:    ctx,
 		cancel: cancel,
 		ch:     ch,
-
-		originToTarget: make(map[natKey]netip.Addr),
-		targetToOrigin: make(map[netip.Addr]netip.Addr),
 	}
+	sender.mappings.Store(&packetMappings{
+		originToTarget: make(map[packetOrigin]netip.Addr),
+		targetToOrigin: make(map[netip.Addr]netip.Addr),
+	})
+	return sender
+}
+
+func clonePacketMap[M ~map[K]V, K comparable, V any](source M) M {
+	result := make(M, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
 }
 
 func (s *packetSender) AddMapping(originMetadata *C.Metadata, metadata *C.Metadata) {
 	s.mappingMutex.Lock()
 	defer s.mappingMutex.Unlock()
-	originKey := natKeyFrom(originMetadata)
+	current := s.mappings.Load()
+	originKey := packetOriginKey(originMetadata)
 	originAddr := originMetadata.DstIP
 	targetAddr := metadata.DstIP
-	if addr := s.originToTarget[originKey]; !addr.IsValid() { // overwrite only if the record is illegal
-		s.originToTarget[originKey] = targetAddr
+	originValid := current.originToTarget[originKey].IsValid()
+	targetValid := current.targetToOrigin[targetAddr].IsValid()
+	if originValid && targetValid {
+		return
 	}
-	if addr := s.targetToOrigin[targetAddr]; !addr.IsValid() { // overwrite only if the record is illegal
-		s.targetToOrigin[targetAddr] = originAddr
+	next := &packetMappings{
+		originToTarget: clonePacketMap(current.originToTarget),
+		targetToOrigin: clonePacketMap(current.targetToOrigin),
 	}
+	if !originValid {
+		next.originToTarget[originKey] = targetAddr
+	}
+	if !targetValid {
+		next.targetToOrigin[targetAddr] = originAddr
+	}
+	s.mappings.Store(next)
 }
 
 func (s *packetSender) RestoreReadFrom(addr netip.Addr) netip.Addr {
-	s.mappingMutex.RLock()
-	defer s.mappingMutex.RUnlock()
-	if originAddr := s.targetToOrigin[addr]; originAddr.IsValid() {
+	if originAddr := s.mappings.Load().targetToOrigin[addr]; originAddr.IsValid() {
 		return originAddr
 	}
 	return addr
@@ -91,9 +112,7 @@ func (s *packetSender) processPacket(pc C.PacketConn, packet C.PacketAdapter) {
 
 	var addr *net.UDPAddr
 
-	s.mappingMutex.RLock()
-	targetAddr := s.originToTarget[natKeyFrom(metadata)]
-	s.mappingMutex.RUnlock()
+	targetAddr := s.mappings.Load().originToTarget[packetOriginKey(metadata)]
 
 	if targetAddr.IsValid() {
 		addr = s.destinationFor(targetAddr, metadata.DstPort, pc)
@@ -127,6 +146,44 @@ func (s *packetSender) processPacket(pc C.PacketConn, packet C.PacketAdapter) {
 	if shouldRefreshDeadline(s.readDeadline, time.Now()) {
 		s.readDeadline = refreshReadDeadline(pc, time.Now())
 	}
+}
+
+// destinationFor returns one *net.UDPAddr per packet, reusing the previous one
+// when the destination repeats and the conn is known to consume the address
+// inside WriteTo. A reused value is two allocations cheaper per packet.
+func (s *packetSender) destinationFor(target netip.Addr, port uint16, pc C.PacketConn) *net.UDPAddr {
+	if !s.syncWrite {
+		s.syncWrite = synchronousWriteTarget(pc)
+	}
+	addrPort := netip.AddrPortFrom(target, port)
+	if s.destAddr != nil && s.destAddrPort == addrPort {
+		return s.destAddr
+	}
+	addr := net.UDPAddrFromAddrPort(addrPort)
+	if s.syncWrite {
+		s.destAddrPort = addrPort
+		s.destAddr = addr
+	}
+	return addr
+}
+
+// synchronousWriteTarget reports whether writes through this conn reach the
+// kernel before WriteTo returns. The chain bottoms out at a system socket only
+// for the direct and socket-based proxy outbounds, all of which consume the
+// destination inside the call; protocol outbounds queue it and would observe a
+// reused value after it had already been mutated.
+func synchronousWriteTarget(conn any) bool {
+	for depth := 0; depth < 8; depth++ {
+		if udp, ok := conn.(*net.UDPConn); ok && udp != nil {
+			return true
+		}
+		upstream, ok := conn.(interface{ Upstream() any })
+		if !ok {
+			return false
+		}
+		conn = upstream.Upstream()
+	}
+	return false
 }
 
 func (s *packetSender) Process(pc C.PacketConn, proxy C.WriteBackProxy) {
@@ -205,50 +262,18 @@ func refreshReadDeadline(pc C.PacketConn, now time.Time) int64 {
 	return next.UnixNano()
 }
 
-// destinationFor returns one *net.UDPAddr per packet, reusing the previous one
-// when the destination repeats and the conn is known to consume the address
-// inside WriteTo. A reused value is two allocations cheaper per packet.
-func (s *packetSender) destinationFor(target netip.Addr, port uint16, pc C.PacketConn) *net.UDPAddr {
-	if !s.syncWrite {
-		s.syncWrite = synchronousWriteTarget(pc)
-	}
-	addrPort := netip.AddrPortFrom(target, port)
-	if s.destAddr != nil && s.destAddrPort == addrPort {
-		return s.destAddr
-	}
-	addr := net.UDPAddrFromAddrPort(addrPort)
-	if s.syncWrite {
-		s.destAddrPort = addrPort
-		s.destAddr = addr
-	}
-	return addr
-}
-
-// synchronousWriteTarget reports whether writes through this conn reach the
-// kernel before WriteTo returns. The chain bottoms out at a system socket only
-// for the direct and socket-based proxy outbounds, all of which consume the
-// destination inside the call; protocol outbounds queue it and would observe a
-// reused value after it had already been mutated.
-func synchronousWriteTarget(conn any) bool {
-	for depth := 0; depth < 8; depth++ {
-		if udp, ok := conn.(*net.UDPConn); ok && udp != nil {
-			return true
-		}
-		upstream, ok := conn.(interface{ Upstream() any })
-		if !ok {
-			return false
-		}
-		conn = upstream.Upstream()
-	}
-	return false
-}
-
-func handleUDPToLocal(writeBack C.WriteBack, pc C.PacketConn, sender C.PacketSender, key netip.AddrPort, oAddrPort netip.AddrPort) {
+func handleUDPToLocal(
+	writeBack C.WriteBack,
+	pc C.PacketConn,
+	sender C.PacketSender,
+	key netip.AddrPort,
+	oAddrPort netip.AddrPort,
+) {
 	defer func() {
 		sender.Close()
 		_ = pc.Close()
 		closeAllLocalCoon(key)
-		natTable.Delete(key)
+		natTable.DeleteForFlow(key)
 	}()
 
 	// The read loop is the only goroutine refreshing on inbound packets, so the
@@ -292,7 +317,7 @@ func handleUDPToLocal(writeBack C.WriteBack, pc C.PacketConn, sender C.PacketSen
 }
 
 func closeAllLocalCoon(lAddr netip.AddrPort) {
-	natTable.RangeForLocalConn(lAddr, func(key netip.AddrPort, value *net.UDPConn) bool {
+	natTable.RangeForLocalConnForFlow(lAddr, func(key string, value *net.UDPConn) bool {
 		conn := value
 
 		conn.Close()

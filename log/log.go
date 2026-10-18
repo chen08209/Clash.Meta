@@ -103,6 +103,10 @@ func SetLevel(newLevel LogLevel) {
 	level.Store(int32(newLevel))
 }
 
+func shouldLog(logLevel LogLevel) bool {
+	return logLevel >= Level()
+}
+
 func print(data Event) {
 	if !shouldLog(data.LogLevel) {
 		return
@@ -125,8 +129,4 @@ func newLog(logLevel LogLevel, format string, v ...any) Event {
 		LogLevel: logLevel,
 		Payload:  fmt.Sprintf(format, v...),
 	}
-}
-
-func shouldLog(logLevel LogLevel) bool {
-	return logLevel >= Level()
 }

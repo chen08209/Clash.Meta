@@ -198,6 +198,19 @@ func TestTrie_ValidAndSplitDomain(t *testing.T) {
 	})
 }
 
+func TestDomainTrieSearchLowercaseQueryDoesNotAllocate(t *testing.T) {
+	tree := trie.New[int]()
+	assert.NoError(t, tree.Insert("benchmark.example.com", 1))
+
+	allocations := testing.AllocsPerRun(
+		100,
+		func() {
+			assert.NotNil(t, tree.Search("benchmark.example.com"))
+		},
+	)
+	assert.EqualValues(t, 0, allocations)
+}
+
 func TestTrie_Foreach(t *testing.T) {
 	tree := trie.New[int]()
 	domainList := []string{

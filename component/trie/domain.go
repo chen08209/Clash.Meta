@@ -37,8 +37,6 @@ func ValidAndSplitDomain(domain string) ([]string, error) {
 	return strings.Split(normalized, domainStep), nil
 }
 
-// normalizeDomain lower-cases the domain and reports whether it is a
-// well-formed pattern in a single pass, without materializing the labels.
 func normalizeDomain(domain string) (string, error) {
 	originalDomain := domain
 	if domain == "" {
@@ -69,10 +67,6 @@ func normalizeDomain(domain string) (string, error) {
 				fmt.Sprintf("label %d is empty", labelNumber),
 			)
 		}
-		// Wildcard placement must agree with DomainSet.Has (which treats the
-		// wildcard byte as a wildcard): complexWildcard "+" is only valid as a
-		// whole first label of a multi-part domain, and wildcard "*" is only
-		// valid as a whole label.
 		if strings.Contains(label, complexWildcard) {
 			switch {
 			case label != complexWildcard:
@@ -196,6 +190,26 @@ func (t *DomainTrie[T]) searchFrom(
 			return match
 		}
 	}
+	return node.getChild(dotWildcard)
+}
+
+func (t *DomainTrie[T]) search(node *Node[T], parts []string) *Node[T] {
+	if len(parts) == 0 {
+		return node
+	}
+
+	if c := node.getChild(parts[len(parts)-1]); c != nil {
+		if n := t.search(c, parts[:len(parts)-1]); !n.isEmpty() {
+			return n
+		}
+	}
+
+	if c := node.getChild(wildcard); c != nil {
+		if n := t.search(c, parts[:len(parts)-1]); !n.isEmpty() {
+			return n
+		}
+	}
+
 	return node.getChild(dotWildcard)
 }
 

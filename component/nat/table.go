@@ -15,11 +15,14 @@ type Table struct {
 
 type entry struct {
 	PacketSender    C.PacketSender
-	LocalUDPConnMap xsync.Map[netip.AddrPort, *net.UDPConn]
-	LocalLockMap    xsync.Map[netip.AddrPort, *sync.Cond]
+	LocalUDPConnMap xsync.Map[string, *net.UDPConn]
+	LocalLockMap    xsync.Map[string, *sync.Cond]
 }
 
-func (t *Table) GetOrCreate(key netip.AddrPort, maker func() C.PacketSender) (C.PacketSender, bool) {
+func (t *Table) GetOrCreateForFlow(
+	key netip.AddrPort,
+	maker func() C.PacketSender,
+) (C.PacketSender, bool) {
 	item, loaded := t.mapping.LoadOrStoreFn(key, func() *entry {
 		return &entry{
 			PacketSender: maker(),
@@ -28,11 +31,33 @@ func (t *Table) GetOrCreate(key netip.AddrPort, maker func() C.PacketSender) (C.
 	return item.PacketSender, loaded
 }
 
-func (t *Table) Delete(key netip.AddrPort) {
+func (t *Table) LoadForFlow(key netip.AddrPort) (C.PacketSender, bool) {
+	item, exist := t.mapping.Load(key)
+	if !exist {
+		return nil, false
+	}
+	return item.PacketSender, true
+}
+
+func (t *Table) GetOrCreate(key string, maker func() C.PacketSender) (C.PacketSender, bool) {
+	flowKey, ok := parseFlowKey(key)
+	if !ok {
+		return nil, false
+	}
+	return t.GetOrCreateForFlow(flowKey, maker)
+}
+
+func (t *Table) DeleteForFlow(key netip.AddrPort) {
 	t.mapping.Delete(key)
 }
 
-func (t *Table) GetForLocalConn(lAddr, rAddr netip.AddrPort) *net.UDPConn {
+func (t *Table) Delete(key string) {
+	if flowKey, ok := parseFlowKey(key); ok {
+		t.DeleteForFlow(flowKey)
+	}
+}
+
+func (t *Table) GetForLocalConn(lAddr, rAddr string) *net.UDPConn {
 	entry, exist := t.getEntry(lAddr)
 	if !exist {
 		return nil
@@ -44,7 +69,7 @@ func (t *Table) GetForLocalConn(lAddr, rAddr netip.AddrPort) *net.UDPConn {
 	return item
 }
 
-func (t *Table) AddForLocalConn(lAddr, rAddr netip.AddrPort, conn *net.UDPConn) bool {
+func (t *Table) AddForLocalConn(lAddr, rAddr string, conn *net.UDPConn) bool {
 	entry, exist := t.getEntry(lAddr)
 	if !exist {
 		return false
@@ -53,7 +78,7 @@ func (t *Table) AddForLocalConn(lAddr, rAddr netip.AddrPort, conn *net.UDPConn) 
 	return true
 }
 
-func (t *Table) RangeForLocalConn(lAddr netip.AddrPort, f func(key netip.AddrPort, value *net.UDPConn) bool) {
+func (t *Table) RangeForLocalConn(lAddr string, f func(key string, value *net.UDPConn) bool) {
 	entry, exist := t.getEntry(lAddr)
 	if !exist {
 		return
@@ -61,7 +86,18 @@ func (t *Table) RangeForLocalConn(lAddr netip.AddrPort, f func(key netip.AddrPor
 	entry.LocalUDPConnMap.Range(f)
 }
 
-func (t *Table) GetOrCreateLockForLocalConn(lAddr, key netip.AddrPort) (*sync.Cond, bool) {
+func (t *Table) RangeForLocalConnForFlow(
+	key netip.AddrPort,
+	f func(key string, value *net.UDPConn) bool,
+) {
+	entry, exist := t.getEntryForFlow(key)
+	if !exist {
+		return
+	}
+	entry.LocalUDPConnMap.Range(f)
+}
+
+func (t *Table) GetOrCreateLockForLocalConn(lAddr, key string) (*sync.Cond, bool) {
 	entry, loaded := t.getEntry(lAddr)
 	if !loaded {
 		return nil, false
@@ -70,7 +106,7 @@ func (t *Table) GetOrCreateLockForLocalConn(lAddr, key netip.AddrPort) (*sync.Co
 	return item, loaded
 }
 
-func (t *Table) DeleteForLocalConn(lAddr, key netip.AddrPort) {
+func (t *Table) DeleteForLocalConn(lAddr, key string) {
 	entry, loaded := t.getEntry(lAddr)
 	if !loaded {
 		return
@@ -78,7 +114,7 @@ func (t *Table) DeleteForLocalConn(lAddr, key netip.AddrPort) {
 	entry.LocalUDPConnMap.Delete(key)
 }
 
-func (t *Table) DeleteLockForLocalConn(lAddr, key netip.AddrPort) {
+func (t *Table) DeleteLockForLocalConn(lAddr, key string) {
 	entry, loaded := t.getEntry(lAddr)
 	if !loaded {
 		return
@@ -86,8 +122,24 @@ func (t *Table) DeleteLockForLocalConn(lAddr, key netip.AddrPort) {
 	entry.LocalLockMap.Delete(key)
 }
 
-func (t *Table) getEntry(key netip.AddrPort) (*entry, bool) {
+func (t *Table) getEntry(key string) (*entry, bool) {
+	flowKey, ok := parseFlowKey(key)
+	if !ok {
+		return nil, false
+	}
+	return t.getEntryForFlow(flowKey)
+}
+
+func (t *Table) getEntryForFlow(key netip.AddrPort) (*entry, bool) {
 	return t.mapping.Load(key)
+}
+
+func parseFlowKey(key string) (netip.AddrPort, bool) {
+	flowKey, err := netip.ParseAddrPort(key)
+	if err != nil || !flowKey.IsValid() {
+		return netip.AddrPort{}, false
+	}
+	return flowKey, true
 }
 
 func makeLock() *sync.Cond {

@@ -1,0 +1,30 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/component/sniffer
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkSniffSuccessLogArguments/Unconditional-16         	 3363120	       359.2 ns/op	     216 B/op	      10 allocs/op
+BenchmarkSniffSuccessLogArguments/Unconditional-16         	 3346068	       373.0 ns/op	     216 B/op	      10 allocs/op
+BenchmarkSniffSuccessLogArguments/Unconditional-16         	 3239037	       372.0 ns/op	     216 B/op	      10 allocs/op
+BenchmarkSniffSuccessLogArguments/Unconditional-16         	 3281043	       386.6 ns/op	     216 B/op	      10 allocs/op
+BenchmarkSniffSuccessLogArguments/Unconditional-16         	 3261110	       373.3 ns/op	     216 B/op	      10 allocs/op
+BenchmarkSniffSuccessLogArguments/Unconditional-16         	 3204594	       378.8 ns/op	     216 B/op	      10 allocs/op
+BenchmarkSniffSuccessLogArguments/Guarded-16               	1000000000	         0.4499 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSniffSuccessLogArguments/Guarded-16               	1000000000	         0.4394 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSniffSuccessLogArguments/Guarded-16               	1000000000	         0.4315 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSniffSuccessLogArguments/Guarded-16               	1000000000	         0.4335 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSniffSuccessLogArguments/Guarded-16               	1000000000	         0.4343 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSniffSuccessLogArguments/Guarded-16               	1000000000	         0.4321 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSniffFailureLogArguments/Unconditional-16         	1000000000	         0.4866 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSniffFailureLogArguments/Unconditional-16         	1000000000	         0.4869 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSniffFailureLogArguments/Unconditional-16         	1000000000	         0.4854 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSniffFailureLogArguments/Unconditional-16         	1000000000	         0.4908 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSniffFailureLogArguments/Unconditional-16         	1000000000	         0.4862 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSniffFailureLogArguments/Unconditional-16         	1000000000	         0.4902 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSniffFailureLogArguments/Guarded-16               	1000000000	         0.8676 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSniffFailureLogArguments/Guarded-16               	1000000000	         0.8645 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSniffFailureLogArguments/Guarded-16               	1000000000	         0.8684 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSniffFailureLogArguments/Guarded-16               	1000000000	         0.8703 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSniffFailureLogArguments/Guarded-16               	1000000000	         0.8724 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSniffFailureLogArguments/Guarded-16               	1000000000	         0.8647 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/component/sniffer	22.116s

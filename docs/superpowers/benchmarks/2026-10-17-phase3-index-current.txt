@@ -1,0 +1,30 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/tunnel
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkMatchLargeExactDomainHit-16      	17497072	        65.98 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeExactDomainHit-16      	19225069	        65.62 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeExactDomainHit-16      	17649835	        67.27 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeExactDomainHit-16      	17819329	        66.38 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeExactDomainHit-16      	19175148	        67.20 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeExactDomainHit-16      	18535852	        63.31 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeExactDomainMiss-16     	33876772	        35.66 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeExactDomainMiss-16     	35731938	        37.41 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeExactDomainMiss-16     	33925041	        38.94 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeExactDomainMiss-16     	33971140	        37.54 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeExactDomainMiss-16     	34271418	        33.82 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeExactDomainMiss-16     	31478877	        39.33 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeDomainSuffixHit-16     	11911461	       102.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeDomainSuffixHit-16     	11789914	       102.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeDomainSuffixHit-16     	11393587	       101.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeDomainSuffixHit-16     	11705260	       101.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeDomainSuffixHit-16     	11847487	       103.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeDomainSuffixHit-16     	11060518	       101.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeDomainSuffixMiss-16    	34496536	        34.15 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeDomainSuffixMiss-16    	34956783	        33.82 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeDomainSuffixMiss-16    	34907059	        34.13 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeDomainSuffixMiss-16    	34227429	        34.18 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeDomainSuffixMiss-16    	34319052	        33.94 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMatchLargeDomainSuffixMiss-16    	35077154	        33.93 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/tunnel	31.843s

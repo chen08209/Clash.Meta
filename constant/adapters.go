@@ -286,13 +286,14 @@ type PacketAdapter interface {
 	// Metadata returns destination metadata
 	Metadata() *Metadata
 	// Key is a SNAT key
-	Key() netip.AddrPort
+	Key() string
 }
 
 type packetAdapter struct {
 	UDPPacket
-	metadata *Metadata
-	key      netip.AddrPort
+	metadata  *Metadata
+	localAddr net.Addr
+	flowKey   netip.AddrPort
 }
 
 // Metadata returns destination metadata
@@ -301,30 +302,59 @@ func (s *packetAdapter) Metadata() *Metadata {
 }
 
 // Key is a SNAT key
-func (s *packetAdapter) Key() netip.AddrPort {
-	return s.key
+func (s *packetAdapter) Key() string {
+	return s.localAddr.String()
+}
+
+func (s *packetAdapter) FlowKey() netip.AddrPort {
+	return s.flowKey
 }
 
 func NewPacketAdapter(packet UDPPacket, metadata *Metadata) PacketAdapter {
+	localAddr := packet.LocalAddr()
 	return &packetAdapter{
-		packet,
-		metadata,
-		localAddrKey(packet.LocalAddr()),
+		UDPPacket: packet,
+		metadata:  metadata,
+		localAddr: localAddr,
+		flowKey:   addrPortFromLocalAddr(localAddr),
 	}
 }
 
-// localAddrKey reads the packet's local address as an AddrPort, which keeps the
-// SNAT key free of the string formatting a map lookup would otherwise repeat
-// for every packet.
-func localAddrKey(addr net.Addr) netip.AddrPort {
-	if addrPort, ok := addr.(interface{ AddrPort() netip.AddrPort }); ok {
-		key := addrPort.AddrPort()
-		return netip.AddrPortFrom(key.Addr().Unmap(), key.Port())
+func addrPortFromLocalAddr(addr net.Addr) netip.AddrPort {
+	var ip net.IP
+	var port int
+	var zone string
+	switch addr := addr.(type) {
+	case *net.UDPAddr:
+		if addr == nil {
+			return netip.AddrPort{}
+		}
+		ip, port, zone = addr.IP, addr.Port, addr.Zone
+	case *net.TCPAddr:
+		if addr == nil {
+			return netip.AddrPort{}
+		}
+		ip, port, zone = addr.IP, addr.Port, addr.Zone
+	default:
+		parsed, err := netip.ParseAddrPort(addr.String())
+		if err != nil {
+			return netip.AddrPort{}
+		}
+		return parsed
 	}
-	if addrPort, err := netip.ParseAddrPort(addr.String()); err == nil {
-		return netip.AddrPortFrom(addrPort.Addr().Unmap(), addrPort.Port())
+
+	parsed, ok := netip.AddrFromSlice(ip)
+	if !ok || port < 0 || port > 65535 {
+		return netip.AddrPort{}
 	}
-	return netip.AddrPort{}
+	if zone != "" {
+		zoned, err := netip.ParseAddr(ip.String())
+		if err != nil {
+			return netip.AddrPort{}
+		}
+		parsed = zoned.WithZone(zone)
+	}
+	return netip.AddrPortFrom(parsed.Unmap(), uint16(port))
 }
 
 type WriteBack interface {
@@ -354,19 +384,19 @@ type PacketSender interface {
 }
 
 type NatTable interface {
-	GetOrCreate(key netip.AddrPort, maker func() PacketSender) (PacketSender, bool)
+	GetOrCreate(key string, maker func() PacketSender) (PacketSender, bool)
 
-	Delete(key netip.AddrPort)
+	Delete(key string)
 
-	GetForLocalConn(lAddr, rAddr netip.AddrPort) *net.UDPConn
+	GetForLocalConn(lAddr, rAddr string) *net.UDPConn
 
-	AddForLocalConn(lAddr, rAddr netip.AddrPort, conn *net.UDPConn) bool
+	AddForLocalConn(lAddr, rAddr string, conn *net.UDPConn) bool
 
-	RangeForLocalConn(lAddr netip.AddrPort, f func(key netip.AddrPort, value *net.UDPConn) bool)
+	RangeForLocalConn(lAddr string, f func(key string, value *net.UDPConn) bool)
 
-	GetOrCreateLockForLocalConn(lAddr, key netip.AddrPort) (*sync.Cond, bool)
+	GetOrCreateLockForLocalConn(lAddr string, key string) (*sync.Cond, bool)
 
-	DeleteForLocalConn(lAddr, key netip.AddrPort)
+	DeleteForLocalConn(lAddr, key string)
 
-	DeleteLockForLocalConn(lAddr, key netip.AddrPort)
+	DeleteLockForLocalConn(lAddr, key string)
 }

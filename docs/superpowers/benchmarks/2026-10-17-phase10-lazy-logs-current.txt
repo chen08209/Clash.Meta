@@ -1,0 +1,30 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/dns
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkDNSCacheHitLogArguments/Unconditional-16         	 1250461	       943.6 ns/op	     520 B/op	      15 allocs/op
+BenchmarkDNSCacheHitLogArguments/Unconditional-16         	 1242345	      1009 ns/op	     520 B/op	      15 allocs/op
+BenchmarkDNSCacheHitLogArguments/Unconditional-16         	 1000000	      1001 ns/op	     520 B/op	      15 allocs/op
+BenchmarkDNSCacheHitLogArguments/Unconditional-16         	 1000000	      1033 ns/op	     520 B/op	      15 allocs/op
+BenchmarkDNSCacheHitLogArguments/Unconditional-16         	 1235862	      1012 ns/op	     520 B/op	      15 allocs/op
+BenchmarkDNSCacheHitLogArguments/Unconditional-16         	 1000000	      1006 ns/op	     520 B/op	      15 allocs/op
+BenchmarkDNSCacheHitLogArguments/Guarded-16               	1000000000	         0.4324 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDNSCacheHitLogArguments/Guarded-16               	1000000000	         0.4269 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDNSCacheHitLogArguments/Guarded-16               	1000000000	         0.4281 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDNSCacheHitLogArguments/Guarded-16               	1000000000	         0.4268 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDNSCacheHitLogArguments/Guarded-16               	1000000000	         0.4275 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDNSCacheHitLogArguments/Guarded-16               	1000000000	         0.4290 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDNSExchangeLogArguments/Unconditional-16         	55457733	        18.50 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDNSExchangeLogArguments/Unconditional-16         	65558724	        18.65 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDNSExchangeLogArguments/Unconditional-16         	64989222	        18.51 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDNSExchangeLogArguments/Unconditional-16         	65249306	        18.49 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDNSExchangeLogArguments/Unconditional-16         	64366976	        18.54 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDNSExchangeLogArguments/Unconditional-16         	65732893	        18.64 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDNSExchangeLogArguments/Guarded-16               	1000000000	         0.4250 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDNSExchangeLogArguments/Guarded-16               	1000000000	         0.4276 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDNSExchangeLogArguments/Guarded-16               	1000000000	         0.4272 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDNSExchangeLogArguments/Guarded-16               	1000000000	         0.4266 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDNSExchangeLogArguments/Guarded-16               	1000000000	         0.4282 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDNSExchangeLogArguments/Guarded-16               	1000000000	         0.4316 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/dns	23.818s

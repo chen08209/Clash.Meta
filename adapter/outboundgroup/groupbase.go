@@ -7,12 +7,12 @@ import (
 	"strings"
 	"sync"
 	stdatomic "sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/metacubex/mihomo/adapter/outbound"
 	"github.com/metacubex/mihomo/common/atomic"
 	"github.com/metacubex/mihomo/common/utils"
+	"github.com/metacubex/mihomo/component/dialer"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
 	"github.com/metacubex/mihomo/log"
@@ -302,18 +302,6 @@ func (gb *GroupBase) URLTest(ctx context.Context, url string, expectedStatus uti
 	}
 }
 
-func isConnectionRefused(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, syscall.ECONNREFUSED) {
-		return true
-	}
-	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "connection refused") ||
-		strings.Contains(message, "actively refused")
-}
-
 func (gb *GroupBase) onDialFailed(adapterType C.AdapterType, err error, fn func()) {
 	if !dialFailureMarksNode(adapterType) {
 		return
@@ -330,7 +318,7 @@ func (gb *GroupBase) onDialFailed(adapterType C.AdapterType, err error, fn func(
 			}
 		}()
 
-		if isConnectionRefused(err) {
+		if dialer.IsConnectionRefused(err) {
 			fn()
 			return
 		}
