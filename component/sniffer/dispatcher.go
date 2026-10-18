@@ -139,7 +139,9 @@ func (sd *Dispatcher) TCPSniff(conn *N.BufferedConn, metadata *C.Metadata) bool 
 		dst := metadata.AddrPort()
 		if !forceSniffer {
 			if count, ok := sd.skipList.Get(dst); ok && count > 5 {
-				log.Debugln("[Sniffer] Skip sniffing[%s] due to multiple failures", dst)
+				if log.DebugEnabled() {
+					log.Debugln("[Sniffer] Skip sniffing[%s] due to multiple failures", dst)
+				}
 				return false
 			}
 		}
@@ -149,7 +151,9 @@ func (sd *Dispatcher) TCPSniff(conn *N.BufferedConn, metadata *C.Metadata) bool 
 			if !forceSniffer {
 				sd.cacheSniffFailed(metadata)
 			}
-			log.Debugln("[Sniffer] All sniffing sniff failed with from [%s:%d] to [%s:%d]", metadata.SrcIP, metadata.SrcPort, metadata.String(), metadata.DstPort)
+			if log.DebugEnabled() {
+				log.Debugln("[Sniffer] All sniffing sniff failed with from [%s:%d] to [%s:%d]", metadata.SrcIP, metadata.SrcPort, metadata.String(), metadata.DstPort)
+			}
 			return false
 		}
 
@@ -169,11 +173,13 @@ func (sd *Dispatcher) TCPSniff(conn *N.BufferedConn, metadata *C.Metadata) bool 
 func replaceDomain(metadata *C.Metadata, host string, overrideDest bool) {
 	metadata.SniffHost = host
 	if overrideDest {
-		log.Debugln("[Sniffer] Sniff %s [%s]-->[%s] success, replace domain [%s]-->[%s]",
-			metadata.NetWork,
-			metadata.SourceDetail(),
-			metadata.RemoteAddress(),
-			metadata.Host, host)
+		if log.DebugEnabled() {
+			log.Debugln("[Sniffer] Sniff %s [%s]-->[%s] success, replace domain [%s]-->[%s]",
+				metadata.NetWork,
+				metadata.SourceDetail(),
+				metadata.RemoteAddress(),
+				metadata.Host, host)
+		}
 		metadata.Host = host
 		metadata.DstIP = netip.Addr{}
 	}
@@ -230,7 +236,9 @@ func (sd *Dispatcher) sniffDomain(conn *N.BufferedConn, metadata *C.Metadata) (s
 		// The caller owns failure accounting and the connection lifetime. No
 		// initial data can be valid for a server-first protocol, so sniffing must
 		// not close the connection merely because this deadline expired.
-		log.Debugln("[Sniffer] [%s] the data length not enough, error: %v", metadata.DstIP, err)
+		if log.DebugEnabled() {
+			log.Debugln("[Sniffer] [%s] the data length not enough, error: %v", metadata.DstIP, err)
+		}
 		return "", SnifferConfig{}, err
 	}
 
@@ -251,7 +259,9 @@ func (sd *Dispatcher) sniffDomain(conn *N.BufferedConn, metadata *C.Metadata) (s
 		if err != nil {
 			// Initial data was received, so leave the connection open for the caller
 			// to continue relaying without a sniffed domain.
-			log.Debugln("[Sniffer] [%s] the data length not enough, error: %v", metadata.DstIP, err)
+			if log.DebugEnabled() {
+				log.Debugln("[Sniffer] [%s] the data length not enough, error: %v", metadata.DstIP, err)
+			}
 			return "", SnifferConfig{}, err
 		}
 
