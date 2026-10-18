@@ -53,18 +53,16 @@ func (c *packet) InAddr() net.Addr {
 // for here, rAddr is the ip/port client want to access
 // lAddr is the ip/port client opened
 func createOrGetLocalConn(rAddr, lAddr netip.AddrPort, tunnel C.Tunnel, additions ...inbound.Addition) (*net.UDPConn, error) {
-	remote := rAddr.String()
-	local := lAddr.String()
 	natTable := tunnel.NatTable()
-	localConn := natTable.GetForLocalConn(local, remote)
+	localConn := natTable.GetForLocalConn(lAddr, rAddr)
 	// localConn not exist
 	if localConn == nil {
-		cond, loaded := natTable.GetOrCreateLockForLocalConn(local, remote)
+		cond, loaded := natTable.GetOrCreateLockForLocalConn(lAddr, rAddr)
 		if loaded {
 			cond.L.Lock()
 			cond.Wait()
 			// we should get localConn here
-			localConn = natTable.GetForLocalConn(local, remote)
+			localConn = natTable.GetForLocalConn(lAddr, rAddr)
 			if localConn == nil {
 				return nil, fmt.Errorf("localConn is nil, nat entry not exist")
 			}
@@ -74,15 +72,15 @@ func createOrGetLocalConn(rAddr, lAddr netip.AddrPort, tunnel C.Tunnel, addition
 				return nil, fmt.Errorf("cond is nil, nat entry not exist")
 			}
 			defer func() {
-				natTable.DeleteLockForLocalConn(local, remote)
+				natTable.DeleteLockForLocalConn(lAddr, rAddr)
 				cond.Broadcast()
 			}()
 			conn, err := listenLocalConn(rAddr, lAddr, tunnel, additions...)
 			if err != nil {
-				log.Errorln("listenLocalConn failed with error: %s, packet loss (rAddr[%T]=%s lAddr[%T]=%s)", err.Error(), rAddr, remote, lAddr, local)
+				log.Errorln("listenLocalConn failed with error: %s, packet loss (rAddr[%T]=%s lAddr[%T]=%s)", err.Error(), rAddr, rAddr, lAddr, lAddr)
 				return nil, err
 			}
-			natTable.AddForLocalConn(local, remote, conn)
+			natTable.AddForLocalConn(lAddr, rAddr, conn)
 			localConn = conn
 		}
 	}

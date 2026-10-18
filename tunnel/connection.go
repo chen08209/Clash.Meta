@@ -165,7 +165,7 @@ func handleUDPToRemote(packet C.UDPPacket, pc C.PacketConn, addr *net.UDPAddr) e
 	return nil
 }
 
-func handleUDPToLocal(writeBack C.WriteBack, pc C.PacketConn, sender C.PacketSender, key string, oAddrPort netip.AddrPort) {
+func handleUDPToLocal(writeBack C.WriteBack, pc C.PacketConn, sender C.PacketSender, key netip.AddrPort, oAddrPort netip.AddrPort) {
 	defer func() {
 		sender.Close()
 		_ = pc.Close()
@@ -207,8 +207,8 @@ func handleUDPToLocal(writeBack C.WriteBack, pc C.PacketConn, sender C.PacketSen
 	}
 }
 
-func closeAllLocalCoon(lAddr string) {
-	natTable.RangeForLocalConn(lAddr, func(key string, value *net.UDPConn) bool {
+func closeAllLocalCoon(lAddr netip.AddrPort) {
+	natTable.RangeForLocalConn(lAddr, func(key netip.AddrPort, value *net.UDPConn) bool {
 		conn := value
 
 		conn.Close()

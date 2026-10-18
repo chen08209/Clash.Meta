@@ -100,9 +100,8 @@ func (t tunnel) HandleUDPPacket(packet C.UDPPacket, metadata *C.Metadata) {
 	udpInit.Do(initUDP)
 
 	packetAdapter := C.NewPacketAdapter(packet, metadata)
-	key := packetAdapter.Key()
 
-	hash := utils.MapHash(key)
+	hash := utils.MapHashAddrPort(packetAdapter.Key())
 	queueNo := uint(hash) % uint(len(udpQueues))
 
 	select {

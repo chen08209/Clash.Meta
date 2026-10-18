@@ -286,13 +286,13 @@ type PacketAdapter interface {
 	// Metadata returns destination metadata
 	Metadata() *Metadata
 	// Key is a SNAT key
-	Key() string
+	Key() netip.AddrPort
 }
 
 type packetAdapter struct {
 	UDPPacket
 	metadata *Metadata
-	key      string
+	key      netip.AddrPort
 }
 
 // Metadata returns destination metadata
@@ -301,7 +301,7 @@ func (s *packetAdapter) Metadata() *Metadata {
 }
 
 // Key is a SNAT key
-func (s *packetAdapter) Key() string {
+func (s *packetAdapter) Key() netip.AddrPort {
 	return s.key
 }
 
@@ -309,8 +309,22 @@ func NewPacketAdapter(packet UDPPacket, metadata *Metadata) PacketAdapter {
 	return &packetAdapter{
 		packet,
 		metadata,
-		packet.LocalAddr().String(),
+		localAddrKey(packet.LocalAddr()),
 	}
+}
+
+// localAddrKey reads the packet's local address as an AddrPort, which keeps the
+// SNAT key free of the string formatting a map lookup would otherwise repeat
+// for every packet.
+func localAddrKey(addr net.Addr) netip.AddrPort {
+	if addrPort, ok := addr.(interface{ AddrPort() netip.AddrPort }); ok {
+		key := addrPort.AddrPort()
+		return netip.AddrPortFrom(key.Addr().Unmap(), key.Port())
+	}
+	if addrPort, err := netip.ParseAddrPort(addr.String()); err == nil {
+		return netip.AddrPortFrom(addrPort.Addr().Unmap(), addrPort.Port())
+	}
+	return netip.AddrPort{}
 }
 
 type WriteBack interface {
@@ -340,19 +354,19 @@ type PacketSender interface {
 }
 
 type NatTable interface {
-	GetOrCreate(key string, maker func() PacketSender) (PacketSender, bool)
+	GetOrCreate(key netip.AddrPort, maker func() PacketSender) (PacketSender, bool)
 
-	Delete(key string)
+	Delete(key netip.AddrPort)
 
-	GetForLocalConn(lAddr, rAddr string) *net.UDPConn
+	GetForLocalConn(lAddr, rAddr netip.AddrPort) *net.UDPConn
 
-	AddForLocalConn(lAddr, rAddr string, conn *net.UDPConn) bool
+	AddForLocalConn(lAddr, rAddr netip.AddrPort, conn *net.UDPConn) bool
 
-	RangeForLocalConn(lAddr string, f func(key string, value *net.UDPConn) bool)
+	RangeForLocalConn(lAddr netip.AddrPort, f func(key netip.AddrPort, value *net.UDPConn) bool)
 
-	GetOrCreateLockForLocalConn(lAddr string, key string) (*sync.Cond, bool)
+	GetOrCreateLockForLocalConn(lAddr, key netip.AddrPort) (*sync.Cond, bool)
 
-	DeleteForLocalConn(lAddr, key string)
+	DeleteForLocalConn(lAddr, key netip.AddrPort)
 
-	DeleteLockForLocalConn(lAddr, key string)
+	DeleteLockForLocalConn(lAddr, key netip.AddrPort)
 }

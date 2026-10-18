@@ -52,18 +52,19 @@ func TestHandleUDPConnMissingFakeRecord(t *testing.T) {
 	resolver.DefaultHostMapper = missingRecordMapper{}
 	defer func() { resolver.DefaultHostMapper = restoreMapper }()
 
-	laddr := &net.UDPAddr{IP: net.ParseIP("192.168.1.100"), Port: 5353}
+	laddr := &net.UDPAddr{IP: net.ParseIP("192.168.1.100"), Port: 53531}
 	packet := &missingRecordPacket{data: make([]byte, 64), laddr: laddr}
 	metadata := &C.Metadata{
 		NetWork: C.UDP,
 		Type:    C.REDIR,
 		SrcIP:   netip.AddrFrom4([4]byte{192, 168, 1, 100}),
-		SrcPort: 5353,
+		SrcPort: 53531,
 		DstIP:   netip.AddrFrom4([4]byte{198, 18, 0, 1}),
 		DstPort: 443,
 	}
 	adapter := C.NewPacketAdapter(packet, metadata)
 	key := adapter.Key()
+	natTable.Delete(key) // clear any entry a previous run left behind
 
 	handleUDPConn(adapter)
 
