@@ -10,11 +10,9 @@ func NewPacket(target socks5.Addr, packet C.UDPPacket, source C.Type, additions 
 	metadata := parseSocksAddr(target)
 	metadata.NetWork = C.UDP
 	metadata.Type = source
-	metadata.RawSrcAddr = packet.LocalAddr()
-	metadata.RawDstAddr = metadata.UDPAddr()
-	ApplyAdditions(metadata, WithSrcAddr(packet.LocalAddr()))
+	SetSrcAddr(metadata, packet.LocalAddr())
 	if p, ok := packet.(C.UDPPacketInAddr); ok {
-		ApplyAdditions(metadata, WithInAddr(p.InAddr()))
+		SetInAddr(metadata, p.InAddr())
 	}
 	ApplyAdditions(metadata, additions...)
 

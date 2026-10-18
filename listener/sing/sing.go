@@ -136,13 +136,9 @@ func (h *ListenerHandler) NewConnection(ctx context.Context, conn net.Conn, meta
 		NetWork: C.TCP,
 		Type:    h.Type,
 	}
-	if metadata.Source.IsIP() && metadata.Source.Fqdn == "" {
-		cMetadata.RawSrcAddr = metadata.Source.Unwrap().TCPAddr()
-	}
-	if metadata.Destination.IsIP() && metadata.Destination.Fqdn == "" {
-		cMetadata.RawDstAddr = metadata.Destination.Unwrap().TCPAddr()
-	}
-	inbound.ApplyAdditions(cMetadata, inbound.WithDstAddr(metadata.Destination), inbound.WithSrcAddr(metadata.Source), inbound.WithInAddr(conn.LocalAddr()))
+	_ = cMetadata.SetRemoteAddr(metadata.Destination)
+	inbound.SetSrcAddr(cMetadata, metadata.Source)
+	inbound.SetInAddr(cMetadata, conn.LocalAddr())
 	inbound.ApplyAdditions(cMetadata, h.Additions...)
 	inbound.ApplyAdditions(cMetadata, getAdditions(ctx)...)
 
@@ -236,13 +232,9 @@ func (h *ListenerHandler) handlePacket(ctx context.Context, cPacket *packet, sou
 		NetWork: C.UDP,
 		Type:    h.Type,
 	}
-	if source.IsIP() && source.Fqdn == "" {
-		cMetadata.RawSrcAddr = source.Unwrap().UDPAddr()
-	}
-	if destination.IsIP() && destination.Fqdn == "" {
-		cMetadata.RawDstAddr = destination.Unwrap().UDPAddr()
-	}
-	inbound.ApplyAdditions(cMetadata, inbound.WithDstAddr(destination), inbound.WithSrcAddr(source), inbound.WithInAddr(cPacket.InAddr()))
+	_ = cMetadata.SetRemoteAddr(destination)
+	inbound.SetSrcAddr(cMetadata, source)
+	inbound.SetInAddr(cMetadata, cPacket.InAddr())
 	inbound.ApplyAdditions(cMetadata, h.Additions...)
 	inbound.ApplyAdditions(cMetadata, getAdditions(ctx)...)
 
