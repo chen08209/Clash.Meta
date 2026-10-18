@@ -444,39 +444,40 @@ func handleUDPConn(packet C.PacketAdapter) {
 	if !loaded {
 		dial := func() (C.PacketConn, C.WriteBackProxy, error) {
 			originMetadata := metadata  // save origin metadata
-			metadata = metadata.Clone() // don't modify PacketAdapter's metadata
+			// the session works on a clone so the PacketAdapter's metadata stays intact
+			session := metadata.Clone()
 
-			if err := sender.DoSniff(metadata); err != nil {
+			if err := sender.DoSniff(session); err != nil {
 				log.Warnln("[UDP] DoSniff error: %s", err.Error())
 				return nil, nil, err
 			}
 
 			// the only precheck for a new session: its failure must abort the dial
-			if err := preHandleMetadata(metadata); err != nil {
+			if err := preHandleMetadata(session); err != nil {
 				log.Debugln("[Metadata PreHandle] error: %s", err)
 				return nil, nil, err
 			}
 
-			proxy, rule, err := resolveMetadata(metadata)
+			proxy, rule, err := resolveMetadata(session)
 			if err != nil {
 				log.Warnln("[UDP] Parse metadata failed: %s", err.Error())
 				return nil, nil, err
 			}
 
-			dialMetadata := metadata.Pure()
+			dialMetadata := session.Pure()
 			ctx, cancel := context.WithTimeout(context.Background(), C.DefaultUDPTimeout)
 			defer cancel()
 			rawPc, err := retry(ctx, func(ctx context.Context) (C.PacketConn, error) {
 				return proxy.ListenPacketContext(ctx, dialMetadata)
 			}, func(err error) {
-				logMetadataErr(metadata, rule, proxy, err)
+				logMetadataErr(session, rule, proxy, err)
 			})
 			if err != nil {
 				return nil, nil, err
 			}
-			logMetadata(metadata, rule, rawPc)
+			logMetadata(session, rule, rawPc)
 
-			pc := statistic.NewUDPTracker(rawPc, statistic.DefaultManager, metadata, rule, 0, 0, true)
+			pc := statistic.NewUDPTracker(rawPc, statistic.DefaultManager, session, rule, 0, 0, true)
 
 			sender.AddMapping(originMetadata, dialMetadata)
 			oAddrPort := dialMetadata.AddrPort()
