@@ -10,13 +10,13 @@ import (
 )
 
 type countingDNSClient struct {
-	fakeDNSClient
+	stubDNSClient
 	queries atomic.Int64
 }
 
 func (c *countingDNSClient) ExchangeContext(ctx context.Context, m *D.Msg) (*D.Msg, error) {
 	c.queries.Add(1)
-	return c.fakeDNSClient.ExchangeContext(ctx, m)
+	return c.stubDNSClient.ExchangeContext(ctx, m)
 }
 
 func TestResolverCacheKeySeparatesQueryTypes(t *testing.T) {
