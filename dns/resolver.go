@@ -56,7 +56,7 @@ type Resolver struct {
 	fallbackDomainFilters []C.DomainMatcher
 	fallbackIPFilters     []C.IpMatcher
 	fallbackLazyQuery     bool
-	group                 singleflight.Group[*D.Msg]
+	group                 singleflight.Group[dnsCacheKey, *D.Msg]
 	cache                 dnsCache
 	policy                []dnsPolicy
 	defaultResolver       *Resolver
@@ -205,6 +205,7 @@ func (r *Resolver) refreshAsync(m *D.Msg) {
 // ExchangeWithoutCache a batch of dns request, and it do NOT GET from cache
 func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.Msg, err error) {
 	q := m.Question[0]
+	key := questionKey(q)
 
 	retryNum := 0
 	retryMax := 3
@@ -224,7 +225,7 @@ func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.M
 			}
 
 			if cache {
-				putMsgToCache(r.cache, q, result)
+				putMsgToCache(r.cache, key, result)
 			}
 		}()
 		defer func() { trace.finish(result, err) }()
@@ -243,7 +244,7 @@ func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.M
 		return
 	}
 
-	ch := r.group.DoChan(q.String(), fn)
+	ch := r.group.DoChan(key, fn)
 
 	var result singleflight.Result[*D.Msg]
 
@@ -259,7 +260,7 @@ func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.M
 				result := <-ch
 				ret, err, shared := result.Val, result.Err, result.Shared
 				if err != nil && !shared && ret.Opcode < retryMax { // retry
-					r.group.DoChan(q.String(), fn)
+					r.group.DoChan(key, fn)
 				}
 			}()
 			return nil, ctx.Err()
@@ -268,7 +269,7 @@ func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.M
 
 	ret, err, shared := result.Val, result.Err, result.Shared
 	if err != nil && !shared && ret.Opcode < retryMax { // retry
-		r.group.DoChan(q.String(), fn)
+		r.group.DoChan(key, fn)
 	}
 
 	if err == nil {

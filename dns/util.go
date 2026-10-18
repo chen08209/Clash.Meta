@@ -57,10 +57,10 @@ func getMsgFromCache(c dnsCache, q D.Question) (*D.Msg, time.Time, bool) {
 
 // putMsgToCache puts a dns message into the cache.
 // the msg is copied before being stored in the cache, so it can be modified without affecting the original msg.
-func putMsgToCache(c dnsCache, q D.Question, msg *D.Msg) {
+func putMsgToCache(c dnsCache, key dnsCacheKey, msg *D.Msg) {
 	// skip dns cache for acme challenge
-	if q.Qtype == D.TypeTXT && strings.HasPrefix(q.Name, "_acme-challenge.") {
-		log.Debugln("[DNS] dns cache ignored because of acme challenge for: %s", q.Name)
+	if key.qtype == D.TypeTXT && strings.HasPrefix(key.name, "_acme-challenge.") {
+		log.Debugln("[DNS] dns cache ignored because of acme challenge for: %s", key.name)
 		return
 	}
 
@@ -83,7 +83,7 @@ func putMsgToCache(c dnsCache, q D.Question, msg *D.Msg) {
 		return
 	}
 
-	c.SetWithExpire(questionKey(q), msg, time.Now().Add(time.Duration(ttl)*time.Second))
+	c.SetWithExpire(key, msg, time.Now().Add(time.Duration(ttl)*time.Second))
 }
 
 func setMsgTTL(msg *D.Msg, ttl uint32) {

@@ -63,7 +63,7 @@ func TestExchangeContextFreshCacheHit(t *testing.T) {
 	resolver := testResolver(client)
 	query := testQueryMsg()
 
-	putMsgToCache(resolver.cache, query.Question[0], testAResponseMsg())
+	putMsgToCache(resolver.cache, questionKey(query.Question[0]), testAResponseMsg())
 	msg, err := resolver.ExchangeContext(context.Background(), query)
 	require.NoError(t, err)
 	require.Len(t, msg.Answer, 2)
@@ -109,4 +109,16 @@ func TestExchangeContextDeadlineTriggersRefresh(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return client.queries.Load() >= 1
 	}, 2*time.Second, 5*time.Millisecond, "a deadline cut-off must schedule a refresh")
+}
+
+func TestPutMsgToCacheSkipsAcmeChallenge(t *testing.T) {
+	resolver := testResolver(&fakeDNSClient{response: testAResponseMsg()})
+	query := &D.Msg{
+		Question: []D.Question{{Name: "_acme-challenge.example.org.", Qtype: D.TypeTXT, Qclass: D.ClassINET}},
+	}
+
+	putMsgToCache(resolver.cache, questionKey(query.Question[0]), testAResponseMsg())
+
+	_, _, hit := resolver.cache.GetWithExpire(questionKey(query.Question[0]))
+	require.False(t, hit, "acme challenge answers must bypass the cache")
 }

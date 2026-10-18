@@ -63,8 +63,8 @@ func Verify(name string) error {
 	}
 }
 
-var loadGeoSiteMatcherListSF = singleflight.Group[[]*router.Domain]{StoreResult: true}
-var loadGeoSiteMatcherSF = singleflight.Group[router.DomainMatcher]{StoreResult: true}
+var loadGeoSiteMatcherListSF = singleflight.Group[string, []*router.Domain]{StoreResult: true}
+var loadGeoSiteMatcherSF = singleflight.Group[string, router.DomainMatcher]{StoreResult: true}
 
 func LoadGeoSiteMatcher(countryCode string) (router.DomainMatcher, error) {
 	if countryCode == "" {
@@ -153,7 +153,7 @@ func LoadGeoSiteMatcher(countryCode string) (router.DomainMatcher, error) {
 	return matcher, nil
 }
 
-var loadGeoIPMatcherSF = singleflight.Group[router.IPMatcher]{StoreResult: true}
+var loadGeoIPMatcherSF = singleflight.Group[string, router.IPMatcher]{StoreResult: true}
 
 func LoadGeoIPMatcher(country string) (router.IPMatcher, error) {
 	if len(country) == 0 {
