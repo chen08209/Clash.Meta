@@ -50,8 +50,11 @@ func (p *Pool) put(conn *Snell) {
 
 type PoolConn struct {
 	*Snell
-	pool               *Pool
-	closeWriteOnce     sync.Once
+	pool           *Pool
+	// writeMu serialises the data writes with the half-close zero chunk, which
+	// otherwise races with an in-flight relay write on the cipher state.
+	writeMu        sync.Mutex
+	closeWriteOnce sync.Once
 	closeWriteReusable bool
 	closeWriteErr      error
 	closeOnce          sync.Once
@@ -70,6 +73,8 @@ func (pc *PoolConn) Read(b []byte) (int, error) {
 }
 
 func (pc *PoolConn) Write(b []byte) (int, error) {
+	pc.writeMu.Lock()
+	defer pc.writeMu.Unlock()
 	return pc.Snell.Write(b)
 }
 
@@ -90,6 +95,8 @@ func (pc *PoolConn) closeWrite() (bool, error) {
 			return
 		}
 		pc.closeWriteReusable = true
+		pc.writeMu.Lock()
+		defer pc.writeMu.Unlock()
 		pc.closeWriteErr = writeZeroChunk(pc.Snell)
 	})
 	return pc.closeWriteReusable, pc.closeWriteErr
