@@ -137,6 +137,11 @@ func (t *DomainTrie[T]) insert(parts []string, data T) {
 // 2. wildcard domain
 // 2. dot wildcard domain
 func (t *DomainTrie[T]) Search(domain string) *Node[T] {
+	// An empty domain never matches; skipping validation keeps lookups from
+	// building a rejection error on this hot path.
+	if domain == "" {
+		return nil
+	}
 	parts, err := ValidAndSplitDomain(domain)
 	if err != nil || parts[0] == "" {
 		return nil

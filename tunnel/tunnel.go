@@ -277,9 +277,11 @@ func fixMetadata(metadata *C.Metadata) {
 	// first unmap dstIP
 	metadata.DstIP = metadata.DstIP.Unmap()
 	// handle IP string on host
-	if ip, err := netip.ParseAddr(metadata.Host); err == nil {
-		metadata.DstIP = ip.Unmap()
-		metadata.Host = ""
+	if metadata.Host != "" {
+		if ip, err := netip.ParseAddr(metadata.Host); err == nil {
+			metadata.DstIP = ip.Unmap()
+			metadata.Host = ""
+		}
 	}
 }
 
@@ -432,12 +434,6 @@ func handleUDPConn(packet C.PacketAdapter) {
 	}
 	fixMetadata(metadata) // fix some metadata not set via metadata.SetRemoteAddr or metadata.SetRemoteAddress
 
-	if err := preHandleMetadata(metadata.Clone()); err != nil { // precheck without modify metadata
-		packet.Drop()
-		log.Debugln("[Metadata PreHandle] error: %s", err)
-		return
-	}
-
 	key := packet.Key()
 	sender, loaded := natTable.GetOrCreate(key, func() C.PacketSender {
 		sender := newPacketSender()
@@ -456,7 +452,11 @@ func handleUDPConn(packet C.PacketAdapter) {
 				return nil, nil, err
 			}
 
-			_ = preHandleMetadata(metadata) // error was pre-checked
+			// the only precheck for a new session: its failure must abort the dial
+			if err := preHandleMetadata(metadata); err != nil {
+				log.Debugln("[Metadata PreHandle] error: %s", err)
+				return nil, nil, err
+			}
 
 			proxy, rule, err := resolveMetadata(metadata)
 			if err != nil {
