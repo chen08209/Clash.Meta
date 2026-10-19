@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/metacubex/mihomo/common/contextutils"
 	"github.com/metacubex/mihomo/component/resolver"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/log"
@@ -41,49 +42,45 @@ func (c *client) ExchangeContext(ctx context.Context, m *D.Msg) (*D.Msg, error) 
 	}
 	defer conn.Close()
 
-	// miekg/dns ExchangeContext doesn't respond to context cancel.
-	// this is a workaround
-	type result struct {
-		msg *D.Msg
-		err error
+	dClient := &D.Client{
+		UDPSize: 4096,
+		Timeout: 5 * time.Second,
 	}
-	ch := make(chan result, 1)
-	go func() {
-		dClient := &D.Client{
-			UDPSize: 4096,
-			Timeout: 5 * time.Second,
-		}
-		dConn := &D.Conn{
-			Conn:    conn,
-			UDPSize: dClient.UDPSize,
-		}
 
-		msg, _, err := dClient.ExchangeWithConn(m, dConn)
+	msg, err := exchangeWithConn(ctx, dClient, m, conn)
 
-		// Resolvers MUST resend queries over TCP if they receive a truncated UDP response (with TC=1 set)!
-		if msg != nil && msg.Truncated && network == "udp" {
-			network = "tcp"
+	// Resolvers MUST resend queries over TCP if they receive a truncated UDP response (with TC=1 set)!
+	if msg != nil && msg.Truncated && network == "udp" {
+		network = "tcp"
+		if log.DebugEnabled() {
 			log.Debugln("[DNS] Truncated reply from %s:%s for %s over UDP, retrying over TCP", c.host, c.port, m.Question[0].String())
-			var tcpConn net.Conn
-			tcpConn, err = c.dialer.DialContext(ctx, network, addr)
-			if err != nil {
-				ch <- result{msg, err}
-				return
-			}
-			defer tcpConn.Close()
-			dConn.Conn = tcpConn
-			msg, _, err = dClient.ExchangeWithConn(m, dConn)
 		}
-
-		ch <- result{msg, err}
-	}()
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case ret := <-ch:
-		return ret.msg, ret.err
+		tcpConn, dialErr := c.dialer.DialContext(ctx, network, addr)
+		if dialErr != nil {
+			return msg, dialErr
+		}
+		defer tcpConn.Close()
+		msg, err = exchangeWithConn(ctx, dClient, m, tcpConn)
 	}
+
+	return msg, err
+}
+
+func exchangeWithConn(ctx context.Context, dClient *D.Client, m *D.Msg, conn net.Conn) (*D.Msg, error) {
+	dConn := &D.Conn{
+		Conn:    conn,
+		UDPSize: dClient.UDPSize,
+	}
+	stop := contextutils.AfterFunc(ctx, func() {
+		_ = conn.Close()
+	})
+	defer stop()
+
+	msg, _, err := dClient.ExchangeWithConnContext(ctx, m, dConn)
+	if err != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	return msg, err
 }
 
 func (c *client) ResetConnection() {}
