@@ -246,6 +246,11 @@ func (f *Fallback) resolveAliveProxyState(touch bool) (C.Proxy, bool) {
 
 	selectedName := f.selectedName()
 	var selectedProxy C.Proxy
+	if selectedName != "" {
+		if proxy, ok := f.indexedProxyByName(selectedName); ok && proxy.AliveForTestUrl(f.testUrl) {
+			selectedProxy = proxy
+		}
+	}
 	var firstAlive C.Proxy
 	aliveCount := int32(0)
 	for _, proxy := range proxies {
@@ -256,7 +261,7 @@ func (f *Fallback) resolveAliveProxyState(touch bool) (C.Proxy, bool) {
 		if firstAlive == nil {
 			firstAlive = proxy
 		}
-		if selectedName != "" && proxy.Name() == selectedName {
+		if selectedProxy == nil && selectedName != "" && proxy.Name() == selectedName {
 			selectedProxy = proxy
 		}
 		if aliveCount >= 2 && (selectedName == "" || selectedProxy != nil) {

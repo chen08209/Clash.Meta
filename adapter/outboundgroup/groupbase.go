@@ -269,7 +269,7 @@ func proxyNameIndex(proxies []C.Proxy) map[string]C.Proxy {
 
 func (gb *GroupBase) indexedProxyByName(name string) (C.Proxy, bool) {
 	cache := gb.providerCache.Load()
-	if cache == nil || cache.byName == nil {
+	if cache == nil || cache.byName == nil || !gb.providerVersionsEqual(cache.versions) {
 		return nil, false
 	}
 	proxy, ok := cache.byName[name]
