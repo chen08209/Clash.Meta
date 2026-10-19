@@ -34,6 +34,12 @@ func TestTableUsesBinaryFlowKeys(t *testing.T) {
 	require.False(t, loaded)
 
 	localConn := &net.UDPConn{}
+	missing := netip.MustParseAddrPort("192.168.1.3:54322")
+	require.False(t, table.AddForLocalConn(missing.String(), "example.com:443", localConn))
+	cond, loaded := table.GetOrCreateLockForLocalConn(missing.String(), "example.com:443")
+	require.Nil(t, cond)
+	require.False(t, loaded)
+
 	require.True(t, table.AddForLocalConn(ipv4.String(), "example.com:443", localConn))
 	require.Equal(t, localConn, table.GetForLocalConn(ipv4.String(), "example.com:443"))
 	var ranged int
@@ -63,6 +69,25 @@ func BenchmarkTableGetOrCreateForFlowHit(b *testing.B) {
 		if _, loaded := table.GetOrCreateForFlow(key, nil); !loaded {
 			b.Fatal("existing flow was not loaded")
 		}
+	}
+}
+
+func BenchmarkTableCreateUDPFlow(b *testing.B) {
+	keys := make([]netip.AddrPort, b.N)
+	for i := range keys {
+		index := uint32(i)
+		keys[i] = netip.AddrPortFrom(
+			netip.AddrFrom4([4]byte{10, byte(index >> 24), byte(index >> 16), byte(index)}),
+			54321,
+		)
+	}
+	table := New()
+	sender := &noopPacketSender{}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for _, key := range keys {
+		table.GetOrCreateForFlow(key, func() C.PacketSender { return sender })
 	}
 }
 
