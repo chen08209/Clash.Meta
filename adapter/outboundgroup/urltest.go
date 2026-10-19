@@ -182,6 +182,11 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 
 		selectedName := u.selectedName()
 		var selectedProxy C.Proxy
+		if selectedName != "" {
+			if proxy, ok := u.indexedProxyByName(selectedName); ok && proxy.AliveForTestUrl(u.testUrl) {
+				selectedProxy = proxy
+			}
+		}
 		var fast C.Proxy
 		var minDelay uint16
 		fastNotExist := true
@@ -200,6 +205,9 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 			}
 			if selectedProxy != nil && aliveCount >= 2 {
 				break
+			}
+			if selectedProxy != nil {
+				continue
 			}
 			delay := proxy.LastDelayForTestUrl(u.testUrl)
 			if fast == nil || delay < minDelay {
@@ -256,6 +264,7 @@ func (u *URLTest) resetFastNode() {
 	u.fastNode = nil
 	u.fastSingle.Reset()
 }
+
 // SupportUDP implements C.ProxyAdapter
 func (u *URLTest) SupportUDP() bool {
 	if u.disableUDP {

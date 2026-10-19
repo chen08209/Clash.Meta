@@ -267,6 +267,15 @@ func proxyNameIndex(proxies []C.Proxy) map[string]C.Proxy {
 	return byName
 }
 
+func (gb *GroupBase) indexedProxyByName(name string) (C.Proxy, bool) {
+	cache := gb.providerCache.Load()
+	if cache == nil || cache.byName == nil {
+		return nil, false
+	}
+	proxy, ok := cache.byName[name]
+	return proxy, ok
+}
+
 // providerVersionsNow reads the versions a pick is about to be resolved from,
 // so a group that caches the pick can tell whether its providers have since
 // replaced the list underneath it.
