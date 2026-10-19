@@ -2,6 +2,7 @@ package dns
 
 import (
 	"context"
+	"net/netip"
 	"testing"
 
 	D "github.com/miekg/dns"
@@ -32,4 +33,21 @@ func TestLookupIPUsesParsedCache(t *testing.T) {
 	require.False(t, hit)
 	_, _, hit = r.ipCache.GetWithExpire(ipCacheEntryKey("www.example.com", D.TypeAAAA))
 	require.False(t, hit)
+}
+
+func TestLookupIPCachePairKeepsAddressOrder(t *testing.T) {
+	client := &countingDNSClient{}
+	r := NewResolverFromClient(client)
+	ctx := context.Background()
+
+	_, err := r.LookupIP(ctx, "www.example.com")
+	require.NoError(t, err)
+
+	ips, hit := r.lookupIPFromCachePair("www.example.com")
+	require.True(t, hit)
+	require.Equal(t, []netip.Addr{
+		netip.MustParseAddr("192.0.2.10"),
+		netip.MustParseAddr("192.0.2.11"),
+		netip.MustParseAddr("2001:db8::1"),
+	}, ips)
 }

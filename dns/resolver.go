@@ -99,6 +99,10 @@ func (r *Resolver) LookupIPPrimaryIPv4(ctx context.Context, host string) (ips []
 }
 
 func (r *Resolver) LookupIP(ctx context.Context, host string) (ips []netip.Addr, err error) {
+	if combined, hit := r.lookupIPFromCachePair(host); hit {
+		return combined, nil
+	}
+
 	ch := make(chan []netip.Addr, 1)
 	go func() {
 		defer close(ch)

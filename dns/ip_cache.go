@@ -30,6 +30,26 @@ func (r *Resolver) lookupIPFromCache(host string, qtype uint16) ([]netip.Addr, b
 	return slices.Clone(ips), true
 }
 
+func (r *Resolver) lookupIPFromCachePair(host string) ([]netip.Addr, bool) {
+	if r == nil || r.ipCache == nil || DefaultQueryNotify != nil {
+		return nil, false
+	}
+
+	now := time.Now()
+	ipv4s, ipv4Expire, ipv4Hit := r.ipCache.GetWithExpire(ipCacheEntryKey(host, D.TypeA))
+	if !ipv4Hit || !now.Before(ipv4Expire) {
+		return nil, false
+	}
+	ipv6s, ipv6Expire, ipv6Hit := r.ipCache.GetWithExpire(ipCacheEntryKey(host, D.TypeAAAA))
+	if !ipv6Hit || !now.Before(ipv6Expire) {
+		return nil, false
+	}
+
+	combined := make([]netip.Addr, 0, len(ipv4s)+len(ipv6s))
+	combined = append(combined, ipv4s...)
+	return append(combined, ipv6s...), true
+}
+
 func (r *Resolver) cacheLookupIP(host string, qtype uint16, msg *D.Msg, ips []netip.Addr) {
 	if r == nil || r.ipCache == nil || DefaultQueryNotify != nil || msg == nil || len(ips) == 0 {
 		return
