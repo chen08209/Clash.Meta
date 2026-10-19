@@ -19,8 +19,16 @@ type packetSender struct {
 	cancel context.CancelFunc
 	ch     chan C.PacketAdapter
 
-	mappingMutex sync.Mutex
-	mappings     atomic.Pointer[packetMappings]
+	mappingMutex   sync.RWMutex
+	originToTarget map[packetOrigin]netip.Addr
+	targetToOrigin map[netip.Addr]netip.Addr
+
+	// originCache is confined to the Process loop. RestoreReadFrom is part of
+	// the public PacketSender interface, so its cache is atomic.
+	originCacheKey    packetOrigin
+	originCacheTarget netip.Addr
+	originCacheValid  bool
+	readCache         atomic.Pointer[packetReadMapping]
 
 	// Only the Process goroutine touches this; the read loop keeps its own copy.
 	readDeadline int64
@@ -37,9 +45,9 @@ type packetOrigin struct {
 	ip   netip.Addr
 }
 
-type packetMappings struct {
-	originToTarget map[packetOrigin]netip.Addr
-	targetToOrigin map[netip.Addr]netip.Addr
+type packetReadMapping struct {
+	target netip.Addr
+	origin netip.Addr
 }
 
 func packetOriginKey(metadata *C.Metadata) packetOrigin {
@@ -55,55 +63,63 @@ func newPacketSender() C.PacketSender {
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan C.PacketAdapter, senderCapacity)
 	sender := &packetSender{
-		ctx:    ctx,
-		cancel: cancel,
-		ch:     ch,
-	}
-	sender.mappings.Store(&packetMappings{
+		ctx:            ctx,
+		cancel:         cancel,
+		ch:             ch,
 		originToTarget: make(map[packetOrigin]netip.Addr),
 		targetToOrigin: make(map[netip.Addr]netip.Addr),
-	})
-	return sender
-}
-
-func clonePacketMap[M ~map[K]V, K comparable, V any](source M) M {
-	result := make(M, len(source))
-	for key, value := range source {
-		result[key] = value
 	}
-	return result
+	return sender
 }
 
 func (s *packetSender) AddMapping(originMetadata *C.Metadata, metadata *C.Metadata) {
 	s.mappingMutex.Lock()
 	defer s.mappingMutex.Unlock()
-	current := s.mappings.Load()
+
 	originKey := packetOriginKey(originMetadata)
 	originAddr := originMetadata.DstIP
 	targetAddr := metadata.DstIP
-	originValid := current.originToTarget[originKey].IsValid()
-	targetValid := current.targetToOrigin[targetAddr].IsValid()
-	if originValid && targetValid {
-		return
+
+	if target, exists := s.originToTarget[originKey]; !exists || !target.IsValid() {
+		s.originToTarget[originKey] = targetAddr
 	}
-	next := &packetMappings{
-		originToTarget: clonePacketMap(current.originToTarget),
-		targetToOrigin: clonePacketMap(current.targetToOrigin),
+	if origin, exists := s.targetToOrigin[targetAddr]; !exists || !origin.IsValid() {
+		s.targetToOrigin[targetAddr] = originAddr
 	}
-	if !originValid {
-		next.originToTarget[originKey] = targetAddr
-	}
-	if !targetValid {
-		next.targetToOrigin[targetAddr] = originAddr
-	}
-	s.mappings.Store(next)
 }
 
 func (s *packetSender) RestoreReadFrom(addr netip.Addr) netip.Addr {
-	if originAddr := s.mappings.Load().targetToOrigin[addr]; originAddr.IsValid() {
+	if cached := s.readCache.Load(); cached != nil && addr == cached.target {
+		return cached.origin
+	}
+
+	s.mappingMutex.RLock()
+	originAddr := s.targetToOrigin[addr]
+	s.mappingMutex.RUnlock()
+	if originAddr.IsValid() {
+		s.readCache.Store(&packetReadMapping{target: addr, origin: originAddr})
 		return originAddr
 	}
+	s.readCache.Store(nil)
 	return addr
+}
+
+func (s *packetSender) targetFor(originKey packetOrigin) netip.Addr {
+	if s.originCacheValid && originKey == s.originCacheKey {
+		return s.originCacheTarget
+	}
+
+	s.mappingMutex.RLock()
+	target := s.originToTarget[originKey]
+	s.mappingMutex.RUnlock()
+	if target.IsValid() {
+		s.originCacheKey = originKey
+		s.originCacheTarget = target
+		s.originCacheValid = true
+	} else {
+		s.originCacheValid = false
+	}
+	return target
 }
 
 func (s *packetSender) processPacket(pc C.PacketConn, packet C.PacketAdapter) {
@@ -112,7 +128,7 @@ func (s *packetSender) processPacket(pc C.PacketConn, packet C.PacketAdapter) {
 
 	var addr *net.UDPAddr
 
-	targetAddr := s.mappings.Load().originToTarget[packetOriginKey(metadata)]
+	targetAddr := s.targetFor(packetOriginKey(metadata))
 
 	if targetAddr.IsValid() {
 		addr = s.destinationFor(targetAddr, metadata.DstPort, pc)

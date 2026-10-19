@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/netip"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,9 +23,8 @@ func TestPacketOriginKeyMatchesWithoutFormatting(t *testing.T) {
 	defer sender.Close()
 
 	sender.AddMapping(origin, resolved)
-	mappings := sender.mappings.Load()
-	target, exists := mappings.originToTarget[packetOriginKey(origin)]
-	require.True(t, exists)
+	target := sender.targetFor(packetOriginKey(origin))
+	require.True(t, target.IsValid())
 	require.Equal(t, resolved.DstIP, target)
 
 	allocations := testing.AllocsPerRun(100, func() {
@@ -47,9 +47,9 @@ func TestPacketOriginKeyPrefersHostOverResolvedIP(t *testing.T) {
 
 	sender.AddMapping(origin, resolved)
 	key := packetOriginKey(origin)
-	target, exists := sender.mappings.Load().originToTarget[key]
+	target := sender.targetFor(key)
 
-	require.True(t, exists)
+	require.True(t, target.IsValid())
 	require.Equal(t, "example.com", key.host)
 	require.False(t, key.ip.IsValid())
 	require.Equal(t, resolved.DstIP, target)
@@ -65,12 +65,22 @@ func TestPacketMappingConcurrentAccess(t *testing.T) {
 		&C.Metadata{DstIP: target},
 	)
 
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		require.Equal(t, origin, sender.RestoreReadFrom(target))
-	}()
-	<-done
+	var failed atomic.Bool
+	var wait sync.WaitGroup
+	for worker := 0; worker < 8; worker++ {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			for iteration := 0; iteration < 1000; iteration++ {
+				if restored := sender.RestoreReadFrom(target); restored != origin {
+					failed.Store(true)
+					return
+				}
+			}
+		}()
+	}
+	wait.Wait()
+	require.False(t, failed.Load())
 }
 
 func TestPacketMappingKeepsFirstDestinationAndOrigin(t *testing.T) {
@@ -84,13 +94,43 @@ func TestPacketMappingKeepsFirstDestinationAndOrigin(t *testing.T) {
 	sender.AddMapping(firstOrigin, &C.Metadata{DstIP: firstTarget})
 	sender.AddMapping(secondOrigin, &C.Metadata{DstIP: firstTarget})
 	sender.AddMapping(firstOrigin, &C.Metadata{DstIP: secondTarget})
-	mappings := sender.mappings.Load()
-	first, _ := mappings.originToTarget[packetOriginKey(firstOrigin)]
-	firstOriginAddr, _ := mappings.targetToOrigin[firstTarget]
-	secondOriginAddr, _ := mappings.targetToOrigin[secondTarget]
+	first := sender.targetFor(packetOriginKey(firstOrigin))
+	firstOriginAddr := sender.RestoreReadFrom(firstTarget)
+	secondOriginAddr := sender.RestoreReadFrom(secondTarget)
 	require.Equal(t, firstTarget, first)
 	require.Equal(t, firstOrigin.DstIP, firstOriginAddr)
 	require.Equal(t, firstOrigin.DstIP, secondOriginAddr)
+}
+
+func TestPacketMappingFillKeepsEveryMapping(t *testing.T) {
+	const mappingCount = 4096
+
+	origins := make([]C.Metadata, mappingCount)
+	targets := make([]C.Metadata, mappingCount)
+	for index := range origins {
+		origins[index].DstIP = netip.AddrFrom4([4]byte{10, byte(index >> 8), byte(index), 1})
+		targets[index].DstIP = netip.AddrFrom4([4]byte{203, 0, byte(index >> 8), byte(index)})
+	}
+
+	sender := newPacketSender().(*packetSender)
+	defer sender.Close()
+	for index := range origins {
+		sender.AddMapping(&origins[index], &targets[index])
+	}
+
+	allocations := testing.AllocsPerRun(1, func() {
+		checkSender := newPacketSender().(*packetSender)
+		for index := range origins {
+			checkSender.AddMapping(&origins[index], &targets[index])
+		}
+		checkSender.Close()
+	})
+	require.Less(t, allocations, float64(2048))
+
+	for _, index := range []int{0, mappingCount / 2, mappingCount - 1} {
+		require.Equal(t, targets[index].DstIP, sender.targetFor(packetOriginKey(&origins[index])))
+		require.Equal(t, origins[index].DstIP, sender.RestoreReadFrom(targets[index].DstIP))
+	}
 }
 
 func BenchmarkPacketMappingRestore(b *testing.B) {
@@ -125,6 +165,27 @@ func BenchmarkPacketMappingFirstAdd(b *testing.B) {
 	}
 }
 
+func BenchmarkPacketMappingFill(b *testing.B) {
+	const mappingCount = 4096
+
+	origins := make([]C.Metadata, mappingCount)
+	targets := make([]C.Metadata, mappingCount)
+	for index := range origins {
+		origins[index].DstIP = netip.AddrFrom4([4]byte{10, byte(index >> 8), byte(index), 1})
+		targets[index].DstIP = netip.AddrFrom4([4]byte{203, 0, byte(index >> 8), byte(index)})
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for index := 0; index < b.N; index++ {
+		sender := newPacketSender().(*packetSender)
+		for mapping := range origins {
+			sender.AddMapping(&origins[mapping], &targets[mapping])
+		}
+		sender.Close()
+	}
+}
+
 func BenchmarkPacketOriginLookup(b *testing.B) {
 	origin := &C.Metadata{DstIP: netip.MustParseAddr("192.168.1.2")}
 	target := netip.MustParseAddr("203.0.113.20")
@@ -135,8 +196,7 @@ func BenchmarkPacketOriginLookup(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for index := 0; index < b.N; index++ {
-		if address, exists := sender.mappings.Load().originToTarget[packetOriginKey(origin)]; !exists ||
-			address != target {
+		if address := sender.targetFor(packetOriginKey(origin)); address != target {
 			b.Fatal("packet origin mapping was not found")
 		}
 	}
