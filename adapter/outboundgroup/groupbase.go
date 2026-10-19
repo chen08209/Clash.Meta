@@ -45,7 +45,10 @@ type GroupBase struct {
 type providerProxyCache struct {
 	versions []uint32
 	proxies  []C.Proxy
+	byName   map[string]C.Proxy
 }
+
+const proxyNameIndexMinSize = 8
 
 type GroupBaseOption struct {
 	Name           string
@@ -243,9 +246,25 @@ func (gb *GroupBase) GetProxies(touch bool) []C.Proxy {
 	gb.providerCache.Store(&providerProxyCache{
 		versions: providerVersions,
 		proxies:  proxies,
+		byName:   proxyNameIndex(proxies),
 	})
 
 	return proxies
+}
+
+func proxyNameIndex(proxies []C.Proxy) map[string]C.Proxy {
+	if len(proxies) < proxyNameIndexMinSize {
+		return nil
+	}
+
+	byName := make(map[string]C.Proxy, len(proxies))
+	for _, proxy := range proxies {
+		name := proxy.Name()
+		if _, exists := byName[name]; !exists {
+			byName[name] = proxy
+		}
+	}
+	return byName
 }
 
 // providerVersionsNow reads the versions a pick is about to be resolved from,
