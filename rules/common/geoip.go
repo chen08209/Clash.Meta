@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"strings"
 
+	commonatomic "github.com/metacubex/mihomo/common/atomic"
 	"github.com/metacubex/mihomo/component/geodata"
 	"github.com/metacubex/mihomo/component/geodata/router"
 	"github.com/metacubex/mihomo/component/mmdb"
@@ -21,6 +22,12 @@ type GEOIP struct {
 	adapter     string
 	noResolveIP bool
 	isSourceIP  bool
+	ipMatcher   commonatomic.TypedValue[cachedGeoIPMatcher]
+}
+
+type cachedGeoIPMatcher struct {
+	generation uint64
+	matcher    router.IPMatcher
 }
 
 var _ C.Rule = (*GEOIP)(nil)
@@ -179,10 +186,17 @@ func (g *GEOIP) GetIPMatcher() (router.IPMatcher, error) {
 }
 
 func (g *GEOIP) getIPMatcher() (router.IPMatcher, error) {
+	if cached, ok := g.ipMatcher.LoadOk(); ok && cached.generation == geodata.GeoIPMatcherGeneration() {
+		return cached.matcher, nil
+	}
 	geoIPMatcher, err := geodata.LoadGeoIPMatcher(g.country)
 	if err != nil {
 		return nil, fmt.Errorf("[GeoIP] %w", err)
 	}
+	g.ipMatcher.Store(cachedGeoIPMatcher{
+		generation: geodata.GeoIPMatcherGeneration(),
+		matcher:    geoIPMatcher,
+	})
 	return geoIPMatcher, nil
 
 }

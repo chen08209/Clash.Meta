@@ -3,6 +3,7 @@ package geodata
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	"github.com/metacubex/mihomo/common/singleflight"
 	"github.com/metacubex/mihomo/component/geodata/router"
@@ -65,6 +66,7 @@ func Verify(name string) error {
 
 var loadGeoSiteMatcherListSF = singleflight.Group[string, []*router.Domain]{StoreResult: true}
 var loadGeoSiteMatcherSF = singleflight.Group[string, router.DomainMatcher]{StoreResult: true}
+var geoSiteMatcherGeneration atomic.Uint64
 
 func LoadGeoSiteMatcher(countryCode string) (router.DomainMatcher, error) {
 	if countryCode == "" {
@@ -154,6 +156,7 @@ func LoadGeoSiteMatcher(countryCode string) (router.DomainMatcher, error) {
 }
 
 var loadGeoIPMatcherSF = singleflight.Group[string, router.IPMatcher]{StoreResult: true}
+var geoIPMatcherGeneration atomic.Uint64
 
 func LoadGeoIPMatcher(country string) (router.IPMatcher, error) {
 	if len(country) == 0 {
@@ -197,6 +200,14 @@ func ClearGeoSiteCache() {
 	loadGeoSiteMatcherSF.Reset()
 }
 
+func GeoSiteMatcherGeneration() uint64 {
+	return geoSiteMatcherGeneration.Load()
+}
+
 func ClearGeoIPCache() {
 	loadGeoIPMatcherSF.Reset()
+}
+
+func GeoIPMatcherGeneration() uint64 {
+	return geoIPMatcherGeneration.Load()
 }
