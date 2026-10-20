@@ -163,6 +163,19 @@ func (h *ListenerHandler) NewPacketConnection(ctx context.Context, conn network.
 	if isReadWaiter {
 		readWaiter.InitializeReadWaiter(rwOptions)
 	}
+	inAddr := conn.LocalAddr()
+	if lAddr := getInAddr(ctx); lAddr != nil {
+		inAddr = lAddr
+	}
+	// A UDP flow repeats its destination, so the metadata built from the first
+	// datagram is reused until the destination changes. Only the tunnel's
+	// worker goroutine touches the shared metadata after handoff, and its
+	// in-place fixes are idempotent; datagrams that carry a different
+	// destination still get their own metadata.
+	var (
+		metadataTemplate *C.Metadata
+		templateDest     M.Socksaddr
+	)
 	for {
 		var (
 			buff *buf.Buffer
@@ -189,13 +202,16 @@ func (h *ListenerHandler) NewPacketConnection(ctx context.Context, conn network.
 			writer: &writer,
 			mutex:  &mutex,
 			source: metadata.Source.AddrPort(),
-			lAddr:  conn.LocalAddr(),
+			lAddr:  inAddr,
 			buff:   buff,
 		}
-		if lAddr := getInAddr(ctx); lAddr != nil {
-			cPacket.lAddr = lAddr
+		if metadataTemplate != nil && dest == templateDest {
+			h.Tunnel.HandleUDPPacket(cPacket, metadataTemplate)
+			continue
 		}
-		h.handlePacket(ctx, cPacket, metadata.Source, dest)
+		metadataTemplate = h.buildPacketMetadata(ctx, cPacket, metadata.Source, dest)
+		templateDest = dest
+		h.Tunnel.HandleUDPPacket(cPacket, metadataTemplate)
 	}
 	return nil
 }
@@ -220,6 +236,10 @@ func (h *ListenerHandler) NewPacket(ctx context.Context, key netip.AddrPort, buf
 }
 
 func (h *ListenerHandler) handlePacket(ctx context.Context, cPacket *packet, source M.Socksaddr, destination M.Socksaddr) {
+	h.Tunnel.HandleUDPPacket(cPacket, h.buildPacketMetadata(ctx, cPacket, source, destination))
+}
+
+func (h *ListenerHandler) buildPacketMetadata(ctx context.Context, cPacket *packet, source M.Socksaddr, destination M.Socksaddr) *C.Metadata {
 	cMetadata := &C.Metadata{
 		NetWork: C.UDP,
 		Type:    h.Type,
@@ -229,8 +249,7 @@ func (h *ListenerHandler) handlePacket(ctx context.Context, cPacket *packet, sou
 	inbound.SetInAddr(cMetadata, cPacket.InAddr())
 	inbound.ApplyAdditions(cMetadata, h.Additions...)
 	inbound.ApplyAdditions(cMetadata, getAdditions(ctx)...)
-
-	h.Tunnel.HandleUDPPacket(cPacket, cMetadata)
+	return cMetadata
 }
 
 func (h *ListenerHandler) NewError(ctx context.Context, err error) {

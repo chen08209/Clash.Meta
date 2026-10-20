@@ -409,15 +409,25 @@ func handleUDPConn(packet C.PacketAdapter) {
 		return sender
 	})
 	if !loaded {
-		go startUDPSender(metadata, packet, sender, key)
+		// The dial runs on its own goroutine, so it gets a private metadata
+		// clone and an origin snapshot. Later datagrams of the same flow may
+		// reuse one metadata object in place, and that object must not be read
+		// again once this worker has moved on.
+		dialMetadata := metadata.Clone()
+		originMetadata := &C.Metadata{
+			Host:    metadata.Host,
+			DstIP:   metadata.DstIP,
+			DstPort: metadata.DstPort,
+		}
+		go startUDPSender(originMetadata, dialMetadata, packet, sender, key)
 	}
 	sender.Send(packet) // nonblocking
 }
 
 // Kept as functions taking parameters rather than closures: a closure capturing
 // the per-packet metadata variable forces it onto the heap on every packet.
-func startUDPSender(metadata *C.Metadata, packet C.PacketAdapter, sender C.PacketSender, key netip.AddrPort) {
-	pc, writeBackProxy, err := dialUDPSender(metadata, packet, sender, key)
+func startUDPSender(originMetadata *C.Metadata, dialMetadata *C.Metadata, packet C.PacketAdapter, sender C.PacketSender, key netip.AddrPort) {
+	pc, writeBackProxy, err := dialUDPSender(originMetadata, dialMetadata, packet, sender, key)
 	if err != nil {
 		sender.Close()
 		natTable.DeleteForFlow(key)
@@ -426,10 +436,9 @@ func startUDPSender(metadata *C.Metadata, packet C.PacketAdapter, sender C.Packe
 	sender.Process(pc, writeBackProxy)
 }
 
-func dialUDPSender(metadata *C.Metadata, packet C.PacketAdapter, sender C.PacketSender, key netip.AddrPort) (C.PacketConn, C.WriteBackProxy, error) {
-	originMetadata := metadata  // save origin metadata
-	metadata = metadata.Clone() // don't modify PacketAdapter's metadata
-
+// dialUDPSender receives a metadata clone the worker made before the dial went
+// async, plus an origin snapshot: neither is shared with later datagrams.
+func dialUDPSender(originMetadata *C.Metadata, metadata *C.Metadata, packet C.PacketAdapter, sender C.PacketSender, key netip.AddrPort) (C.PacketConn, C.WriteBackProxy, error) {
 	if err := sender.DoSniff(metadata); err != nil {
 		log.Warnln("[UDP] DoSniff error: %s", err.Error())
 		return nil, nil, err
