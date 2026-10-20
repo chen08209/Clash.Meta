@@ -56,6 +56,17 @@ func (s *Single[T]) Do(fn func() (T, error)) (v T, err error, shared bool) {
 	return callM.val, callM.err, false
 }
 
+// Cached reports a Do result that has not expired yet, so a caller can answer
+// without building the computation closure for the cache-hit path.
+func (s *Single[T]) Cached() (v T, err error, ok bool) {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	if result := s.result; result != nil && time.Since(result.Time) < s.wait {
+		return result.Val, result.Err, true
+	}
+	return v, err, false
+}
+
 func (s *Single[T]) Reset() {
 	s.mux.Lock()
 	s.call = nil

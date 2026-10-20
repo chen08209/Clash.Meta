@@ -60,3 +60,29 @@ func BenchmarkURLTestSelectedProxyLargeGroup(b *testing.B) {
 		}
 	}
 }
+
+func TestURLTestFastCacheHitStaysAllocationFree(t *testing.T) {
+	group, selected := urlTestBenchmarkGroup(t, 64)
+	require.Equal(t, selected.Name(), group.fast(false).Name())
+
+	allocations := testing.AllocsPerRun(100, func() {
+		if group.fast(false).Name() != selected.Name() {
+			t.Fatal("selected proxy mismatch")
+		}
+	})
+	require.EqualValues(t, 0, allocations)
+}
+
+func BenchmarkURLTestSelectedProxyCached(b *testing.B) {
+	group, selected := urlTestBenchmarkGroup(b, 4096)
+	want := selected.Name()
+	group.fast(false)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if group.fast(false).Name() != want {
+			b.Fatal("selected proxy mismatch")
+		}
+	}
+}

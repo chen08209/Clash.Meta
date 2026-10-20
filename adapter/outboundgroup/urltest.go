@@ -171,6 +171,12 @@ func (u *URLTest) shouldReplaceFastNode(fast C.Proxy, fastNotExist bool) bool {
 
 func (u *URLTest) fast(touch bool) C.Proxy {
 	u.dropCacheForProviderSwap()
+	if cached, _, ok := u.fastSingle.Cached(); ok {
+		if touch { // the same recency the cached Do result reports as shared
+			u.Touch()
+		}
+		return cached
+	}
 	elm, _, shared := u.fastSingle.Do(func() (C.Proxy, error) {
 		u.fastMu.Lock()
 		defer u.fastMu.Unlock()
