@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	C "github.com/metacubex/mihomo/constant"
+	N "github.com/metacubex/mihomo/common/net"
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,6 +34,11 @@ func TestPacketAdapterFlowKey(t *testing.T) {
 			name: "ipv6",
 			addr: &net.UDPAddr{IP: net.ParseIP("2001:db8::1"), Port: 54321},
 			want: netip.MustParseAddrPort("[2001:db8::1]:54321"),
+		},
+		{
+			name: "snat wrapped",
+			addr: N.NewCustomAddr("TROJAN", "0f4b5a2c", &net.UDPAddr{IP: net.IPv4(192, 168, 1, 2), Port: 54321}),
+			want: netip.MustParseAddrPort("192.168.1.2:54321"),
 		},
 	}
 	for _, test := range tests {

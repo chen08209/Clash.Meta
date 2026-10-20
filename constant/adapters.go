@@ -321,6 +321,13 @@ func NewPacketAdapter(packet UDPPacket, metadata *Metadata) PacketAdapter {
 }
 
 func addrPortFromLocalAddr(addr net.Addr) netip.AddrPort {
+	if wrapper, ok := addr.(interface{ RawAddr() net.Addr }); ok {
+		// listeners wrap the client address in a per-connection SNAT key
+		// (CustomAddr), whose String() is not an address
+		if raw := wrapper.RawAddr(); raw != nil {
+			addr = raw
+		}
+	}
 	var ip net.IP
 	var port int
 	var zone string
