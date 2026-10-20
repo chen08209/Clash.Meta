@@ -107,6 +107,14 @@ func (c *packet) WriteBack(b []byte, addr net.Addr) (n int, err error) {
 	return c.pc.WriteTo(packet, c.addr)
 }
 
+func (c *packet) WriteBackAddrPort(b []byte, addr netip.AddrPort) (n int, err error) {
+	packet, err := socks5.EncodeUDPPacket(socks5.AddrFromStdAddrPort(addr), b)
+	if err != nil {
+		return
+	}
+	return c.pc.WriteTo(packet, c.addr)
+}
+
 func (c *packet) Drop() {
 	if c.put != nil {
 		c.put()

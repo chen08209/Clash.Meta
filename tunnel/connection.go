@@ -296,6 +296,7 @@ func handleUDPToLocal(
 	// tracked deadline needs no synchronisation.
 	var readDeadline int64
 	addrPortReader, hasAddrPortReader := pc.(N.AddrPortWaitReadFrom)
+	addrPortWriteBack, hasAddrPortWriteBack := writeBack.(C.AddrPortWriteBack)
 	for {
 		now := time.Now()
 		if shouldRefreshDeadline(readDeadline, now) {
@@ -335,7 +336,11 @@ func handleUDPToLocal(
 
 		fromAddrPort = netip.AddrPortFrom(fromAddr, fromAddrPort.Port())
 
-		_, err = writeBack.WriteBack(data, net.UDPAddrFromAddrPort(fromAddrPort))
+		if hasAddrPortWriteBack {
+			_, err = addrPortWriteBack.WriteBackAddrPort(data, fromAddrPort)
+		} else {
+			_, err = writeBack.WriteBack(data, net.UDPAddrFromAddrPort(fromAddrPort))
+		}
 		if put != nil {
 			put()
 		}

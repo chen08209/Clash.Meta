@@ -2,6 +2,7 @@ package tunnel
 
 import (
 	"net"
+	"net/netip"
 
 	"github.com/metacubex/mihomo/common/pool"
 )
@@ -18,6 +19,10 @@ func (c *packet) Data() []byte {
 
 // WriteBack write UDP packet with source(ip, port) = `addr`
 func (c *packet) WriteBack(b []byte, addr net.Addr) (n int, err error) {
+	return c.pc.WriteTo(b, c.rAddr)
+}
+
+func (c *packet) WriteBackAddrPort(b []byte, addr netip.AddrPort) (n int, err error) {
 	return c.pc.WriteTo(b, c.rAddr)
 }
 

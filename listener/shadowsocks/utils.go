@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"net"
+	"net/netip"
 
 	"github.com/metacubex/mihomo/transport/socks5"
 
@@ -28,6 +29,11 @@ func (c *packet) WriteBack(b []byte, addr net.Addr) (n int, err error) {
 		return
 	}
 	packet := bytes.Join([][]byte{socks5.ParseAddrToSocksAddr(addr), b}, []byte{})
+	return c.pc.WriteTo(packet, c.rAddr)
+}
+
+func (c *packet) WriteBackAddrPort(b []byte, addr netip.AddrPort) (n int, err error) {
+	packet := bytes.Join([][]byte{socks5.AddrFromStdAddrPort(addr), b}, []byte{})
 	return c.pc.WriteTo(packet, c.rAddr)
 }
 

@@ -113,7 +113,33 @@ func (w *recordingWriteBack) WriteBack(data []byte, addr net.Addr) (int, error) 
 	return len(data), nil
 }
 
+type recordingAddrPortWriteBack struct {
+	recordingWriteBack
+	addrPort netip.AddrPort
+}
+
+func (w *recordingAddrPortWriteBack) WriteBackAddrPort(data []byte, addr netip.AddrPort) (int, error) {
+	w.data = append(w.data[:0], data...)
+	w.addrPort = addr
+	return len(data), nil
+}
+
 func TestHandleUDPToLocalUsesAddrPortFastPath(t *testing.T) {
+	sender := newPacketSender().(*packetSender)
+	pc := &fastReadPacketConn{
+		data: []byte("pong"),
+		from: netip.MustParseAddrPort("198.51.100.7:5353"),
+	}
+	writeBack := &recordingAddrPortWriteBack{}
+
+	handleUDPToLocal(writeBack, pc, sender, netip.MustParseAddrPort("192.0.2.1:1234"), netip.MustParseAddrPort("203.0.113.9:53"))
+
+	require.Equal(t, 1, pc.calls)
+	require.Equal(t, pc.data, writeBack.data)
+	require.Equal(t, pc.from, writeBack.addrPort)
+}
+
+func TestHandleUDPToLocalFallsBackToNetAddr(t *testing.T) {
 	sender := newPacketSender().(*packetSender)
 	pc := &fastReadPacketConn{
 		data: []byte("pong"),

@@ -2,6 +2,7 @@ package socks
 
 import (
 	"net"
+	"net/netip"
 
 	"github.com/metacubex/mihomo/transport/socks5"
 )
@@ -20,6 +21,14 @@ func (c *packet) Data() []byte {
 // WriteBack write UDP packet with source(ip, port) = `addr`
 func (c *packet) WriteBack(b []byte, addr net.Addr) (n int, err error) {
 	packet, err := socks5.EncodeUDPPacket(socks5.ParseAddrToSocksAddr(addr), b)
+	if err != nil {
+		return
+	}
+	return c.pc.WriteTo(packet, c.rAddr)
+}
+
+func (c *packet) WriteBackAddrPort(b []byte, addr netip.AddrPort) (n int, err error) {
+	packet, err := socks5.EncodeUDPPacket(socks5.AddrFromStdAddrPort(addr), b)
 	if err != nil {
 		return
 	}
