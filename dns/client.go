@@ -81,11 +81,12 @@ func exchangeWithConn(ctx context.Context, dClient *D.Client, m *D.Msg, conn net
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
 		}
-		// the socket deadline set from the context deadline can fire before
-		// the context timer callback has run, so a passed deadline is still
-		// the cause of a read timeout here
+		// the socket deadline taken from the context deadline can fire before
+		// the context timer callback has run, and ctx.Err() would still be
+		// nil; a passed deadline is the cause of a read timeout regardless of
+		// which timer was observed first
 		if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
-			return nil, ctx.Err()
+			return nil, context.DeadlineExceeded
 		}
 	}
 	return msg, err
