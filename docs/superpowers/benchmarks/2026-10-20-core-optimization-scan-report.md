@@ -43,12 +43,17 @@ Every UDP datagram read pays nine allocations and about 209 bytes on Windows
 | `internal/syscall/windows.errnoErr` | 15% | errno boxed into `error` |
 | `windows.RawSockaddrAny.Sockaddr` | 11% | the syscall-layer address object |
 
-Two mitigations were investigated and dropped: caching the `put` closure per conn is unsafe
-because `NewThreadSafePacketConn` does not serialize reads and the deadline wrapper supports
-two concurrent readers by design; replacing the `put` contract with a returned buffer would
-route sing-buffer memory into the mihomo pool unless every sing read path is re-plumbed.
-Both are real refactors with cross-cutting risk, listed here as the next candidates in
-descending order of expected gain.
+Three mitigations were investigated and dropped with concrete hazards: caching the `put`
+closure per conn is unsafe because `NewThreadSafePacketConn` does not serialize reads and the
+deadline wrapper supports two concurrent readers by design (`resultCh` plus the direct path);
+replacing the `put` contract with a returned buffer would hand sing `buf.Buffer` views, whose
+`cap` no longer matches a pool bucket, to `pool.Put` even though the memory itself comes from
+the same allocator (`common/pool/sing.go`); pooling the read state as a struct trades the
+closure allocation for the struct allocation, a net zero. What remains is an API redesign
+that re-analyzes the data lifetime of every `WaitReadFrom` caller (the dns outbound queues its
+read past the read loop, the tunnel copies inbound, the listeners consume synchronously) plus
+per-platform raw syscalls for the syscall-layer allocations. That is a separate, carefully
+staged project.
 
 ### F2. Syscall-layer address allocation (POSIX and Windows)
 
@@ -57,13 +62,15 @@ per call. Avoiding it means raw syscalls with a preallocated `RawSockaddrAny` pe
 per platform (linux, darwin, BSDs, windows). Expected gain: one to two allocations per UDP
 read. Risk is high: each platform needs its own verified path.
 
-### F3. DNS outbound: one goroutine and a context pair per query (code inspection)
+### F3. DNS outbound per-query goroutine: investigated and dropped
 
 `adapter/outbound/dns.go` `WriteTo` spawns a goroutine per query carrying a
 `context.WithTimeout` pair and a `put` closure: about four allocations and one goroutine per
-DNS query through a proxy node. Queries on one flow are serialized by the tunnel sender, so a
-lazily started per-conn pump goroutine reading a request channel would amortize them. Gain is
-moderate but DNS-through-proxy sits on the critical path of every new domain connection.
+DNS query through a proxy node. A per-conn pump goroutine reading a request channel was the
+considered fix, but it would serialize queries that today relay concurrently: a client's
+resolver sends its A and AAAA questions back to back, and the second answer would wait behind
+the first full relay for an allocation saving of one or two on a low-QPS path. The per-query
+goroutine stays.
 
 ### F4. `listener/inner` UDP path (code inspection)
 
@@ -104,9 +111,9 @@ profiles hot.
 
 ## Recommended Order
 
-1. F3 (contained, per-query win on the DNS critical path).
-2. F1 (largest per-packet win; design the no-compatibility `WaitReadFrom` contract first).
-3. F4 (decide the embedder question, then delete or netip-native).
-4. F2 (per-platform raw syscalls; highest risk, do last with per-platform CI coverage).
-5. F7-F9 (hold until profiling shows they matter; F7 needs a message representation
-   change, F8 a bounded pool, F9 is niche).
+1. F1 (the largest per-packet win, staged as its own project: the no-compatibility
+   `WaitReadFrom` contract with a per-caller data-lifetime audit, then per-platform raw
+   syscalls for F2).
+2. F4 (decide the embedder question, then delete or netip-native).
+3. F7-F9 (hold until profiling shows they matter; F7 needs a message representation change,
+   F8 a bounded pool, F9 is niche).
