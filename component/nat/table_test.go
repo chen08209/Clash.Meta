@@ -35,24 +35,60 @@ func TestTableUsesBinaryFlowKeys(t *testing.T) {
 
 	localConn := &net.UDPConn{}
 	missing := netip.MustParseAddrPort("192.168.1.3:54322")
-	require.False(t, table.AddForLocalConn(missing.String(), "example.com:443", localConn))
-	cond, loaded := table.GetOrCreateLockForLocalConn(missing.String(), "example.com:443")
+	example := netip.MustParseAddrPort("93.184.216.34:443")
+	require.False(t, table.AddForLocalConn(missing, example, localConn))
+	cond, loaded := table.GetOrCreateLockForLocalConn(missing, example)
 	require.Nil(t, cond)
 	require.False(t, loaded)
 
-	require.True(t, table.AddForLocalConn(ipv4.String(), "example.com:443", localConn))
-	require.Equal(t, localConn, table.GetForLocalConn(ipv4.String(), "example.com:443"))
+	require.True(t, table.AddForLocalConn(ipv4, example, localConn))
+	require.Equal(t, localConn, table.GetForLocalConn(ipv4, example))
 	var ranged int
-	table.RangeForLocalConnForFlow(ipv4, func(key string, value *net.UDPConn) bool {
+	table.RangeForLocalConnForFlow(ipv4, func(key netip.AddrPort, value *net.UDPConn) bool {
 		ranged++
-		require.Equal(t, "example.com:443", key)
+		require.Equal(t, example, key)
 		require.Equal(t, localConn, value)
 		return false
 	})
 	require.Equal(t, 1, ranged)
 
 	table.DeleteForFlow(ipv4)
-	require.Nil(t, table.GetForLocalConn(ipv4.String(), "example.com:443"))
+	require.Nil(t, table.GetForLocalConn(ipv4, example))
+}
+
+func TestLocalConnLookupStaysAllocationFree(t *testing.T) {
+	table := New()
+	ipv4 := netip.MustParseAddrPort("192.168.1.2:54321")
+	example := netip.MustParseAddrPort("93.184.216.34:443")
+	localConn := &net.UDPConn{}
+
+	table.GetOrCreateForFlow(ipv4, func() C.PacketSender { return nil })
+	require.True(t, table.AddForLocalConn(ipv4, example, localConn))
+
+	allocations := testing.AllocsPerRun(100, func() {
+		if got := table.GetForLocalConn(ipv4, example); got != localConn {
+			t.Fatal("local conn lookup missed")
+		}
+	})
+	require.EqualValues(t, 0, allocations)
+}
+
+func BenchmarkGetForLocalConnHit(b *testing.B) {
+	table := New()
+	ipv4 := netip.MustParseAddrPort("192.168.1.2:54321")
+	example := netip.MustParseAddrPort("93.184.216.34:443")
+	localConn := &net.UDPConn{}
+
+	table.GetOrCreateForFlow(ipv4, func() C.PacketSender { return nil })
+	table.AddForLocalConn(ipv4, example, localConn)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if got := table.GetForLocalConn(ipv4, example); got != localConn {
+			b.Fatal("local conn lookup missed")
+		}
+	}
 }
 
 func BenchmarkTableGetOrCreateForFlowHit(b *testing.B) {

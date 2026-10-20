@@ -329,7 +329,7 @@ func handleUDPToLocal(
 }
 
 func closeAllLocalCoon(lAddr netip.AddrPort) {
-	natTable.RangeForLocalConnForFlow(lAddr, func(key string, value *net.UDPConn) bool {
+	natTable.RangeForLocalConnForFlow(lAddr, func(key netip.AddrPort, value *net.UDPConn) bool {
 		conn := value
 
 		conn.Close()

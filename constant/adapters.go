@@ -388,15 +388,15 @@ type NatTable interface {
 
 	Delete(key string)
 
-	GetForLocalConn(lAddr, rAddr string) *net.UDPConn
+	GetForLocalConn(lAddr, rAddr netip.AddrPort) *net.UDPConn
 
-	AddForLocalConn(lAddr, rAddr string, conn *net.UDPConn) bool
+	AddForLocalConn(lAddr, rAddr netip.AddrPort, conn *net.UDPConn) bool
 
-	RangeForLocalConn(lAddr string, f func(key string, value *net.UDPConn) bool)
+	RangeForLocalConnForFlow(key netip.AddrPort, f func(key netip.AddrPort, value *net.UDPConn) bool)
 
-	GetOrCreateLockForLocalConn(lAddr string, key string) (*sync.Cond, bool)
+	GetOrCreateLockForLocalConn(lAddr, rAddr netip.AddrPort) (*sync.Cond, bool)
 
-	DeleteForLocalConn(lAddr, key string)
+	DeleteForLocalConn(lAddr, rAddr netip.AddrPort)
 
-	DeleteLockForLocalConn(lAddr, key string)
+	DeleteLockForLocalConn(lAddr, rAddr netip.AddrPort)
 }

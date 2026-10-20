@@ -19,8 +19,8 @@ type flowEntry struct {
 }
 
 type localConnState struct {
-	udpConns xsync.Map[string, *net.UDPConn]
-	locks    xsync.Map[string, *sync.Cond]
+	udpConns xsync.Map[netip.AddrPort, *net.UDPConn]
+	locks    xsync.Map[netip.AddrPort, *sync.Cond]
 }
 
 func (t *Table) GetOrCreateForFlow(
@@ -62,12 +62,8 @@ func (t *Table) Delete(key string) {
 	}
 }
 
-func (t *Table) GetForLocalConn(lAddr, rAddr string) *net.UDPConn {
-	flowKey, ok := parseFlowKey(lAddr)
-	if !ok {
-		return nil
-	}
-	state, exist := t.getLocalConnStateForFlow(flowKey)
+func (t *Table) GetForLocalConn(lAddr, rAddr netip.AddrPort) *net.UDPConn {
+	state, exist := t.getLocalConnStateForFlow(lAddr)
 	if !exist {
 		return nil
 	}
@@ -78,31 +74,18 @@ func (t *Table) GetForLocalConn(lAddr, rAddr string) *net.UDPConn {
 	return item
 }
 
-func (t *Table) AddForLocalConn(lAddr, rAddr string, conn *net.UDPConn) bool {
-	flowKey, ok := parseFlowKey(lAddr)
-	if !ok || !t.hasFlow(flowKey) {
+func (t *Table) AddForLocalConn(lAddr, rAddr netip.AddrPort, conn *net.UDPConn) bool {
+	if !t.hasFlow(lAddr) {
 		return false
 	}
-	state, _ := t.localConns.LoadOrStoreFn(flowKey, newLocalConnState)
+	state, _ := t.localConns.LoadOrStoreFn(lAddr, newLocalConnState)
 	state.udpConns.Store(rAddr, conn)
 	return true
 }
 
-func (t *Table) RangeForLocalConn(lAddr string, f func(key string, value *net.UDPConn) bool) {
-	flowKey, ok := parseFlowKey(lAddr)
-	if !ok {
-		return
-	}
-	state, exist := t.getLocalConnStateForFlow(flowKey)
-	if !exist {
-		return
-	}
-	state.udpConns.Range(f)
-}
-
 func (t *Table) RangeForLocalConnForFlow(
 	key netip.AddrPort,
-	f func(key string, value *net.UDPConn) bool,
+	f func(key netip.AddrPort, value *net.UDPConn) bool,
 ) {
 	state, exist := t.getLocalConnStateForFlow(key)
 	if !exist {
@@ -111,38 +94,29 @@ func (t *Table) RangeForLocalConnForFlow(
 	state.udpConns.Range(f)
 }
 
-func (t *Table) GetOrCreateLockForLocalConn(lAddr, key string) (*sync.Cond, bool) {
-	flowKey, ok := parseFlowKey(lAddr)
-	if !ok || !t.hasFlow(flowKey) {
+func (t *Table) GetOrCreateLockForLocalConn(lAddr, rAddr netip.AddrPort) (*sync.Cond, bool) {
+	if !t.hasFlow(lAddr) {
 		return nil, false
 	}
-	state, _ := t.localConns.LoadOrStoreFn(flowKey, newLocalConnState)
-	item, loaded := state.locks.LoadOrStoreFn(key, makeLock)
+	state, _ := t.localConns.LoadOrStoreFn(lAddr, newLocalConnState)
+	item, loaded := state.locks.LoadOrStoreFn(rAddr, makeLock)
 	return item, loaded
 }
 
-func (t *Table) DeleteForLocalConn(lAddr, key string) {
-	flowKey, ok := parseFlowKey(lAddr)
-	if !ok {
-		return
-	}
-	state, loaded := t.getLocalConnStateForFlow(flowKey)
+func (t *Table) DeleteForLocalConn(lAddr, rAddr netip.AddrPort) {
+	state, loaded := t.getLocalConnStateForFlow(lAddr)
 	if !loaded {
 		return
 	}
-	state.udpConns.Delete(key)
+	state.udpConns.Delete(rAddr)
 }
 
-func (t *Table) DeleteLockForLocalConn(lAddr, key string) {
-	flowKey, ok := parseFlowKey(lAddr)
-	if !ok {
-		return
-	}
-	state, loaded := t.getLocalConnStateForFlow(flowKey)
+func (t *Table) DeleteLockForLocalConn(lAddr, rAddr netip.AddrPort) {
+	state, loaded := t.getLocalConnStateForFlow(lAddr)
 	if !loaded {
 		return
 	}
-	state.locks.Delete(key)
+	state.locks.Delete(rAddr)
 }
 
 func (t *Table) hasFlow(key netip.AddrPort) bool {
