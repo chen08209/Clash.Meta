@@ -221,3 +221,52 @@ func BenchmarkMatchLargeDomainSuffixMiss(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkMatchLargeIPRules(b *testing.B) {
+	for _, ruleCount := range []int{100, 1000, 5000} {
+		b.Run(fmt.Sprintf("rules=%d", ruleCount), func(b *testing.B) {
+			oldRuntime := loadRuntime()
+			configMux.Lock()
+			currentRuntime.Store(&runtimeSnapshot{
+				proxies: map[string]C.Proxy{"DIRECT": directTestProxy{}},
+				mode:    Rule,
+			})
+			configMux.Unlock()
+			b.Cleanup(func() {
+				configMux.Lock()
+				currentRuntime.Store(oldRuntime)
+				invalidateAllProxies()
+				configMux.Unlock()
+			})
+
+			rules := make([]C.Rule, 0, ruleCount)
+			for index := 0; index < ruleCount; index++ {
+				cidr := fmt.Sprintf("10.%d.%d.0/24", index>>8, index&0xff)
+				ipCidr, err := rulesCommon.NewIPCIDR(cidr, "DIRECT")
+				if err != nil {
+					b.Fatal(err)
+				}
+				rules = append(rules, ipCidr)
+			}
+			UpdateRules(rules, nil, nil)
+			metadata := &C.Metadata{
+				NetWork: C.TCP,
+				DstIP: netip.AddrFrom4([4]byte{
+					10, byte((ruleCount - 1) >> 8), byte(ruleCount - 1), 5,
+				}),
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				proxy, _, err := match(metadata, loadRuntime(), false, false)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if proxy == nil || proxy.Name() != "DIRECT" {
+					b.Fatalf("proxy = %v", proxy)
+				}
+			}
+		})
+	}
+}

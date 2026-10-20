@@ -55,6 +55,16 @@ func (i *IPCIDR) Payload() string {
 	return i.ipnet.String()
 }
 
+// IPPrefix returns the CIDR prefix the rule matches.
+func (i *IPCIDR) IPPrefix() netip.Prefix {
+	return i.ipnet
+}
+
+// IsSourceIPRule reports whether the rule matches the source address.
+func (i *IPCIDR) IsSourceIPRule() bool {
+	return i.isSourceIP
+}
+
 func NewIPCIDR(s string, adapter string, opts ...IPCIDROption) (*IPCIDR, error) {
 	ipnet, err := netip.ParsePrefix(s)
 	if err != nil {

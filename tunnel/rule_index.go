@@ -1,6 +1,7 @@
 package tunnel
 
 import (
+	"net/netip"
 	"strings"
 
 	C "github.com/metacubex/mihomo/constant"
@@ -18,6 +19,8 @@ type ruleSegment struct {
 	end    int
 	exact  map[string]int
 	suffix *suffixNode
+	ipDst  *ipRuleTrie
+	ipSrc  *ipRuleTrie
 }
 
 type suffixNode struct {
@@ -70,6 +73,33 @@ func buildRuleIndex(rules []C.Rule) *ruleIndex {
 			continue
 		}
 
+		if _, _, ok := indexedIPPayload(rules[position]); ok {
+			segment := ruleSegment{}
+			for position < len(rules) {
+				index.usesHelper[position] = ruleUsesMatchHelper(rules[position])
+				ipPrefix, ipSource, ok := indexedIPPayload(rules[position])
+				if !ok {
+					break
+				}
+				if ipSource {
+					if segment.ipSrc == nil {
+						segment.ipSrc = &ipRuleTrie{}
+					}
+					segment.ipSrc.insert(ipPrefix, position)
+				} else {
+					if segment.ipDst == nil {
+						segment.ipDst = &ipRuleTrie{}
+					}
+					segment.ipDst.insert(ipPrefix, position)
+				}
+				index.segmentOfPosition[position] = len(index.segments)
+				position++
+			}
+			segment.end = position
+			index.segments = append(index.segments, segment)
+			continue
+		}
+
 		for position < len(rules) {
 			index.usesHelper[position] = ruleUsesMatchHelper(rules[position])
 			if _, _, ok := indexedDomainPayload(rules[position]); ok {
@@ -83,16 +113,20 @@ func buildRuleIndex(rules []C.Rule) *ruleIndex {
 	return index
 }
 
-func (index *ruleIndex) next(position int, host string) int {
+func (index *ruleIndex) next(position int, metadata *C.Metadata) int {
 	if index == nil || position >= len(index.segmentOfPosition) {
 		return position
 	}
 	segment := index.segments[index.segmentOfPosition[position]]
+	if segment.ipDst != nil || segment.ipSrc != nil {
+		return index.nextIPRule(position, segment, metadata)
+	}
 	if segment.exact == nil && segment.suffix == nil {
 		return position
 	}
 
 	candidate := segment.end
+	host := metadata.RuleHost()
 	if hit, ok := segment.exact[host]; ok && hit >= position && hit < candidate {
 		candidate = hit
 	}
@@ -100,6 +134,33 @@ func (index *ruleIndex) next(position int, host string) int {
 		if hit := segment.suffix.match(host, position); hit >= 0 && hit < candidate {
 			candidate = hit
 		}
+	}
+	return candidate
+}
+
+// nextIPRule jumps to the first rule of the run whose prefix contains an
+// address the packet already carries. A run with no match is skipped whole:
+// the rules it skips would not have matched, and any later rule that needs a
+// resolved address still triggers the lookup through its own match helper.
+func (index *ruleIndex) nextIPRule(position int, segment ruleSegment, metadata *C.Metadata) int {
+	candidate := -1
+	if segment.ipDst != nil && metadata.DstIP.IsValid() {
+		if hit := segment.ipDst.lookup(metadata.DstIP, position); hit >= 0 && (candidate < 0 || hit < candidate) {
+			candidate = hit
+		}
+	}
+	if segment.ipSrc != nil && metadata.SrcIP.IsValid() {
+		if hit := segment.ipSrc.lookup(metadata.SrcIP, position); hit >= 0 && (candidate < 0 || hit < candidate) {
+			candidate = hit
+		}
+	}
+	if candidate < 0 {
+		if !metadata.DstIP.IsValid() && !metadata.SrcIP.IsValid() {
+			// neither address is known: the run must still run its
+			// helper-needing rules so they can resolve lazily
+			return position
+		}
+		return segment.end
 	}
 	return candidate
 }
@@ -114,11 +175,25 @@ func (index *ruleIndex) usesHelperAt(position int, rules []C.Rule) bool {
 	return ruleUsesMatchHelper(rules[position])
 }
 
-func (index *ruleIndex) after(position int, host string) int {
+func (index *ruleIndex) after(position int, metadata *C.Metadata) int {
 	if next, ok := index.nextDuplicate[position]; ok {
 		return next
 	}
-	return index.next(position+1, host)
+	return index.next(position+1, metadata)
+}
+
+func indexedIPPayload(rule C.Rule) (netip.Prefix, bool, bool) {
+	for rule != nil {
+		switch typed := rule.(type) {
+		case *rulesCommon.IPCIDR:
+			return typed.IPPrefix(), typed.IsSourceIPRule(), true
+		case interface{ Unwrap() C.Rule }:
+			rule = typed.Unwrap()
+		default:
+			return netip.Prefix{}, false, false
+		}
+	}
+	return netip.Prefix{}, false, false
 }
 
 func buildSubRuleIndexes(source map[string][]C.Rule) map[string]*ruleIndex {
