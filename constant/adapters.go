@@ -291,9 +291,8 @@ type PacketAdapter interface {
 
 type packetAdapter struct {
 	UDPPacket
-	metadata  *Metadata
-	localAddr net.Addr
-	flowKey   netip.AddrPort
+	metadata *Metadata
+	flowKey  netip.AddrPort
 }
 
 // Metadata returns destination metadata
@@ -303,7 +302,7 @@ func (s *packetAdapter) Metadata() *Metadata {
 
 // Key is a SNAT key
 func (s *packetAdapter) Key() string {
-	return s.localAddr.String()
+	return s.UDPPacket.LocalAddr().String()
 }
 
 func (s *packetAdapter) FlowKey() netip.AddrPort {
@@ -311,13 +310,18 @@ func (s *packetAdapter) FlowKey() netip.AddrPort {
 }
 
 func NewPacketAdapter(packet UDPPacket, metadata *Metadata) PacketAdapter {
-	localAddr := packet.LocalAddr()
-	return &packetAdapter{
+	adapter := &packetAdapter{
 		UDPPacket: packet,
 		metadata:  metadata,
-		localAddr: localAddr,
-		flowKey:   addrPortFromLocalAddr(localAddr),
 	}
+	if keyPacket, ok := packet.(interface{ FlowKey() netip.AddrPort }); ok {
+		// a packet that already holds its source as an AddrPort saves the
+		// materialisation and re-parse of a net.UDPAddr per packet
+		adapter.flowKey = keyPacket.FlowKey()
+	} else {
+		adapter.flowKey = addrPortFromLocalAddr(packet.LocalAddr())
+	}
+	return adapter
 }
 
 func addrPortFromLocalAddr(addr net.Addr) netip.AddrPort {

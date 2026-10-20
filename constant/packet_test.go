@@ -62,3 +62,34 @@ func TestNewPacketAdapterDoesNotFormatKey(t *testing.T) {
 	})
 	require.LessOrEqual(t, allocations, float64(3))
 }
+
+type flowKeyOnlyPacket struct {
+	C.UDPPacket
+	flowKey netip.AddrPort
+}
+
+func (packet flowKeyOnlyPacket) FlowKey() netip.AddrPort { return packet.flowKey }
+
+func (packet flowKeyOnlyPacket) LocalAddr() net.Addr {
+	panic("flow key packet materialised its local address")
+}
+
+func TestNewPacketAdapterPrefersThePacketsFlowKey(t *testing.T) {
+	key := netip.MustParseAddrPort("192.168.1.2:54321")
+
+	adapter := C.NewPacketAdapter(&flowKeyOnlyPacket{flowKey: key}, &C.Metadata{})
+	flowAdapter, ok := adapter.(interface{ FlowKey() netip.AddrPort })
+	require.True(t, ok)
+	require.Equal(t, key, flowAdapter.FlowKey())
+}
+
+func TestNewPacketAdapterWithFlowKeyAllocatesOnlyTheAdapter(t *testing.T) {
+	key := netip.MustParseAddrPort("192.168.1.2:54321")
+	packet := &flowKeyOnlyPacket{flowKey: key}
+	metadata := &C.Metadata{}
+
+	allocations := testing.AllocsPerRun(100, func() {
+		C.NewPacketAdapter(packet, metadata)
+	})
+	require.EqualValues(t, 1, allocations)
+}

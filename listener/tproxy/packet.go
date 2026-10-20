@@ -24,6 +24,11 @@ func (c *packet) Data() []byte {
 	return c.buf
 }
 
+// FlowKey returns the flow key the tunnel keys this packet's flow by.
+func (c *packet) FlowKey() netip.AddrPort {
+	return c.lAddr
+}
+
 // WriteBack opens a new socket binding `addr` to write UDP packet back
 func (c *packet) WriteBack(b []byte, rAddr netip.AddrPort) (n int, err error) {
 	tc, err := createOrGetLocalConn(rAddr, c.lAddr, c.tunnel, c.additions...)
