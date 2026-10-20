@@ -8,6 +8,7 @@ import (
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	N "github.com/metacubex/mihomo/common/net"
+	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/transport/socks5"
 
@@ -76,7 +77,7 @@ func Handle(conn net.Conn, tunnel C.Tunnel, request *mierumodel.Request, additio
 			}
 			packet := &packet{
 				pc:      ep,
-				addr:    addr,
+				udpAddr: net.UDPAddrFromAddrPort(addr),
 				payload: payload,
 				put:     put,
 			}
@@ -87,7 +88,7 @@ func Handle(conn net.Conn, tunnel C.Tunnel, request *mierumodel.Request, additio
 
 type packet struct {
 	pc      net.PacketConn
-	addr    netip.AddrPort // source (i.e. remote) IP & Port of the packet
+	udpAddr *net.UDPAddr // source (i.e. remote) IP & Port of the packet
 	payload []byte
 	put     func()
 }
@@ -100,11 +101,13 @@ func (c *packet) Data() []byte {
 }
 
 func (c *packet) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
-	packet, err := socks5.EncodeUDPPacket(socks5.AddrFromStdAddrPort(addr), b)
+	buf := pool.Get(socks5.UDPPacketHeadroom + len(b))
+	defer pool.Put(buf)
+	packet, err := socks5.EncodeUDPPacketInto(buf, addr, b)
 	if err != nil {
 		return
 	}
-	return c.pc.WriteTo(packet, net.UDPAddrFromAddrPort(c.addr))
+	return c.pc.WriteTo(packet, c.udpAddr)
 }
 
 func (c *packet) Drop() {
@@ -116,7 +119,7 @@ func (c *packet) Drop() {
 }
 
 func (c *packet) LocalAddr() net.Addr {
-	return net.UDPAddrFromAddrPort(c.addr)
+	return c.udpAddr
 }
 
 func (c *packet) InAddr() net.Addr {

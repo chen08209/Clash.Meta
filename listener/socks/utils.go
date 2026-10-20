@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/netip"
 
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/transport/socks5"
 )
 
@@ -20,7 +21,9 @@ func (c *packet) Data() []byte {
 
 // WriteBack write UDP packet with source(ip, port) = `addr`
 func (c *packet) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
-	packet, err := socks5.EncodeUDPPacket(socks5.AddrFromStdAddrPort(addr), b)
+	buf := pool.Get(socks5.UDPPacketHeadroom + len(b))
+	defer pool.Put(buf)
+	packet, err := socks5.EncodeUDPPacketInto(buf, addr, b)
 	if err != nil {
 		return
 	}

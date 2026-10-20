@@ -482,6 +482,42 @@ func AddrFromStdAddrPort(addrPort netip.AddrPort) Addr {
 	return buf
 }
 
+// UDPPacketHeadroom is the largest header EncodeUDPPacketInto writes before the payload.
+const UDPPacketHeadroom = 4 + net.IPv6len + 2
+
+// EncodeUDPPacketInto writes the UDP relay header for addr followed by payload into dst,
+// returning the packet as a prefix of dst. dst must have room for
+// UDPPacketHeadroom + len(payload) bytes.
+func EncodeUDPPacketInto(dst []byte, addr netip.AddrPort, payload []byte) (packet []byte, err error) {
+	headLen := 4 + net.IPv6len + 2
+	portOffset := 4 + net.IPv6len
+	if addr.Addr().Is4() {
+		headLen = 4 + net.IPv4len + 2
+		portOffset = 4 + net.IPv4len
+	}
+
+	total := headLen + len(payload)
+	if cap(dst) < total {
+		err = errors.New("insufficient buffer")
+		return
+	}
+
+	packet = dst[:total]
+	packet[0], packet[1], packet[2] = 0, 0, 0
+	if addr.Addr().Is4() {
+		a4 := addr.Addr().As4()
+		packet[3] = AtypIPv4
+		copy(packet[4:], a4[:])
+	} else {
+		a16 := addr.Addr().As16()
+		packet[3] = AtypIPv6
+		copy(packet[4:], a16[:])
+	}
+	binary.BigEndian.PutUint16(packet[portOffset:], addr.Port())
+	copy(packet[headLen:], payload)
+	return
+}
+
 // DecodeUDPPacket split `packet` to addr payload, and this function is mutable with `packet`
 func DecodeUDPPacket(packet []byte) (addr Addr, payload []byte, err error) {
 	if len(packet) < 5 {

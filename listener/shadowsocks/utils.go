@@ -1,10 +1,10 @@
 package shadowsocks
 
 import (
-	"bytes"
 	"net"
 	"net/netip"
 
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/transport/socks5"
 
 	"github.com/metacubex/mhurl"
@@ -23,7 +23,12 @@ func (c *packet) Data() []byte {
 
 // WriteBack wirtes UDP packet with source(ip, port) = `addr`
 func (c *packet) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
-	packet := bytes.Join([][]byte{socks5.AddrFromStdAddrPort(addr), b}, []byte{})
+	buf := pool.Get(socks5.UDPPacketHeadroom + len(b))
+	defer pool.Put(buf)
+	packet, err := socks5.EncodeUDPPacketInto(buf, addr, b)
+	if err != nil {
+		return
+	}
 	return c.pc.WriteTo(packet, c.rAddr)
 }
 
