@@ -3,7 +3,6 @@ package sing
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"net/netip"
 	"sync"
@@ -151,8 +150,6 @@ func (h *ListenerHandler) NewPacketConnection(ctx context.Context, conn network.
 		conn = packetaddr.NewConn(bufio.NewNetPacketConn(conn), M.Socksaddr{})
 	}
 
-	connID := utils.NewUUIDV4().String() // make a new SNAT key
-
 	defer func() { _ = conn.Close() }()
 	mutex := sync.Mutex{}
 	writer := bufio.NewNetPacketWriter(conn) // a new interface to set nil in defer
@@ -191,11 +188,10 @@ func (h *ListenerHandler) NewPacketConnection(ctx context.Context, conn network.
 		cPacket := &packet{
 			writer: &writer,
 			mutex:  &mutex,
-			rAddr:  metadata.Source.UDPAddr(),
+			source: metadata.Source.AddrPort(),
 			lAddr:  conn.LocalAddr(),
 			buff:   buff,
 		}
-		cPacket.rAddr = N.NewCustomAddr(h.Type.String(), connID, cPacket.rAddr) // for tunnel's handleUDPConn
 		if lAddr := getInAddr(ctx); lAddr != nil {
 			cPacket.lAddr = lAddr
 		}
@@ -214,12 +210,8 @@ func (h *ListenerHandler) NewPacket(ctx context.Context, key netip.AddrPort, buf
 	cPacket := &packet{
 		writer: &writer,
 		mutex:  &mutex,
-		rAddr:  metadata.Source.UDPAddr(),
+		source: metadata.Source.AddrPort(),
 		buff:   buffer,
-	}
-	if h.Type != C.TUN { // make the handler-related SNAT key for not TUN listener
-		connID := fmt.Sprintf("%s:%s", h.handlerId, key)
-		cPacket.rAddr = N.NewCustomAddr(h.Type.String(), connID, cPacket.rAddr) // for tunnel's handleUDPConn
 	}
 	if conn, ok := common.Cast[localAddr](writer); ok { // tun does not have real inAddr
 		cPacket.lAddr = conn.LocalAddr()
@@ -262,13 +254,18 @@ func ShouldIgnorePacketError(err error) bool {
 type packet struct {
 	writer *network.NetPacketWriter
 	mutex  *sync.Mutex
-	rAddr  net.Addr
+	source netip.AddrPort
 	lAddr  net.Addr
 	buff   *buf.Buffer
 }
 
 func (c *packet) Data() []byte {
 	return c.buff.Bytes()
+}
+
+// FlowKey returns the source address the tunnel keys this packet's flow by.
+func (c *packet) FlowKey() netip.AddrPort {
+	return c.source
 }
 
 // WriteBack wirtes UDP packet with source(ip, port) = `addr`
@@ -287,7 +284,7 @@ func (c *packet) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
 
 // LocalAddr returns the source IP/Port of UDP Packet
 func (c *packet) LocalAddr() net.Addr {
-	return c.rAddr
+	return net.UDPAddrFromAddrPort(c.source)
 }
 
 func (c *packet) Drop() {
