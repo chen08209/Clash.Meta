@@ -31,36 +31,23 @@ the socket deadline leaked `i/o timeout` instead of the context error.
 
 ## Remaining Findings
 
-### F1. Per-read allocations in `WaitReadFrom` (highest remaining per-packet cost)
+### F1. Per-read allocations in `WaitReadFrom`: the closure contract is gone
 
-Every UDP datagram read pays nine allocations and about 209 bytes on Windows
-(`BenchmarkWaitReadFrom`), roughly four on POSIX. The pprof breakdown:
-
-| Source | Share | Cause |
-| --- | ---: | --- |
-| `enhanceUDPConn.WaitReadFrom` | 55% | the `put` closure and read bookkeeping |
-| `WaitReadFrom.func1` (rawConn callback) | 23% | the closure passed to `RawConn.Read` |
-| `internal/syscall/windows.errnoErr` | 15% | errno boxed into `error` |
-| `windows.RawSockaddrAny.Sockaddr` | 11% | the syscall-layer address object |
-
-Three mitigations were investigated and dropped with concrete hazards: caching the `put`
-closure per conn is unsafe because `NewThreadSafePacketConn` does not serialize reads and the
-deadline wrapper supports two concurrent readers by design (`resultCh` plus the direct path);
-replacing the `put` contract with a returned buffer would hand sing `buf.Buffer` views, whose
-`cap` no longer matches a pool bucket, to `pool.Put` even though the memory itself comes from
-the same allocator (`common/pool/sing.go`); pooling the read state as a struct trades the
-closure allocation for the struct allocation, a net zero. What remains is an API redesign
-that re-analyzes the data lifetime of every `WaitReadFrom` caller (the dns outbound queues its
-read past the read loop, the tunnel copies inbound, the listeners consume synchronously) plus
-per-platform raw syscalls for the syscall-layer allocations. That is a separate, carefully
-staged project.
+Every UDP datagram read paid nine allocations and about 209 bytes on Windows
+(`BenchmarkWaitReadFrom`), roughly four on POSIX. The closure contract is now gone: the read
+hands the caller mihomo-pool memory directly and the caller recycles it with `pool.Put`, the
+UDP conns recycle inside the read callback, and the sing-backed read copies into pooled
+memory while releasing the sing buffer immediately. The packet benchmark now reads seven
+allocations and 170 bytes per datagram, and `-race` passes for the packet, deadline and
+tunnel packages. What remains per read is the syscall-layer work in F2.
 
 ### F2. Syscall-layer address allocation (POSIX and Windows)
 
 `syscall.Recvmsg` (POSIX) and `windows.Recvfrom` (Windows) allocate their `Sockaddr` result
 per call. Avoiding it means raw syscalls with a preallocated `RawSockaddrAny` per conn, once
 per platform (linux, darwin, BSDs, windows). Expected gain: one to two allocations per UDP
-read. Risk is high: each platform needs its own verified path.
+read. Deferred: the BSD paths are not built by any CI job, so a regression there would ship
+silently - this needs per-platform verification capability first.
 
 ### F3. DNS outbound per-query goroutine: investigated and dropped
 
@@ -113,8 +100,7 @@ profiles hot.
 
 ## Recommended Order
 
-1. F1 (the largest per-packet win, staged as its own project: the no-compatibility
-   `WaitReadFrom` contract with a per-caller data-lifetime audit, then per-platform raw
-   syscalls for F2).
- 2. F7-F9 (hold until profiling shows they matter; F7 needs a message representation change,
-    F8 a bounded pool, F9 is niche).
+1. F2 (the last per-read item; staged behind per-platform verification capability - the BSD
+   paths are built by no CI job today).
+2. F7-F9 (hold until profiling shows they matter; F7 needs a message representation change,
+   F8 a bounded pool, F9 is niche).
