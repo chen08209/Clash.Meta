@@ -35,7 +35,7 @@ type URLTest struct {
 	rotateProbe        atomic.Bool
 	probeCursor        atomic.Uint32
 	versionsMu         sync.Mutex
-	knownVersions      []uint32
+	knownVersions      atomic.Pointer[[]uint32]
 }
 
 func (u *URLTest) Now() string {
@@ -255,13 +255,22 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 // replaced its list underneath it: the cached node may no longer be a member,
 // and its delay says nothing about the members that took its place.
 func (u *URLTest) dropCacheForProviderSwap() {
-	u.versionsMu.Lock()
-	defer u.versionsMu.Unlock()
-	if u.providerVersionsEqual(u.knownVersions) {
+	if u.providerVersionsUnchanged() {
 		return
 	}
-	u.knownVersions = u.providerVersionsNow()
+	u.versionsMu.Lock()
+	defer u.versionsMu.Unlock()
+	if u.providerVersionsUnchanged() {
+		return
+	}
+	versions := u.providerVersionsNow()
+	u.knownVersions.Store(&versions)
 	u.resetFastNode()
+}
+
+func (u *URLTest) providerVersionsUnchanged() bool {
+	known := u.knownVersions.Load()
+	return known != nil && u.providerVersionsEqual(*known)
 }
 
 func (u *URLTest) resetFastNode() {

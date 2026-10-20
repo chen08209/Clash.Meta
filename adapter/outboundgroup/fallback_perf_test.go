@@ -65,3 +65,29 @@ func BenchmarkFallbackSelectedProxyLargeGroup(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkFallbackSelectedProxyCached(b *testing.B) {
+	group, selected := fallbackBenchmarkGroup(b, 4096)
+	want := selected.Name()
+	group.findAliveProxy(false)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if group.findAliveProxy(false).Name() != want {
+			b.Fatal("selected proxy mismatch")
+		}
+	}
+}
+
+func TestFallbackCachedSelectionStaysAllocationFree(t *testing.T) {
+	group, selected := fallbackBenchmarkGroup(t, 64)
+	require.Equal(t, selected.Name(), group.findAliveProxy(false).Name())
+
+	allocations := testing.AllocsPerRun(100, func() {
+		if group.findAliveProxy(false).Name() != selected.Name() {
+			t.Fatal("selected proxy mismatch")
+		}
+	})
+	require.EqualValues(t, 0, allocations)
+}

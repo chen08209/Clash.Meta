@@ -37,8 +37,7 @@ type Fallback struct {
 	expectedStatus string
 	rotateProbe    atomic.Bool
 	probeCursor    atomic.Uint32
-	selectionMu    sync.Mutex
-	selection      *fallbackSelection
+	selection      atomic.Pointer[fallbackSelection]
 }
 
 func (f *Fallback) Now() string {
@@ -183,15 +182,11 @@ func (f *Fallback) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 }
 
 func (f *Fallback) clearSelection() {
-	f.selectionMu.Lock()
-	f.selection = nil
-	f.selectionMu.Unlock()
+	f.selection.Store(nil)
 }
 
 func (f *Fallback) cachedSelection() (fallbackSelection, bool) {
-	f.selectionMu.Lock()
-	defer f.selectionMu.Unlock()
-	selection := f.selection
+	selection := f.selection.Load()
 	if selection == nil || time.Since(selection.at) >= fallbackSelectionTTL {
 		return fallbackSelection{}, false
 	}
@@ -206,14 +201,12 @@ func (f *Fallback) storeSelection(
 	hasAlternative bool,
 	versions []uint32,
 ) {
-	f.selectionMu.Lock()
-	f.selection = &fallbackSelection{
+	f.selection.Store(&fallbackSelection{
 		proxy:          proxy,
 		hasAlternative: hasAlternative,
 		at:             time.Now(),
 		versions:       versions,
-	}
-	f.selectionMu.Unlock()
+	})
 }
 
 func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
