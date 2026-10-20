@@ -1,8 +1,8 @@
 package trojan
 
 import (
-	"errors"
 	"net"
+	"net/netip"
 )
 
 type packet struct {
@@ -17,12 +17,8 @@ func (c *packet) Data() []byte {
 }
 
 // WriteBack wirtes UDP packet with source(ip, port) = `addr`
-func (c *packet) WriteBack(b []byte, addr net.Addr) (n int, err error) {
-	if addr == nil {
-		err = errors.New("address is invalid")
-		return
-	}
-	return c.pc.WriteTo(b, addr)
+func (c *packet) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
+	return c.pc.WriteTo(b, net.UDPAddrFromAddrPort(addr))
 }
 
 // LocalAddr returns the source IP/Port of UDP Packet

@@ -8,11 +8,7 @@ import (
 )
 
 type WaitReadFrom interface {
-	WaitReadFrom() (data []byte, put func(), addr net.Addr, err error)
-}
-
-type AddrPortWaitReadFrom interface {
-	WaitReadFromAddrPort() (data []byte, put func(), addr netip.AddrPort, rawAddr net.Addr, err error)
+	WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error)
 }
 
 type EnhancePacketConn interface {
@@ -25,14 +21,6 @@ func AddrPortFromNetAddr(addr net.Addr) netip.AddrPort {
 		return udpAddr.AddrPort()
 	}
 	return netip.AddrPort{}
-}
-
-func WaitReadFromAddrPort(pc EnhancePacketConn) (data []byte, put func(), addr netip.AddrPort, rawAddr net.Addr, err error) {
-	if fast, isFast := pc.(AddrPortWaitReadFrom); isFast {
-		return fast.WaitReadFromAddrPort()
-	}
-	data, put, rawAddr, err = pc.WaitReadFrom()
-	return data, put, AddrPortFromNetAddr(rawAddr), rawAddr, err
 }
 
 func NewEnhancePacketConn(pc net.PacketConn) EnhancePacketConn {
@@ -55,7 +43,7 @@ type enhancePacketConn struct {
 	net.PacketConn
 }
 
-func (c *enhancePacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
+func (c *enhancePacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
 	return waitReadFrom(c.PacketConn)
 }
 
@@ -83,18 +71,20 @@ func (c *enhanceUDPConn) ReaderReplaceable() bool {
 	return true
 }
 
-func waitReadFrom(pc net.PacketConn) (data []byte, put func(), addr net.Addr, err error) {
+func waitReadFrom(pc net.PacketConn) (data []byte, put func(), addr netip.AddrPort, err error) {
 	readBuf := pool.Get(pool.UDPBufferSize)
 	put = func() {
 		_ = pool.Put(readBuf)
 	}
 	var readN int
-	readN, addr, err = pc.ReadFrom(readBuf)
+	var rawAddr net.Addr
+	readN, rawAddr, err = pc.ReadFrom(readBuf)
 	if readN > 0 {
 		data = readBuf[:readN]
 	} else {
 		put()
 		put = nil
 	}
+	addr = AddrPortFromNetAddr(rawAddr)
 	return
 }

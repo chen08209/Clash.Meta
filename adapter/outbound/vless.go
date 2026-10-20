@@ -396,11 +396,11 @@ func (v *Vless) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (
 		), v), nil
 	} else if v.option.PacketAddr {
 		return NewPacketConn(N.NewThreadSafePacketConn(
-			packetaddr.NewConn(v.client.PacketConn(c, metadata.UDPAddr()),
+			packetaddr.NewConn(v.client.PacketConn(c, metadata.AddrPort()),
 				M.SocksaddrFromNet(metadata.UDPAddr())),
 		), v), nil
 	}
-	return NewPacketConn(N.NewThreadSafePacketConn(v.client.PacketConn(c, metadata.UDPAddr())), v), nil
+	return NewPacketConn(N.NewThreadSafePacketConn(v.client.PacketConn(c, metadata.AddrPort())), v), nil
 }
 
 // SupportUOT implements C.ProxyAdapter

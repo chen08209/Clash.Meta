@@ -25,16 +25,7 @@ func (c *packet) Data() []byte {
 }
 
 // WriteBack opens a new socket binding `addr` to write UDP packet back
-func (c *packet) WriteBack(b []byte, addr net.Addr) (n int, err error) {
-	rAddr := addr.(*net.UDPAddr).AddrPort() // tunnel's handleUDPToLocal will ensure addr is *net.UDPAddr
-	return c.writeBack(b, rAddr)
-}
-
-func (c *packet) WriteBackAddrPort(b []byte, rAddr netip.AddrPort) (n int, err error) {
-	return c.writeBack(b, rAddr)
-}
-
-func (c *packet) writeBack(b []byte, rAddr netip.AddrPort) (n int, err error) {
+func (c *packet) WriteBack(b []byte, rAddr netip.AddrPort) (n int, err error) {
 	tc, err := createOrGetLocalConn(rAddr, c.lAddr, c.tunnel, c.additions...)
 	if err != nil {
 		return

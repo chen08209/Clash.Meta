@@ -2,6 +2,7 @@ package vless
 
 import (
 	"net"
+	"net/netip"
 
 	"github.com/metacubex/mihomo/common/utils"
 
@@ -51,7 +52,7 @@ func (c *Client) StreamConn(conn net.Conn, dst *DstAddr) (net.Conn, error) {
 	return newConn(conn, c, dst)
 }
 
-func (c *Client) PacketConn(conn net.Conn, rAddr net.Addr) net.PacketConn {
+func (c *Client) PacketConn(conn net.Conn, rAddr netip.AddrPort) net.PacketConn {
 	return &PacketConn{conn, rAddr}
 }
 

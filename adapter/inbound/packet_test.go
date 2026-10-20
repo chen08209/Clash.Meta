@@ -20,7 +20,7 @@ func (p *packetTestUDPPacket) InAddr() net.Addr    { return p.in }
 func (p *packetTestUDPPacket) Drop()               {}
 func (p *packetTestUDPPacket) Data() []byte        { return nil }
 
-func (p *packetTestUDPPacket) WriteBack(b []byte, addr net.Addr) (int, error) {
+func (p *packetTestUDPPacket) WriteBack(b []byte, addr netip.AddrPort) (int, error) {
 	return len(b), nil
 }
 

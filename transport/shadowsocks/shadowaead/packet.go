@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/netip"
 
 	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/common/pool"
@@ -95,7 +96,7 @@ func (c *PacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	return len(bb), addr, err
 }
 
-func (c *PacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
+func (c *PacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
 	data, put, addr, err = c.EnhancePacketConn.WaitReadFrom()
 	if err != nil {
 		return

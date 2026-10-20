@@ -2,7 +2,6 @@ package shadowsocks
 
 import (
 	"bytes"
-	"errors"
 	"net"
 	"net/netip"
 
@@ -23,16 +22,7 @@ func (c *packet) Data() []byte {
 }
 
 // WriteBack wirtes UDP packet with source(ip, port) = `addr`
-func (c *packet) WriteBack(b []byte, addr net.Addr) (n int, err error) {
-	if addr == nil {
-		err = errors.New("address is invalid")
-		return
-	}
-	packet := bytes.Join([][]byte{socks5.ParseAddrToSocksAddr(addr), b}, []byte{})
-	return c.pc.WriteTo(packet, c.rAddr)
-}
-
-func (c *packet) WriteBackAddrPort(b []byte, addr netip.AddrPort) (n int, err error) {
+func (c *packet) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
 	packet := bytes.Join([][]byte{socks5.AddrFromStdAddrPort(addr), b}, []byte{})
 	return c.pc.WriteTo(packet, c.rAddr)
 }

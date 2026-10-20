@@ -3,6 +3,7 @@ package socks
 import (
 	"context"
 	"net"
+	"net/netip"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	N "github.com/metacubex/mihomo/common/net"
@@ -79,7 +80,7 @@ func NewUDPWithConfig(config LC.AuthServer, lc C.InboundListenConfig, tunnel C.T
 	return sl, nil
 }
 
-func handleSocksUDP(pc net.PacketConn, tunnel C.Tunnel, buf []byte, put func(), addr net.Addr, additions ...inbound.Addition) {
+func handleSocksUDP(pc net.PacketConn, tunnel C.Tunnel, buf []byte, put func(), addr netip.AddrPort, additions ...inbound.Addition) {
 	target, payload, err := socks5.DecodeUDPPacket(buf)
 	if err != nil {
 		// Unresolved UDP packet, return buffer to the pool
@@ -90,7 +91,7 @@ func handleSocksUDP(pc net.PacketConn, tunnel C.Tunnel, buf []byte, put func(), 
 	}
 	packet := &packet{
 		pc:      pc,
-		rAddr:   addr,
+		rAddr:   net.UDPAddrFromAddrPort(addr),
 		payload: payload,
 		put:     put,
 	}

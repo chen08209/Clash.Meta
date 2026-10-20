@@ -272,12 +272,7 @@ func (c *packet) Data() []byte {
 }
 
 // WriteBack wirtes UDP packet with source(ip, port) = `addr`
-func (c *packet) WriteBack(b []byte, addr net.Addr) (n int, err error) {
-	if addr == nil {
-		err = errors.New("address is invalid")
-		return
-	}
-
+func (c *packet) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	conn := *c.writer
@@ -286,7 +281,8 @@ func (c *packet) WriteBack(b []byte, addr net.Addr) (n int, err error) {
 		return
 	}
 
-	return conn.WriteTo(b, addr)
+	// sing's writer speaks net.Addr, so the address crosses that one boundary
+	return conn.WriteTo(b, net.UDPAddrFromAddrPort(addr))
 }
 
 // LocalAddr returns the source IP/Port of UDP Packet

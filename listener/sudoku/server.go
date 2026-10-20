@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -206,8 +207,8 @@ func (p *uotPacket) Data() []byte {
 	return p.payload
 }
 
-func (p *uotPacket) WriteBack(b []byte, addr net.Addr) (int, error) {
-	return p.writer.WriteTo(b, addr)
+func (p *uotPacket) WriteBack(b []byte, addr netip.AddrPort) (int, error) {
+	return p.writer.WriteTo(b, net.UDPAddrFromAddrPort(addr))
 }
 
 func (p *uotPacket) Drop() {

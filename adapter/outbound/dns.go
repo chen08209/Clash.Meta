@@ -65,12 +65,12 @@ type dnsPacketConn struct {
 	cancel   context.CancelFunc
 }
 
-func (d *dnsPacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
+func (d *dnsPacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
 	select {
 	case packet := <-d.response:
-		return packet.data, packet.put, packet.addr, nil
+		return packet.data, packet.put, N.AddrPortFromNetAddr(packet.addr), nil
 	case <-d.ctx.Done():
-		return nil, nil, nil, net.ErrClosed
+		return nil, nil, netip.AddrPort{}, net.ErrClosed
 	}
 }
 

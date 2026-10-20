@@ -4,13 +4,14 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"net/netip"
 
 	"github.com/metacubex/mihomo/common/pool"
 )
 
 type PacketConn struct {
 	net.Conn
-	rAddr net.Addr
+	rAddr netip.AddrPort
 }
 
 func (c *PacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
@@ -32,10 +33,10 @@ func (c *PacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		return 0, nil, io.ErrShortBuffer
 	}
 	n, err := io.ReadFull(c.Conn, b[:length])
-	return n, c.rAddr, err
+	return n, net.UDPAddrFromAddrPort(c.rAddr), err
 }
 
-func (c *PacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
+func (c *PacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
 	var length uint16
 	err = binary.Read(c.Conn, binary.BigEndian, &length)
 	if err != nil {

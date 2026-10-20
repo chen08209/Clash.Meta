@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/netip"
 	"sync"
 
 	N "github.com/metacubex/mihomo/common/net"
@@ -93,28 +94,28 @@ func WritePacket(w io.Writer, socks5Addr, payload []byte) (int, error) {
 	return total, nil
 }
 
-func ReadPacket(r io.Reader, payload []byte) (net.Addr, int, int, error) {
+func ReadPacket(r io.Reader, payload []byte) (netip.AddrPort, int, int, error) {
 	addr, err := socks5.ReadAddr(r, payload)
 	if err != nil {
-		return nil, 0, 0, errors.New("read addr error")
+		return netip.AddrPort{}, 0, 0, errors.New("read addr error")
 	}
-	uAddr := addr.UDPAddr()
-	if uAddr == nil {
-		return nil, 0, 0, errors.New("parse addr error")
+	addrPort := addr.AddrPort()
+	if !addrPort.IsValid() {
+		return netip.AddrPort{}, 0, 0, errors.New("parse addr error")
 	}
 
 	if _, err = io.ReadFull(r, payload[:2]); err != nil {
-		return nil, 0, 0, errors.New("read length error")
+		return netip.AddrPort{}, 0, 0, errors.New("read length error")
 	}
 
 	total := int(binary.BigEndian.Uint16(payload[:2]))
 	if total > maxLength {
-		return nil, 0, 0, errors.New("packet invalid")
+		return netip.AddrPort{}, 0, 0, errors.New("packet invalid")
 	}
 
 	// read crlf
 	if _, err = io.ReadFull(r, payload[:2]); err != nil {
-		return nil, 0, 0, errors.New("read crlf error")
+		return netip.AddrPort{}, 0, 0, errors.New("read crlf error")
 	}
 
 	length := len(payload)
@@ -123,10 +124,10 @@ func ReadPacket(r io.Reader, payload []byte) (net.Addr, int, int, error) {
 	}
 
 	if _, err = io.ReadFull(r, payload[:length]); err != nil {
-		return nil, 0, 0, errors.New("read packet error")
+		return netip.AddrPort{}, 0, 0, errors.New("read packet error")
 	}
 
-	return uAddr, length, total - length, nil
+	return addrPort, length, total - length, nil
 }
 
 var _ N.EnhancePacketConn = (*PacketConn)(nil)
@@ -134,7 +135,7 @@ var _ N.EnhancePacketConn = (*PacketConn)(nil)
 type PacketConn struct {
 	net.Conn
 	remain int
-	rAddr  net.Addr
+	rAddr  netip.AddrPort
 	mux    sync.Mutex
 }
 
@@ -157,9 +158,9 @@ func (pc *PacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		}
 
 		pc.remain -= n
-		addr := pc.rAddr
+		addr := net.UDPAddrFromAddrPort(pc.rAddr)
 		if pc.remain == 0 {
-			pc.rAddr = nil
+			pc.rAddr = netip.AddrPort{}
 		}
 
 		return n, addr, nil
@@ -175,22 +176,21 @@ func (pc *PacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		pc.rAddr = addr
 	}
 
-	return n, addr, nil
+	return n, net.UDPAddrFromAddrPort(addr), nil
 }
 
-func (pc *PacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
+func (pc *PacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
 	pc.mux.Lock()
 	defer pc.mux.Unlock()
 
 	destination, err := socks5.ReadAddr0(pc.Conn)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, netip.AddrPort{}, err
 	}
-	udpAddr := destination.UDPAddr()
-	if udpAddr == nil {
-		return nil, nil, nil, errors.New("parse addr error")
+	addr = destination.AddrPort()
+	if !addr.IsValid() {
+		return nil, nil, netip.AddrPort{}, errors.New("parse addr error")
 	}
-	addr = udpAddr
 
 	data = pool.Get(pool.UDPBufferSize)
 	put = func() {
@@ -202,14 +202,14 @@ func (pc *PacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, er
 		if put != nil {
 			put()
 		}
-		return nil, nil, nil, err
+		return nil, nil, netip.AddrPort{}, err
 	}
 	length := binary.BigEndian.Uint16(data)
 	if length > maxLength {
 		if put != nil {
 			put()
 		}
-		return nil, nil, nil, errors.New("packet invalid")
+		return nil, nil, netip.AddrPort{}, errors.New("packet invalid")
 	}
 
 	if length > 0 {
@@ -219,7 +219,7 @@ func (pc *PacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, er
 			if put != nil {
 				put()
 			}
-			return nil, nil, nil, err
+			return nil, nil, netip.AddrPort{}, err
 		}
 	} else {
 		if put != nil {

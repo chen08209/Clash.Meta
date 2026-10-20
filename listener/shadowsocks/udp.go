@@ -3,6 +3,7 @@ package shadowsocks
 import (
 	"context"
 	"net"
+	"net/netip"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	N "github.com/metacubex/mihomo/common/net"
@@ -58,7 +59,7 @@ func (l *UDPListener) LocalAddr() net.Addr {
 	return l.packetConn.LocalAddr()
 }
 
-func handleSocksUDP(pc net.PacketConn, tunnel C.Tunnel, buf []byte, put func(), addr net.Addr, additions ...inbound.Addition) {
+func handleSocksUDP(pc net.PacketConn, tunnel C.Tunnel, buf []byte, put func(), addr netip.AddrPort, additions ...inbound.Addition) {
 	tgtAddr := socks5.SplitAddr(buf)
 	if tgtAddr == nil {
 		// Unresolved UDP packet, return buffer to the pool
@@ -72,7 +73,7 @@ func handleSocksUDP(pc net.PacketConn, tunnel C.Tunnel, buf []byte, put func(), 
 
 	packet := &packet{
 		pc:      pc,
-		rAddr:   addr,
+		rAddr:   net.UDPAddrFromAddrPort(addr),
 		payload: payload,
 		put:     put,
 	}

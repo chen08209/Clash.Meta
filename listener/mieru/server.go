@@ -87,7 +87,7 @@ func Handle(conn net.Conn, tunnel C.Tunnel, request *mierumodel.Request, additio
 
 type packet struct {
 	pc      net.PacketConn
-	addr    net.Addr // source (i.e. remote) IP & Port of the packet
+	addr    netip.AddrPort // source (i.e. remote) IP & Port of the packet
 	payload []byte
 	put     func()
 }
@@ -99,20 +99,12 @@ func (c *packet) Data() []byte {
 	return c.payload
 }
 
-func (c *packet) WriteBack(b []byte, addr net.Addr) (n int, err error) {
-	packet, err := socks5.EncodeUDPPacket(socks5.ParseAddrToSocksAddr(addr), b)
-	if err != nil {
-		return
-	}
-	return c.pc.WriteTo(packet, c.addr)
-}
-
-func (c *packet) WriteBackAddrPort(b []byte, addr netip.AddrPort) (n int, err error) {
+func (c *packet) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
 	packet, err := socks5.EncodeUDPPacket(socks5.AddrFromStdAddrPort(addr), b)
 	if err != nil {
 		return
 	}
-	return c.pc.WriteTo(packet, c.addr)
+	return c.pc.WriteTo(packet, net.UDPAddrFromAddrPort(c.addr))
 }
 
 func (c *packet) Drop() {
@@ -124,7 +116,7 @@ func (c *packet) Drop() {
 }
 
 func (c *packet) LocalAddr() net.Addr {
-	return c.addr
+	return net.UDPAddrFromAddrPort(c.addr)
 }
 
 func (c *packet) InAddr() net.Addr {

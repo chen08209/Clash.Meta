@@ -287,7 +287,6 @@ func (l *Listener) handleUDP(stream *snell.Snell, clientID string, tunnel C.Tunn
 			conn:      stream,
 			writeMu:   writeMu,
 			localAddr: localAddr,
-			dstAddr:   metadata.UDPAddr(),
 		}
 		tunnel.HandleUDPPacket(packet, metadata)
 	}
@@ -389,20 +388,16 @@ type udpPacket struct {
 	conn      *snell.Snell
 	writeMu   *sync.Mutex
 	localAddr net.Addr
-	dstAddr   net.Addr
 }
 
 func (p *udpPacket) Data() []byte {
 	return p.data
 }
 
-func (p *udpPacket) WriteBack(b []byte, addr net.Addr) (int, error) {
-	if addr == nil {
-		addr = p.dstAddr
-	}
+func (p *udpPacket) WriteBack(b []byte, addr netip.AddrPort) (int, error) {
 	p.writeMu.Lock()
 	defer p.writeMu.Unlock()
-	return snell.WritePacketResponse(p.conn, addr, b)
+	return snell.WritePacketResponse(p.conn, net.UDPAddrFromAddrPort(addr), b)
 }
 
 func (p *udpPacket) Drop() {

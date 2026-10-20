@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -31,7 +32,7 @@ func (a innerUDPAddr) String() string  { return a.address }
 
 type innerUDPDatagram struct {
 	data []byte
-	addr net.Addr
+	addr netip.AddrPort
 }
 
 type innerUDPPacketConn struct {
@@ -84,9 +85,9 @@ func (c *innerUDPPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 		n := copy(p, datagram.data)
 		_ = pool.Put(datagram.data)
 		if n < len(datagram.data) {
-			return n, datagram.addr, io.ErrShortBuffer
+			return n, net.UDPAddrFromAddrPort(datagram.addr), io.ErrShortBuffer
 		}
-		return n, datagram.addr, nil
+		return n, net.UDPAddrFromAddrPort(datagram.addr), nil
 	}
 }
 
@@ -153,7 +154,7 @@ func (c *innerUDPPacketConn) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
-func (c *innerUDPPacketConn) writeBack(data []byte, addr net.Addr) (int, error) {
+func (c *innerUDPPacketConn) writeBack(data []byte, addr netip.AddrPort) (int, error) {
 	payload := pool.Get(len(data))
 	copy(payload, data)
 
@@ -178,7 +179,7 @@ type innerUDPPacket struct {
 
 func (p *innerUDPPacket) Data() []byte { return p.data }
 
-func (p *innerUDPPacket) WriteBack(data []byte, addr net.Addr) (int, error) {
+func (p *innerUDPPacket) WriteBack(data []byte, addr netip.AddrPort) (int, error) {
 	return p.conn.writeBack(data, addr)
 }
 

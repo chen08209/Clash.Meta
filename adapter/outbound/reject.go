@@ -124,8 +124,8 @@ func (npc nopPacketConn) WriteTo(b []byte, addr net.Addr) (n int, err error) {
 func (npc nopPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	return 0, nil, io.EOF
 }
-func (npc nopPacketConn) WaitReadFrom() ([]byte, func(), net.Addr, error) {
-	return nil, nil, nil, io.EOF
+func (npc nopPacketConn) WaitReadFrom() ([]byte, func(), netip.AddrPort, error) {
+	return nil, nil, netip.AddrPort{}, io.EOF
 }
 func (npc nopPacketConn) Close() error                     { return nil }
 func (npc nopPacketConn) LocalAddr() net.Addr              { return udpAddrIPv4Unspecified }

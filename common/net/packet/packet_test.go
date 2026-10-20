@@ -22,7 +22,7 @@ func newUDPTestPair(tb testing.TB) (*net.UDPConn, EnhancePacketConn) {
 	return client, NewEnhancePacketConn(server)
 }
 
-func TestWaitReadFromReturnsUDPAddr(t *testing.T) {
+func TestWaitReadFromReturnsAddrPort(t *testing.T) {
 	client, conn := newUDPTestPair(t)
 	payload := []byte("ping")
 
@@ -34,41 +34,14 @@ func TestWaitReadFromReturnsUDPAddr(t *testing.T) {
 	defer put()
 
 	require.Equal(t, payload, data)
-	require.Equal(t, client.LocalAddr().(*net.UDPAddr).AddrPort(), addr.(*net.UDPAddr).AddrPort())
-}
-
-func TestWaitReadFromAddrPortReturnsAddrPort(t *testing.T) {
-	client, conn := newUDPTestPair(t)
-	fast, ok := conn.(AddrPortWaitReadFrom)
-	require.True(t, ok)
-	payload := []byte("ping")
-
-	_, err := client.Write(payload)
-	require.NoError(t, err)
-	data, put, addr, rawAddr, err := fast.WaitReadFromAddrPort()
-	require.NoError(t, err)
-	require.NotNil(t, put)
-	defer put()
-
-	require.Equal(t, payload, data)
 	require.Equal(t, client.LocalAddr().(*net.UDPAddr).AddrPort(), addr)
-	require.Nil(t, rawAddr)
 }
 
 func BenchmarkWaitReadFrom(b *testing.B) {
-	benchmarkWaitReadFrom(b, false)
-}
-
-func BenchmarkWaitReadFromAddrPort(b *testing.B) {
-	benchmarkWaitReadFrom(b, true)
-}
-
-func benchmarkWaitReadFrom(b *testing.B, useAddrPort bool) {
 	for _, size := range []int{64, 1500} {
 		b.Run(testPayloadName(size), func(b *testing.B) {
 			client, conn := newUDPTestPair(b)
 			payload := make([]byte, size)
-			fast, _ := conn.(AddrPortWaitReadFrom)
 
 			b.ReportAllocs()
 			b.SetBytes(int64(size))
@@ -77,13 +50,7 @@ func benchmarkWaitReadFrom(b *testing.B, useAddrPort bool) {
 				if _, err := client.Write(payload); err != nil {
 					b.Fatal(err)
 				}
-				var put func()
-				var err error
-				if useAddrPort {
-					_, put, _, _, err = fast.WaitReadFromAddrPort()
-				} else {
-					_, put, _, err = conn.WaitReadFrom()
-				}
+				_, put, _, err := conn.WaitReadFrom()
 				if err != nil {
 					b.Fatal(err)
 				}

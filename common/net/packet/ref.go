@@ -12,14 +12,9 @@ type refPacketConn struct {
 	ref any
 }
 
-func (c *refPacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
+func (c *refPacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
 	defer runtime.KeepAlive(c.ref)
 	return c.pc.WaitReadFrom()
-}
-
-func (c *refPacketConn) WaitReadFromAddrPort() (data []byte, put func(), addr netip.AddrPort, rawAddr net.Addr, err error) {
-	defer runtime.KeepAlive(c.ref)
-	return WaitReadFromAddrPort(c.pc)
 }
 
 func (c *refPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {

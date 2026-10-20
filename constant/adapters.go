@@ -296,13 +296,6 @@ type packetAdapter struct {
 	flowKey   netip.AddrPort
 }
 
-func (s *packetAdapter) WriteBackAddrPort(b []byte, addr netip.AddrPort) (n int, err error) {
-	if fast, isFast := s.UDPPacket.(AddrPortWriteBack); isFast {
-		return fast.WriteBackAddrPort(b, addr)
-	}
-	return s.WriteBack(b, net.UDPAddrFromAddrPort(addr))
-}
-
 // Metadata returns destination metadata
 func (s *packetAdapter) Metadata() *Metadata {
 	return s.metadata
@@ -365,11 +358,7 @@ func addrPortFromLocalAddr(addr net.Addr) netip.AddrPort {
 }
 
 type WriteBack interface {
-	WriteBack(b []byte, addr net.Addr) (n int, err error)
-}
-
-type AddrPortWriteBack interface {
-	WriteBackAddrPort(b []byte, addr netip.AddrPort) (n int, err error)
+	WriteBack(b []byte, addr netip.AddrPort) (n int, err error)
 }
 
 type WriteBackProxy interface {

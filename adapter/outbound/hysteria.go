@@ -285,13 +285,13 @@ func (c *hyPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	return
 }
 
-func (c *hyPacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
+func (c *hyPacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
 	b, addrStr, err := c.UDPConn.ReadFrom()
 	if err != nil {
 		return
 	}
 	data = b
-	addr = M.ParseSocksaddr(addrStr).UDPAddr()
+	addr = M.ParseSocksaddr(addrStr).AddrPort()
 	return
 }
 

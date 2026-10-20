@@ -85,6 +85,23 @@ func (a Addr) UDPAddr() *net.UDPAddr {
 	return nil
 }
 
+func (a Addr) AddrPort() netip.AddrPort {
+	if len(a) == 0 {
+		return netip.AddrPort{}
+	}
+	switch a[0] {
+	case AtypIPv4:
+		var ip [net.IPv4len]byte
+		copy(ip[0:], a[1:1+net.IPv4len])
+		return netip.AddrPortFrom(netip.AddrFrom4(ip), binary.BigEndian.Uint16(a[1+net.IPv4len:1+net.IPv4len+2]))
+	case AtypIPv6:
+		var ip [net.IPv6len]byte
+		copy(ip[0:], a[1:1+net.IPv6len])
+		return netip.AddrPortFrom(netip.AddrFrom16(ip), binary.BigEndian.Uint16(a[1+net.IPv6len:1+net.IPv6len+2]))
+	}
+	return netip.AddrPort{}
+}
+
 // SOCKS errors as defined in RFC 1928 section 6.
 const (
 	ErrGeneralFailure       = Error(1)

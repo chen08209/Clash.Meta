@@ -1,7 +1,7 @@
 package packet
 
 import (
-	"net"
+	"net/netip"
 
 	"github.com/metacubex/sing/common/buf"
 	"github.com/metacubex/sing/common/bufio"
@@ -21,7 +21,7 @@ type enhanceSingPacketConn struct {
 	packetReadWaiter N.PacketReadWaiter
 }
 
-func (c *enhanceSingPacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
+func (c *enhanceSingPacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
 	var buff *buf.Buffer
 	var dest M.Socksaddr
 	rwOptions := N.ReadWaitOptions{}
@@ -35,10 +35,8 @@ func (c *enhanceSingPacketConn) WaitReadFrom() (data []byte, put func(), addr ne
 			rwOptions.PostReturn(buff)
 		}
 	}
-	if dest.IsFqdn() {
-		addr = dest
-	} else {
-		addr = dest.UDPAddr()
+	if !dest.IsFqdn() {
+		addr = dest.AddrPort()
 	}
 	if err != nil {
 		buff.Release()

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"net"
+	"net/netip"
 	"sync"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
@@ -217,8 +218,8 @@ func (s *serverUDPPacket) Data() []byte {
 	return s.packet.DATA
 }
 
-func (s *serverUDPPacket) WriteBack(b []byte, addr net.Addr) (n int, err error) {
-	return s.pc.WriteTo(b, addr)
+func (s *serverUDPPacket) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
+	return s.pc.WriteTo(b, net.UDPAddrFromAddrPort(addr))
 }
 
 func (s *serverUDPPacket) Drop() {

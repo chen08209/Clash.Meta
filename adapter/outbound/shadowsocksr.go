@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"strconv"
 
 	N "github.com/metacubex/mihomo/common/net"
@@ -217,10 +218,10 @@ func (spc *ssrPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	return n - len(addr), udpAddr, e
 }
 
-func (spc *ssrPacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
+func (spc *ssrPacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
 	data, put, _, err = spc.EnhancePacketConn.WaitReadFrom()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, netip.AddrPort{}, err
 	}
 
 	_addr := socks5.SplitAddr(data)
@@ -228,18 +229,16 @@ func (spc *ssrPacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr
 		if put != nil {
 			put()
 		}
-		return nil, nil, nil, errors.New("parse addr error")
+		return nil, nil, netip.AddrPort{}, errors.New("parse addr error")
 	}
 
-	udpAddr := _addr.UDPAddr()
-	if udpAddr == nil {
+	addr = _addr.AddrPort()
+	if !addr.IsValid() {
 		if put != nil {
 			put()
 		}
-		return nil, nil, nil, errors.New("parse addr error")
+		return nil, nil, netip.AddrPort{}, errors.New("parse addr error")
 	}
-	addr = udpAddr
-
 	data = data[len(_addr):]
 	return
 }

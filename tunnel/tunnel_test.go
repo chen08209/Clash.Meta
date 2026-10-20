@@ -19,7 +19,7 @@ type missingRecordPacket struct {
 
 func (p *missingRecordPacket) Data() []byte { return p.data }
 
-func (p *missingRecordPacket) WriteBack(b []byte, addr net.Addr) (int, error) {
+func (p *missingRecordPacket) WriteBack(b []byte, addr netip.AddrPort) (int, error) {
 	return len(b), nil
 }
 

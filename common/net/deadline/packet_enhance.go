@@ -1,7 +1,7 @@
 package deadline
 
 import (
-	"net"
+	"net/netip"
 	"os"
 	"runtime"
 
@@ -22,7 +22,7 @@ func NewEnhancePacketConn(pc packet.EnhancePacketConn) packet.EnhancePacketConn 
 type enhanceReadResult struct {
 	data []byte
 	put  func()
-	addr net.Addr
+	addr netip.AddrPort
 	err  error
 }
 
@@ -31,7 +31,7 @@ type enhancePacketConn struct {
 	enhancePacketConn packet.EnhancePacketConn
 }
 
-func (c *enhancePacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
+func (c *enhancePacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
 FOR:
 	for {
 		select {
@@ -53,7 +53,7 @@ FOR:
 				break FOR
 			}
 		case <-c.netPacketConn.pipeDeadline.Wait():
-			return nil, nil, nil, os.ErrDeadlineExceeded
+			return nil, nil, netip.AddrPort{}, os.ErrDeadlineExceeded
 		}
 	}
 

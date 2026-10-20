@@ -340,7 +340,7 @@ func (l *Listener) handleConn(inMux bool, conn net.Conn, tunnel C.Tunnel, additi
 				}
 				break
 			}
-			target := socks5.ParseAddrToSocksAddr(addr)
+			target := socks5.AddrFromStdAddrPort(addr)
 			cPacket := &packet{
 				pc:      pc,
 				rAddr:   remoteAddr,
