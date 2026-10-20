@@ -22,6 +22,7 @@ measured by a benchmark or a pprof profile in this tree; code-inspection finding
 | Rule scan, 5000 CIDR list | ~62,494 ns | ~165 ns full match | `BenchmarkMatchLargeIPRules` |
 | URLTest selection (warm) | 1 closure alloc | 0 allocs | `BenchmarkURLTestSelectedProxyCached` 50 ns |
 | trojan inbound packet | 6 allocs | 4 allocs | `TestInboundNewPacketAllocationCount` |
+| SOCKS5 outbound UDP write | 2 allocs + payload copy | 0 allocs | `TestSocksPacketConnWriteToStaysAllocationFree` |
 
 Two defects were found and fixed on the way: listeners that wrap the client address in a
 per-connection SNAT key (trojan, sudoku, snell, non-TUN sing) dropped their UDP because the
@@ -72,6 +73,26 @@ moderate but DNS-through-proxy sits on the critical path of every new domain con
 embedder API is still needed; if not, the package is dead code to remove, if yes, the
 `WriteTo` path should go netip-native like the rest of the funnel.
 
+### F7. DNS cache-hit message copy (code inspection)
+
+`getMsgFromCache` deep-copies the cached `dns.Msg` on every cache hit (`msg.Copy()` builds a
+fresh message with new RR slices). The parsed-IP cache (`ip_cache.go`) already answers the hot
+`LookupIP` path without touching messages, so this cost is on non-IP queries only; a pooled
+or copy-on-write message representation would remove it if DNS QPS ever matters.
+
+### F8. Resolver goroutine density per lookup (code inspection)
+
+`Resolver.LookupIP` starts one goroutine for the AAAA race, `ipExchange` starts one per
+`asyncExchange` (main plus fallback), and `refreshAsync` one per expiring entry: three to four
+goroutines per resolution. At typical DNS QPS this is not a hotspot; noted because a bounded
+worker pool would also bound the singleflight retry monitors.
+
+### F9. KCP (mkcp) per-segment buffers (code inspection)
+
+`transport/mkcp/packet.go` allocates a fresh `[]byte` per segment read and the listener reads
+through a fresh 64 KiB buffer per datagram. Niche transport; only worth touching if mkcp
+profiles hot.
+
 ### F5. Checked and clean
 
 - No `fmt.Sprintf` remains on the packet paths (only cold setup and debug formatting).
@@ -87,3 +108,5 @@ embedder API is still needed; if not, the package is dead code to remove, if yes
 2. F1 (largest per-packet win; design the no-compatibility `WaitReadFrom` contract first).
 3. F4 (decide the embedder question, then delete or netip-native).
 4. F2 (per-platform raw syscalls; highest risk, do last with per-platform CI coverage).
+5. F7-F9 (hold until profiling shows they matter; F7 needs a message representation
+   change, F8 a bounded pool, F9 is niche).
