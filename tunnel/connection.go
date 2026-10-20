@@ -33,9 +33,7 @@ type packetSender struct {
 	// Only the Process goroutine touches this; the read loop keeps its own copy.
 	readDeadline int64
 
-	// Destination reuse is armed once the conn is known to consume the address
-	// inside WriteTo; only the Process goroutine touches the cache.
-	syncWrite    bool
+	// The destination cache is touched only by the Process goroutine.
 	destAddrPort netip.AddrPort
 	destAddr     *net.UDPAddr
 }
@@ -131,7 +129,7 @@ func (s *packetSender) processPacket(pc C.PacketConn, packet C.PacketAdapter) {
 	targetAddr := s.targetFor(packetOriginKey(metadata))
 
 	if targetAddr.IsValid() {
-		addr = s.destinationFor(targetAddr, metadata.DstPort, pc)
+		addr = s.destinationFor(targetAddr, metadata.DstPort)
 	}
 
 	if addr == nil {
@@ -165,41 +163,19 @@ func (s *packetSender) processPacket(pc C.PacketConn, packet C.PacketAdapter) {
 }
 
 // destinationFor returns one *net.UDPAddr per packet, reusing the previous one
-// when the destination repeats and the conn is known to consume the address
-// inside WriteTo. A reused value is two allocations cheaper per packet.
-func (s *packetSender) destinationFor(target netip.Addr, port uint16, pc C.PacketConn) *net.UDPAddr {
-	if !s.syncWrite {
-		s.syncWrite = synchronousWriteTarget(pc)
-	}
+// while the destination repeats. A returned object is never mutated: a changed
+// destination allocates a fresh one, so a writer that keeps the address past
+// WriteTo still observes the value it was handed. A reused value is two
+// allocations cheaper per packet.
+func (s *packetSender) destinationFor(target netip.Addr, port uint16) *net.UDPAddr {
 	addrPort := netip.AddrPortFrom(target, port)
 	if s.destAddr != nil && s.destAddrPort == addrPort {
 		return s.destAddr
 	}
 	addr := net.UDPAddrFromAddrPort(addrPort)
-	if s.syncWrite {
-		s.destAddrPort = addrPort
-		s.destAddr = addr
-	}
+	s.destAddrPort = addrPort
+	s.destAddr = addr
 	return addr
-}
-
-// synchronousWriteTarget reports whether writes through this conn reach the
-// kernel before WriteTo returns. The chain bottoms out at a system socket only
-// for the direct and socket-based proxy outbounds, all of which consume the
-// destination inside the call; protocol outbounds queue it and would observe a
-// reused value after it had already been mutated.
-func synchronousWriteTarget(conn any) bool {
-	for depth := 0; depth < 8; depth++ {
-		if udp, ok := conn.(*net.UDPConn); ok && udp != nil {
-			return true
-		}
-		upstream, ok := conn.(interface{ Upstream() any })
-		if !ok {
-			return false
-		}
-		conn = upstream.Upstream()
-	}
-	return false
 }
 
 func (s *packetSender) Process(pc C.PacketConn, proxy C.WriteBackProxy) {
