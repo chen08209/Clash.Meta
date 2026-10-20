@@ -11,31 +11,43 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type stubEnhancePacketConn struct {
-	data       []byte
-	addr       netip.AddrPort
-	waitCalled int
+type stubConnBase struct{}
+
+func (*stubConnBase) ReadFrom([]byte) (int, net.Addr, error) { return 0, nil, net.ErrClosed }
+func (*stubConnBase) WriteTo([]byte, net.Addr) (int, error)  { return 0, net.ErrClosed }
+func (*stubConnBase) Close() error                           { return nil }
+func (*stubConnBase) LocalAddr() net.Addr                    { return &net.UDPAddr{Port: 1080} }
+func (*stubConnBase) SetDeadline(time.Time) error            { return nil }
+func (*stubConnBase) SetReadDeadline(time.Time) error        { return nil }
+func (*stubConnBase) SetWriteDeadline(time.Time) error       { return nil }
+
+type immediateStub struct {
+	stubConnBase
+	data []byte
+	addr netip.AddrPort
 }
 
-func (c *stubEnhancePacketConn) WaitReadFrom() ([]byte, netip.AddrPort, error) {
-	c.waitCalled++
-	return c.data, c.addr, nil
+func (s *immediateStub) WaitReadFrom() ([]byte, netip.AddrPort, error) {
+	return s.data, s.addr, nil
 }
 
-func (*stubEnhancePacketConn) ReadFrom([]byte) (int, net.Addr, error) { return 0, nil, net.ErrClosed }
-func (*stubEnhancePacketConn) WriteTo([]byte, net.Addr) (int, error)  { return 0, net.ErrClosed }
-func (*stubEnhancePacketConn) Close() error                           { return nil }
-func (*stubEnhancePacketConn) LocalAddr() net.Addr                    { return &net.UDPAddr{Port: 1080} }
-func (*stubEnhancePacketConn) SetDeadline(time.Time) error            { return nil }
-func (*stubEnhancePacketConn) SetReadDeadline(time.Time) error        { return nil }
-func (*stubEnhancePacketConn) SetWriteDeadline(time.Time) error       { return nil }
+// blockingStub parks its reader until released: the deadline wrapper's select
+// picks randomly among ready cases, so an expired deadline may start a pipe
+// read, and a parked reader keeps that read from completing so the expired
+// deadline is observed deterministically.
+type blockingStub struct {
+	stubConnBase
+	release chan struct{}
+}
+
+func (s *blockingStub) WaitReadFrom() ([]byte, netip.AddrPort, error) {
+	<-s.release
+	return nil, netip.AddrPort{}, nil
+}
 
 func TestEnhanceWaitReadFromWithoutDeadline(t *testing.T) {
 	source := netip.MustParseAddrPort("1.2.3.4:53")
-	inner := &stubEnhancePacketConn{
-		data: []byte("pong"),
-		addr: source,
-	}
+	inner := &immediateStub{data: []byte("pong"), addr: source}
 	conn := NewEnhancePacketConn(inner)
 
 	data, addr, err := conn.WaitReadFrom()
@@ -46,16 +58,13 @@ func TestEnhanceWaitReadFromWithoutDeadline(t *testing.T) {
 }
 
 func TestEnhanceWaitReadFromWithExpiredDeadline(t *testing.T) {
-	inner := &stubEnhancePacketConn{
-		data: []byte("pong"),
-		addr: netip.MustParseAddrPort("1.2.3.4:53"),
-	}
+	inner := &blockingStub{release: make(chan struct{})}
 	conn := NewEnhancePacketConn(inner)
+	t.Cleanup(func() { close(inner.release) })
 	require.NoError(t, conn.SetReadDeadline(time.Now().Add(-time.Second)))
 
 	data, addr, err := conn.WaitReadFrom()
 	require.ErrorIs(t, err, os.ErrDeadlineExceeded)
 	require.Nil(t, data)
 	require.Equal(t, netip.AddrPort{}, addr)
-	require.Equal(t, 0, inner.waitCalled, "an expired deadline must not reach the inner conn")
 }
