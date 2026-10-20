@@ -2,6 +2,7 @@ package packet
 
 import (
 	"net"
+	"net/netip"
 
 	"github.com/metacubex/mihomo/common/pool"
 )
@@ -10,9 +11,28 @@ type WaitReadFrom interface {
 	WaitReadFrom() (data []byte, put func(), addr net.Addr, err error)
 }
 
+type AddrPortWaitReadFrom interface {
+	WaitReadFromAddrPort() (data []byte, put func(), addr netip.AddrPort, rawAddr net.Addr, err error)
+}
+
 type EnhancePacketConn interface {
 	net.PacketConn
 	WaitReadFrom
+}
+
+func AddrPortFromNetAddr(addr net.Addr) netip.AddrPort {
+	if udpAddr, isUDPAddr := addr.(*net.UDPAddr); isUDPAddr && udpAddr != nil {
+		return udpAddr.AddrPort()
+	}
+	return netip.AddrPort{}
+}
+
+func WaitReadFromAddrPort(pc EnhancePacketConn) (data []byte, put func(), addr netip.AddrPort, rawAddr net.Addr, err error) {
+	if fast, isFast := pc.(AddrPortWaitReadFrom); isFast {
+		return fast.WaitReadFromAddrPort()
+	}
+	data, put, rawAddr, err = pc.WaitReadFrom()
+	return data, put, AddrPortFromNetAddr(rawAddr), rawAddr, err
 }
 
 func NewEnhancePacketConn(pc net.PacketConn) EnhancePacketConn {

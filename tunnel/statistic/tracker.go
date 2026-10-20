@@ -3,6 +3,7 @@ package statistic
 import (
 	"io"
 	"net"
+	"net/netip"
 	"time"
 
 	"github.com/metacubex/mihomo/common/atomic"
@@ -197,6 +198,14 @@ func (ut *udpTracker) ReadFrom(b []byte) (int, net.Addr, error) {
 
 func (ut *udpTracker) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
 	data, put, addr, err = ut.PacketConn.WaitReadFrom()
+	download := int64(len(data))
+	ut.pushDownloaded(download)
+	ut.DownloadTotal.Add(download)
+	return
+}
+
+func (ut *udpTracker) WaitReadFromAddrPort() (data []byte, put func(), addr netip.AddrPort, rawAddr net.Addr, err error) {
+	data, put, addr, rawAddr, err = N.WaitReadFromAddrPort(ut.PacketConn)
 	download := int64(len(data))
 	ut.pushDownloaded(download)
 	ut.DownloadTotal.Add(download)

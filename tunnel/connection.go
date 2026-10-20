@@ -295,26 +295,39 @@ func handleUDPToLocal(
 	// The read loop is the only goroutine refreshing on inbound packets, so the
 	// tracked deadline needs no synchronisation.
 	var readDeadline int64
+	addrPortReader, hasAddrPortReader := pc.(N.AddrPortWaitReadFrom)
 	for {
 		now := time.Now()
 		if shouldRefreshDeadline(readDeadline, now) {
 			readDeadline = refreshReadDeadline(pc, now)
 		}
-		data, put, from, err := pc.WaitReadFrom()
+
+		var (
+			data         []byte
+			put          func()
+			fromAddrPort netip.AddrPort
+			rawAddr      net.Addr
+			err          error
+		)
+		if hasAddrPortReader {
+			data, put, fromAddrPort, rawAddr, err = addrPortReader.WaitReadFromAddrPort()
+		} else {
+			data, put, rawAddr, err = pc.WaitReadFrom()
+			fromAddrPort = N.AddrPortFromNetAddr(rawAddr)
+		}
 		if err != nil {
 			return
 		}
 
-		fromUDPAddr, isUDPAddr := from.(*net.UDPAddr)
-		if !isUDPAddr {
-			fromUDPAddr = net.UDPAddrFromAddrPort(oAddrPort) // oAddrPort was Unmapped
-			log.Warnln("server return a [%T](%s) which isn't a *net.UDPAddr, force replace to (%s), this may be caused by a wrongly implemented server", from, from, oAddrPort)
-		} else if fromUDPAddr == nil {
-			fromUDPAddr = net.UDPAddrFromAddrPort(oAddrPort) // oAddrPort was Unmapped
-			log.Warnln("server return a nil *net.UDPAddr, force replace to (%s), this may be caused by a wrongly implemented server", oAddrPort)
+		if !fromAddrPort.IsValid() {
+			if rawAddr == nil {
+				log.Warnln("server return a nil address, force replace to (%s), this may be caused by a wrongly implemented server", oAddrPort)
+			} else {
+				log.Warnln("server return a [%T](%s) which isn't a UDP address, force replace to (%s), this may be caused by a wrongly implemented server", rawAddr, rawAddr, oAddrPort)
+			}
+			fromAddrPort = oAddrPort // oAddrPort was Unmapped
 		}
 
-		fromAddrPort := fromUDPAddr.AddrPort()
 		fromAddr := fromAddrPort.Addr().Unmap()
 
 		// restore DestinationNAT

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/netip"
 	"runtime"
 	"sync"
 	"syscall"
@@ -337,6 +338,10 @@ func (c *packetConn) LocalAddr() net.Addr {
 
 func (c *packetConn) Upstream() any {
 	return c.EnhancePacketConn
+}
+
+func (c *packetConn) WaitReadFromAddrPort() (data []byte, put func(), addr netip.AddrPort, rawAddr net.Addr, err error) {
+	return N.WaitReadFromAddrPort(c.EnhancePacketConn)
 }
 
 func (c *packetConn) WriterReplaceable() bool {

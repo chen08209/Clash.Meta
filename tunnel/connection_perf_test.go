@@ -2,6 +2,7 @@ package tunnel
 
 import (
 	"context"
+	"io"
 	"net"
 	"net/netip"
 	"sync"
@@ -81,6 +82,50 @@ func TestPacketMappingConcurrentAccess(t *testing.T) {
 	}
 	wait.Wait()
 	require.False(t, failed.Load())
+}
+
+type fastReadPacketConn struct {
+	C.PacketConn
+	data  []byte
+	from  netip.AddrPort
+	calls int
+}
+
+func (c *fastReadPacketConn) WaitReadFromAddrPort() (data []byte, put func(), addr netip.AddrPort, rawAddr net.Addr, err error) {
+	if c.calls > 0 {
+		return nil, nil, netip.AddrPort{}, nil, io.EOF
+	}
+	c.calls++
+	return c.data, func() {}, c.from, nil, nil
+}
+
+func (c *fastReadPacketConn) SetReadDeadline(time.Time) error { return nil }
+func (c *fastReadPacketConn) Close() error                    { return nil }
+
+type recordingWriteBack struct {
+	data []byte
+	addr net.Addr
+}
+
+func (w *recordingWriteBack) WriteBack(data []byte, addr net.Addr) (int, error) {
+	w.data = append(w.data[:0], data...)
+	w.addr = addr
+	return len(data), nil
+}
+
+func TestHandleUDPToLocalUsesAddrPortFastPath(t *testing.T) {
+	sender := newPacketSender().(*packetSender)
+	pc := &fastReadPacketConn{
+		data: []byte("pong"),
+		from: netip.MustParseAddrPort("198.51.100.7:5353"),
+	}
+	writeBack := &recordingWriteBack{}
+
+	handleUDPToLocal(writeBack, pc, sender, netip.MustParseAddrPort("192.0.2.1:1234"), netip.MustParseAddrPort("203.0.113.9:53"))
+
+	require.Equal(t, 1, pc.calls)
+	require.Equal(t, pc.data, writeBack.data)
+	require.Equal(t, pc.from, writeBack.addr.(*net.UDPAddr).AddrPort())
 }
 
 func TestPacketMappingKeepsFirstDestinationAndOrigin(t *testing.T) {
