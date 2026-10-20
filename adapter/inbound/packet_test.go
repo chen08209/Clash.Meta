@@ -45,6 +45,23 @@ func TestNewPacketSetsSourceAndInboundAddresses(t *testing.T) {
 	require.EqualValues(t, 5354, metadata.InPort)
 }
 
+type invalidFlowKeyPacket struct {
+	C.UDPPacket
+	localAddr net.Addr
+}
+
+func (p *invalidFlowKeyPacket) FlowKey() netip.AddrPort { return netip.AddrPort{} }
+func (p *invalidFlowKeyPacket) LocalAddr() net.Addr     { return p.localAddr }
+
+func TestNewPacketFallsBackToLocalAddrOnAnInvalidFlowKey(t *testing.T) {
+	addr := &net.UDPAddr{IP: net.IPv4(10, 0, 0, 5), Port: 5354}
+	packet := &invalidFlowKeyPacket{localAddr: addr}
+
+	_, metadata := NewPacket(socks5.ParseAddr("93.184.216.34:53"), packet, C.SOCKS5)
+	require.Equal(t, netip.MustParseAddr("10.0.0.5"), metadata.SrcIP)
+	require.EqualValues(t, 5354, metadata.SrcPort)
+}
+
 func TestSetSrcAddrMatchesWithSrcAddr(t *testing.T) {
 	addr := net.UDPAddrFromAddrPort(netip.MustParseAddrPort("192.168.1.2:5353"))
 
