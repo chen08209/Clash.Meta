@@ -55,7 +55,7 @@ func (d *Dns) ResolveUDP(ctx context.Context, metadata *C.Metadata) error {
 type dnsPacket struct {
 	data []byte
 	put  func()
-	addr net.Addr
+	addr netip.AddrPort
 }
 
 // dnsPacketConn implements net.PacketConn
@@ -68,7 +68,7 @@ type dnsPacketConn struct {
 func (d *dnsPacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
 	select {
 	case packet := <-d.response:
-		return packet.data, packet.put, N.AddrPortFromNetAddr(packet.addr), nil
+		return packet.data, packet.put, packet.addr, nil
 	case <-d.ctx.Done():
 		return nil, nil, netip.AddrPort{}, net.ErrClosed
 	}
@@ -81,7 +81,7 @@ func (d *dnsPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 		if packet.put != nil {
 			packet.put()
 		}
-		return n, packet.addr, nil
+		return n, net.UDPAddrFromAddrPort(packet.addr), nil
 	case <-d.ctx.Done():
 		return 0, nil, net.ErrClosed
 	}
@@ -116,7 +116,7 @@ func (d *dnsPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 		packet := dnsPacket{
 			data: buf,
 			put:  put,
-			addr: addr,
+			addr: N.AddrPortFromNetAddr(addr),
 		}
 		select {
 		case d.response <- packet:
