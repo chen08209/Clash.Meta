@@ -15,7 +15,7 @@ func comparableHash[T comparable](seed seedTyp, v T) uint64 {
 	var hasher func(unsafe.Pointer, uintptr) uintptr
 	hasher = (*iMapType)(unsafe.Pointer(mTyp)).Hasher
 
-	p := escape(unsafe.Pointer(&v))
+	p := noescape(unsafe.Pointer(&v))
 
 	if ptrSize == 8 {
 		return uint64(hasher(p, uintptr(s)))
@@ -124,19 +124,8 @@ func noescape(p unsafe.Pointer) unsafe.Pointer {
 	return unsafe.Pointer(x ^ 0)
 }
 
-var alwaysFalse bool
-var escapeSink any
-
-// escape forces any pointers in x to escape to the heap.
-func escape[T any](x T) T {
-	if alwaysFalse {
-		escapeSink = x
-	}
-	return x
-}
-
 // ptrSize is the size of a pointer in bytes - unsafe.Sizeof(uintptr(0)) but as an ideal constant.
 // It is also the size of the machine's native word size (that is, 4 on 32-bit systems, 8 on 64-bit).
 const ptrSize = 4 << (^uintptr(0) >> 63)
 
-const testComparableAllocations = false
+const testComparableAllocations = true
