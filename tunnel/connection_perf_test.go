@@ -91,12 +91,12 @@ type fastReadPacketConn struct {
 	calls int
 }
 
-func (c *fastReadPacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
+func (c *fastReadPacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
 	if c.calls > 0 {
-		return nil, nil, netip.AddrPort{}, io.EOF
+		return nil, netip.AddrPort{}, io.EOF
 	}
 	c.calls++
-	return c.data, func() {}, c.from, nil
+	return c.data, c.from, nil
 }
 
 func (c *fastReadPacketConn) SetReadDeadline(time.Time) error { return nil }

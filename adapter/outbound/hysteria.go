@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/common/utils"
 	"github.com/metacubex/mihomo/component/ca"
 	"github.com/metacubex/mihomo/component/dialer"
@@ -285,12 +286,15 @@ func (c *hyPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	return
 }
 
-func (c *hyPacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
+func (c *hyPacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
 	b, addrStr, err := c.UDPConn.ReadFrom()
 	if err != nil {
 		return
 	}
-	data = b
+	// the hysteria read hands back foreign memory; copy into mihomo-pool
+	// memory so the caller can recycle it with pool.Put
+	data = pool.Get(len(b))
+	copy(data, b)
 	addr = M.ParseSocksaddr(addrStr).AddrPort()
 	return
 }

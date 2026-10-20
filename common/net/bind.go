@@ -12,11 +12,6 @@ func (c *bindPacketConn) Read(b []byte) (n int, err error) {
 	return n, err
 }
 
-func (c *bindPacketConn) WaitRead() (data []byte, put func(), err error) {
-	data, put, _, err = c.EnhancePacketConn.WaitReadFrom()
-	return
-}
-
 func (c *bindPacketConn) Write(b []byte) (n int, err error) {
 	return c.EnhancePacketConn.WriteTo(b, c.rAddr)
 }

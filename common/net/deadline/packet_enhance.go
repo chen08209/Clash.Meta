@@ -21,7 +21,6 @@ func NewEnhancePacketConn(pc packet.EnhancePacketConn) packet.EnhancePacketConn 
 
 type enhanceReadResult struct {
 	data []byte
-	put  func()
 	addr netip.AddrPort
 	err  error
 }
@@ -31,7 +30,7 @@ type enhancePacketConn struct {
 	enhancePacketConn packet.EnhancePacketConn
 }
 
-func (c *enhancePacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
+func (c *enhancePacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
 FOR:
 	for {
 		select {
@@ -39,7 +38,6 @@ FOR:
 			if result != nil {
 				if result, ok := result.(*enhanceReadResult); ok {
 					data = result.data
-					put = result.put
 					addr = result.addr
 					err = result.err
 					c.netPacketConn.resultCh <- nil // finish cache read
@@ -53,7 +51,7 @@ FOR:
 				break FOR
 			}
 		case <-c.netPacketConn.pipeDeadline.Wait():
-			return nil, nil, netip.AddrPort{}, os.ErrDeadlineExceeded
+			return nil, netip.AddrPort{}, os.ErrDeadlineExceeded
 		}
 	}
 
@@ -62,7 +60,7 @@ FOR:
 	} else if c.netPacketConn.deadline.Load().IsZero() {
 		c.netPacketConn.inRead.Store(true)
 		defer c.netPacketConn.inRead.Store(false)
-		data, put, addr, err = c.enhancePacketConn.WaitReadFrom()
+		data, addr, err = c.enhancePacketConn.WaitReadFrom()
 		return
 	}
 
@@ -73,10 +71,9 @@ FOR:
 }
 
 func (c *enhancePacketConn) pipeWaitReadFrom() {
-	data, put, addr, err := c.enhancePacketConn.WaitReadFrom()
+	data, addr, err := c.enhancePacketConn.WaitReadFrom()
 	result := &enhanceReadResult{}
 	result.data = data
-	result.put = put
 	result.addr = addr
 	result.err = err
 	c.netPacketConn.resultCh <- result

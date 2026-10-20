@@ -6,28 +6,26 @@ import (
 	"net/netip"
 	"testing"
 
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/stretchr/testify/require"
 )
 
 func TestDNSPacketConnWaitReadFromReturnsTheQueuedAddrPort(t *testing.T) {
 	conn := &dnsPacketConn{response: make(chan dnsPacket, 1), ctx: context.Background()}
 	addr := netip.MustParseAddrPort("1.2.3.4:53")
-	putCalled := false
-	conn.response <- dnsPacket{data: []byte("answer"), put: func() { putCalled = true }, addr: addr}
+	conn.response <- dnsPacket{data: []byte("answer"), addr: addr}
 
-	data, put, got, err := conn.WaitReadFrom()
+	data, got, err := conn.WaitReadFrom()
 	require.NoError(t, err)
 	require.Equal(t, []byte("answer"), data)
 	require.Equal(t, addr, got)
-	require.NotNil(t, put)
-	put()
-	require.True(t, putCalled)
+	_ = pool.Put(data)
 }
 
 func TestDNSPacketConnReadFromMaterializesTheQueuedAddrPort(t *testing.T) {
 	conn := &dnsPacketConn{response: make(chan dnsPacket, 1), ctx: context.Background()}
 	addr := netip.MustParseAddrPort("1.2.3.4:53")
-	conn.response <- dnsPacket{data: []byte("answer"), put: func() {}, addr: addr}
+	conn.response <- dnsPacket{data: []byte("answer"), addr: addr}
 
 	buf := make([]byte, 16)
 	n, got, err := conn.ReadFrom(buf)
@@ -42,6 +40,6 @@ func TestDNSPacketConnClosedAnswersWithErrClosed(t *testing.T) {
 	conn := &dnsPacketConn{response: make(chan dnsPacket, 1), ctx: ctx, cancel: cancel}
 	conn.Close()
 
-	_, _, _, err := conn.WaitReadFrom()
+	_, _, err := conn.WaitReadFrom()
 	require.ErrorIs(t, err, net.ErrClosed)
 }

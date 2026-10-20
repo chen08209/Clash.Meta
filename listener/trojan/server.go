@@ -10,6 +10,7 @@ import (
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	N "github.com/metacubex/mihomo/common/net"
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/component/ca"
 	"github.com/metacubex/mihomo/component/ech"
 	C "github.com/metacubex/mihomo/constant"
@@ -331,10 +332,10 @@ func (l *Listener) handleConn(inMux bool, conn net.Conn, tunnel C.Tunnel, additi
 		remoteAddr := conn.RemoteAddr()
 
 		for {
-			data, put, addr, err := pc.WaitReadFrom()
+			data, addr, err := pc.WaitReadFrom()
 			if err != nil {
-				if put != nil {
-					put()
+				if data != nil {
+					_ = pool.Put(data)
 				}
 				break
 			}
@@ -342,8 +343,8 @@ func (l *Listener) handleConn(inMux bool, conn net.Conn, tunnel C.Tunnel, additi
 			cPacket := &packet{
 				pc:      pc,
 				source:  N.AddrPortFromNetAddr(remoteAddr),
+				data:    data,
 				payload: data,
-				put:     put,
 			}
 
 			tunnel.HandleUDPPacket(inbound.NewPacket(target, cPacket, C.TROJAN, additions...))

@@ -107,7 +107,7 @@ func (q *quicStreamPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err err
 	return
 }
 
-func (q *quicStreamPacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
+func (q *quicStreamPacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
 	if q.inputConn != nil {
 		var packet Packet
 		packet, err = ReadPacket(q.inputConn)

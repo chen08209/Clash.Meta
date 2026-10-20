@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	N "github.com/metacubex/mihomo/common/net"
+	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/transport/shadowsocks/core"
 	"github.com/metacubex/mihomo/transport/shadowsocks/shadowaead"
@@ -218,26 +219,22 @@ func (spc *ssrPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	return n - len(addr), udpAddr, e
 }
 
-func (spc *ssrPacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
-	data, put, _, err = spc.EnhancePacketConn.WaitReadFrom()
+func (spc *ssrPacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
+	data, _, err = spc.EnhancePacketConn.WaitReadFrom()
 	if err != nil {
-		return nil, nil, netip.AddrPort{}, err
+		return nil, netip.AddrPort{}, err
 	}
 
 	_addr := socks5.SplitAddr(data)
 	if _addr == nil {
-		if put != nil {
-			put()
-		}
-		return nil, nil, netip.AddrPort{}, errors.New("parse addr error")
+		_ = pool.Put(data)
+		return nil, netip.AddrPort{}, errors.New("parse addr error")
 	}
 
 	addr = _addr.AddrPort()
 	if !addr.IsValid() {
-		if put != nil {
-			put()
-		}
-		return nil, nil, netip.AddrPort{}, errors.New("parse addr error")
+		_ = pool.Put(data)
+		return nil, netip.AddrPort{}, errors.New("parse addr error")
 	}
 	data = data[len(_addr):]
 	return

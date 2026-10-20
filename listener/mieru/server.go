@@ -59,11 +59,11 @@ func Handle(conn net.Conn, tunnel C.Tunnel, request *mierumodel.Request, additio
 		ep := N.NewEnhancePacketConn(pc)
 		defer ep.Close()
 		for {
-			data, put, addr, err := ep.WaitReadFrom()
+			data, addr, err := ep.WaitReadFrom()
 			if err != nil {
-				if put != nil {
+				if data != nil {
 					// Unresolved UDP packet, return buffer to the pool.
-					put()
+					_ = pool.Put(data)
 				}
 				// mieru returns EOF or ErrUnexpectedEOF when a session is closed.
 				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.ErrClosedPipe) {
@@ -78,8 +78,8 @@ func Handle(conn net.Conn, tunnel C.Tunnel, request *mierumodel.Request, additio
 			packet := &packet{
 				pc:      ep,
 				udpAddr: net.UDPAddrFromAddrPort(addr),
+				data:    data,
 				payload: payload,
-				put:     put,
 			}
 			tunnel.HandleUDPPacket(inbound.NewPacket(target, packet, C.MIERU, additions...))
 		}
@@ -89,8 +89,8 @@ func Handle(conn net.Conn, tunnel C.Tunnel, request *mierumodel.Request, additio
 type packet struct {
 	pc      net.PacketConn
 	udpAddr *net.UDPAddr // source (i.e. remote) IP & Port of the packet
+	data    []byte
 	payload []byte
-	put     func()
 }
 
 var _ C.UDPPacket = (*packet)(nil)
@@ -111,9 +111,9 @@ func (c *packet) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
 }
 
 func (c *packet) Drop() {
-	if c.put != nil {
-		c.put()
-		c.put = nil
+	if c.data != nil {
+		_ = pool.Put(c.data)
+		c.data = nil
 	}
 	c.payload = nil
 }

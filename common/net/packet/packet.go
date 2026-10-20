@@ -8,7 +8,7 @@ import (
 )
 
 type WaitReadFrom interface {
-	WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error)
+	WaitReadFrom() (data []byte, addr netip.AddrPort, err error)
 }
 
 type EnhancePacketConn interface {
@@ -43,7 +43,9 @@ type enhancePacketConn struct {
 	net.PacketConn
 }
 
-func (c *enhancePacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
+// WaitReadFrom hands the caller mihomo-pool memory: recycle it with pool.Put
+// once the packet has been handled. A zero-length datagram returns no buffer.
+func (c *enhancePacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
 	return waitReadFrom(c.PacketConn)
 }
 
@@ -71,20 +73,18 @@ func (c *enhanceUDPConn) ReaderReplaceable() bool {
 	return true
 }
 
-func waitReadFrom(pc net.PacketConn) (data []byte, put func(), addr netip.AddrPort, err error) {
+func waitReadFrom(pc net.PacketConn) (data []byte, addr netip.AddrPort, err error) {
 	readBuf := pool.Get(pool.UDPBufferSize)
-	put = func() {
-		_ = pool.Put(readBuf)
-	}
 	var readN int
 	var rawAddr net.Addr
 	readN, rawAddr, err = pc.ReadFrom(readBuf)
-	if readN > 0 {
-		data = readBuf[:readN]
-	} else {
-		put()
-		put = nil
+	if err != nil {
+		_ = pool.Put(readBuf)
+		return nil, AddrPortFromNetAddr(rawAddr), err
 	}
-	addr = AddrPortFromNetAddr(rawAddr)
-	return
+	if readN == 0 {
+		_ = pool.Put(readBuf)
+		return nil, AddrPortFromNetAddr(rawAddr), nil
+	}
+	return readBuf[:readN], AddrPortFromNetAddr(rawAddr), nil
 }

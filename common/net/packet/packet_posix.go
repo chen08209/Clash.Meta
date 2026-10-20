@@ -16,25 +16,20 @@ type enhanceUDPConn struct {
 	rawConn syscall.RawConn
 }
 
-func (c *enhanceUDPConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
+func (c *enhanceUDPConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
 	if c.rawConn == nil {
 		c.rawConn, _ = c.UDPConn.SyscallConn()
 	}
 	var readErr error
 	err = c.rawConn.Read(func(fd uintptr) (done bool) {
 		readBuf := pool.Get(pool.UDPBufferSize)
-		put = func() {
-			_ = pool.Put(readBuf)
-		}
 		var readFrom syscall.Sockaddr
 		var readN int
 		readN, _, _, readFrom, readErr = syscall.Recvmsg(int(fd), readBuf, nil, 0)
 		if readN > 0 {
 			data = readBuf[:readN]
 		} else {
-			put()
-			put = nil
-			data = nil
+			_ = pool.Put(readBuf)
 		}
 		if readErr == syscall.EAGAIN {
 			return false

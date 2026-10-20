@@ -10,6 +10,7 @@ import (
 	"time"
 
 	N "github.com/metacubex/mihomo/common/net"
+	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/log"
 )
@@ -277,7 +278,7 @@ func handleUDPToLocal(
 			readDeadline = refreshReadDeadline(pc, now)
 		}
 
-		data, put, fromAddrPort, err := pc.WaitReadFrom()
+		data, fromAddrPort, err := pc.WaitReadFrom()
 		if err != nil {
 			return
 		}
@@ -295,8 +296,8 @@ func handleUDPToLocal(
 		fromAddrPort = netip.AddrPortFrom(fromAddr, fromAddrPort.Port())
 
 		_, err = writeBack.WriteBack(data, fromAddrPort)
-		if put != nil {
-			put()
+		if data != nil {
+			_ = pool.Put(data)
 		}
 		if err != nil {
 			return

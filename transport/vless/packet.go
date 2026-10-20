@@ -36,20 +36,16 @@ func (c *PacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	return n, net.UDPAddrFromAddrPort(c.rAddr), err
 }
 
-func (c *PacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
+func (c *PacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
 	var length uint16
 	err = binary.Read(c.Conn, binary.BigEndian, &length)
 	if err != nil {
 		return
 	}
 	readBuf := pool.Get(int(length))
-	put = func() {
-		_ = pool.Put(readBuf)
-	}
 	n, err := io.ReadFull(c.Conn, readBuf)
 	if err != nil {
-		put()
-		put = nil
+		_ = pool.Put(readBuf)
 		return
 	}
 	data = readBuf[:n]

@@ -11,8 +11,8 @@ import (
 type packet struct {
 	pc      net.PacketConn
 	rAddr   net.Addr
+	data    []byte
 	payload []byte
-	put     func()
 }
 
 func (c *packet) Data() []byte {
@@ -36,9 +36,9 @@ func (c *packet) LocalAddr() net.Addr {
 }
 
 func (c *packet) Drop() {
-	if c.put != nil {
-		c.put()
-		c.put = nil
+	if c.data != nil {
+		_ = pool.Put(c.data)
+		c.data = nil
 	}
 	c.payload = nil
 }

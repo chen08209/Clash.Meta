@@ -3,6 +3,7 @@ package packet
 import (
 	"net/netip"
 
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/sing/common/buf"
 	"github.com/metacubex/sing/common/bufio"
 	M "github.com/metacubex/sing/common/metadata"
@@ -21,7 +22,7 @@ type enhanceSingPacketConn struct {
 	packetReadWaiter N.PacketReadWaiter
 }
 
-func (c *enhanceSingPacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
+func (c *enhanceSingPacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
 	var buff *buf.Buffer
 	var dest M.Socksaddr
 	rwOptions := N.ReadWaitOptions{}
@@ -40,18 +41,21 @@ func (c *enhanceSingPacketConn) WaitReadFrom() (data []byte, put func(), addr ne
 	}
 	if err != nil {
 		buff.Release()
-		return
+		return nil, addr, err
 	}
 	if buff == nil {
-		return
+		return nil, addr, nil
 	}
 	if buff.IsEmpty() {
 		buff.Release()
-		return
+		return nil, addr, nil
 	}
-	data = buff.Bytes()
-	put = buff.Release
-	return
+	// copy into mihomo-pool memory: the caller recycles it with pool.Put, and
+	// the sing buffer goes back to its own pool right away
+	data = pool.Get(buff.Len())
+	copy(data, buff.Bytes())
+	buff.Release()
+	return data, addr, nil
 }
 
 func (c *enhanceSingPacketConn) Upstream() any {

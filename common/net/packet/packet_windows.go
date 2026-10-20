@@ -18,7 +18,7 @@ type enhanceUDPConn struct {
 	rawConn syscall.RawConn
 }
 
-func (c *enhanceUDPConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
+func (c *enhanceUDPConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
 	if c.rawConn == nil {
 		c.rawConn, _ = c.UDPConn.SyscallConn()
 	}
@@ -31,18 +31,13 @@ func (c *enhanceUDPConn) WaitReadFrom() (data []byte, put func(), addr netip.Add
 			return false
 		}
 		readBuf := pool.Get(pool.UDPBufferSize)
-		put = func() {
-			_ = pool.Put(readBuf)
-		}
 		var readFrom windows.Sockaddr
 		var readN int
 		readN, readFrom, readErr = windows.Recvfrom(windows.Handle(fd), readBuf, 0)
 		if readN > 0 {
 			data = readBuf[:readN]
 		} else {
-			put()
-			put = nil
-			data = nil
+			_ = pool.Put(readBuf)
 		}
 		if readErr == windows.WSAEWOULDBLOCK {
 			return false

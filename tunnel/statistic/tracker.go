@@ -196,8 +196,8 @@ func (ut *udpTracker) ReadFrom(b []byte) (int, net.Addr, error) {
 	return n, addr, err
 }
 
-func (ut *udpTracker) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
-	data, put, addr, err = ut.PacketConn.WaitReadFrom()
+func (ut *udpTracker) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
+	data, addr, err = ut.PacketConn.WaitReadFrom()
 	download := int64(len(data))
 	ut.pushDownloaded(download)
 	ut.DownloadTotal.Add(download)

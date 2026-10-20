@@ -40,12 +40,10 @@ func TestPacketConnWaitReadFrom(t *testing.T) {
 		}
 	}()
 
-	data, put, addr, err := pc.WaitReadFrom()
+	data, addr, err := pc.WaitReadFrom()
 	require.NoError(t, err)
 	require.Equal(t, []byte("hello"), data)
 	require.Equal(t, source, addr)
-	require.NotNil(t, put)
-	put()
 }
 
 func TestPacketConnWaitReadFromZeroLength(t *testing.T) {
@@ -65,11 +63,10 @@ func TestPacketConnWaitReadFromZeroLength(t *testing.T) {
 		}
 	}()
 
-	data, put, addr, err := pc.WaitReadFrom()
+	data, addr, err := pc.WaitReadFrom()
 	require.NoError(t, err)
 	require.Nil(t, data)
 	require.Equal(t, source, addr)
-	require.Nil(t, put, "a zero-length datagram owns no buffer")
 }
 
 func TestPacketConnReadFrom(t *testing.T) {

@@ -16,13 +16,10 @@ type enhanceWithBufferPacketConn struct {
 	withBufferPacketConn
 }
 
-func (c *enhanceWithBufferPacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
+func (c *enhanceWithBufferPacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
 	var readBuf []byte
 	getBuffer := func(sizeHint int) []byte {
 		readBuf = pool.Get(sizeHint)
-		put = func() {
-			_ = pool.Put(readBuf)
-		}
 		return readBuf
 	}
 	var (
@@ -31,13 +28,15 @@ func (c *enhanceWithBufferPacketConn) WaitReadFrom() (data []byte, put func(), a
 	)
 	readN, rawAddr, err = c.ReadFromWithBuffer(getBuffer)
 	addr = AddrPortFromNetAddr(rawAddr)
-	if readN > 0 && readBuf != nil {
-		data = readBuf[:readN]
-	} else if put != nil {
-		put()
-		put = nil
+	if err != nil && readBuf != nil {
+		_ = pool.Put(readBuf)
+		return nil, addr, err
 	}
-	return
+	if readN > 0 && readBuf != nil {
+		return readBuf[:readN], addr, nil
+	}
+	_ = pool.Put(readBuf)
+	return nil, addr, nil
 }
 
 func (c *enhanceWithBufferPacketConn) Upstream() any {

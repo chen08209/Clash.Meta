@@ -37,18 +37,15 @@ func (c *PacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	return len(decoded), addr, nil
 }
 
-func (c *PacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
-	data, put, addr, err = c.EnhancePacketConn.WaitReadFrom()
+func (c *PacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
+	data, addr, err = c.EnhancePacketConn.WaitReadFrom()
 	if err != nil {
 		return
 	}
 	data, err = c.DecodePacket(data)
 	if err != nil {
-		if put != nil {
-			put()
-		}
+		_ = pool.Put(data)
 		data = nil
-		put = nil
 		return
 	}
 	return

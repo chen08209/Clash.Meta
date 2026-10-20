@@ -4,6 +4,7 @@ import (
 	"net"
 	"testing"
 
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,10 +29,9 @@ func TestWaitReadFromReturnsAddrPort(t *testing.T) {
 
 	_, err := client.Write(payload)
 	require.NoError(t, err)
-	data, put, addr, err := conn.WaitReadFrom()
+	data, addr, err := conn.WaitReadFrom()
 	require.NoError(t, err)
-	require.NotNil(t, put)
-	defer put()
+	defer pool.Put(data)
 
 	require.Equal(t, payload, data)
 	require.Equal(t, client.LocalAddr().(*net.UDPAddr).AddrPort(), addr)
@@ -50,11 +50,11 @@ func BenchmarkWaitReadFrom(b *testing.B) {
 				if _, err := client.Write(payload); err != nil {
 					b.Fatal(err)
 				}
-				_, put, _, err := conn.WaitReadFrom()
+				data, _, err := conn.WaitReadFrom()
 				if err != nil {
 					b.Fatal(err)
 				}
-				put()
+				pool.Put(data)
 			}
 		})
 	}

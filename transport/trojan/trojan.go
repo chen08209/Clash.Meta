@@ -179,53 +179,42 @@ func (pc *PacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	return n, net.UDPAddrFromAddrPort(addr), nil
 }
 
-func (pc *PacketConn) WaitReadFrom() (data []byte, put func(), addr netip.AddrPort, err error) {
+func (pc *PacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
 	pc.mux.Lock()
 	defer pc.mux.Unlock()
 
 	destination, err := socks5.ReadAddr0(pc.Conn)
 	if err != nil {
-		return nil, nil, netip.AddrPort{}, err
+		return nil, netip.AddrPort{}, err
 	}
 	addr = destination.AddrPort()
 	if !addr.IsValid() {
-		return nil, nil, netip.AddrPort{}, errors.New("parse addr error")
+		return nil, netip.AddrPort{}, errors.New("parse addr error")
 	}
 
 	data = pool.Get(pool.UDPBufferSize)
-	put = func() {
-		_ = pool.Put(data)
-	}
 
 	_, err = io.ReadFull(pc.Conn, data[:2+2]) // u16be length + CR LF
 	if err != nil {
-		if put != nil {
-			put()
-		}
-		return nil, nil, netip.AddrPort{}, err
+		_ = pool.Put(data)
+		return nil, netip.AddrPort{}, err
 	}
 	length := binary.BigEndian.Uint16(data)
 	if length > maxLength {
-		if put != nil {
-			put()
-		}
-		return nil, nil, netip.AddrPort{}, errors.New("packet invalid")
+		_ = pool.Put(data)
+		return nil, netip.AddrPort{}, errors.New("packet invalid")
 	}
 
 	if length > 0 {
 		data = data[:length]
 		_, err = io.ReadFull(pc.Conn, data)
 		if err != nil {
-			if put != nil {
-				put()
-			}
-			return nil, nil, netip.AddrPort{}, err
+			_ = pool.Put(data)
+			return nil, netip.AddrPort{}, err
 		}
 	} else {
-		if put != nil {
-			put()
-		}
-		return nil, nil, addr, nil
+		_ = pool.Put(data)
+		return nil, addr, nil
 	}
 
 	return

@@ -3,13 +3,15 @@ package trojan
 import (
 	"net"
 	"net/netip"
+
+	"github.com/metacubex/mihomo/common/pool"
 )
 
 type packet struct {
 	pc      net.PacketConn
 	source  netip.AddrPort
+	data    []byte
 	payload []byte
-	put     func()
 }
 
 func (c *packet) Data() []byte {
@@ -32,9 +34,9 @@ func (c *packet) LocalAddr() net.Addr {
 }
 
 func (c *packet) Drop() {
-	if c.put != nil {
-		c.put()
-		c.put = nil
+	if c.data != nil {
+		_ = pool.Put(c.data)
+		c.data = nil
 	}
 	c.payload = nil
 }

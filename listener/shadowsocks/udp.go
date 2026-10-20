@@ -7,6 +7,7 @@ import (
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	N "github.com/metacubex/mihomo/common/net"
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/common/sockopt"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/log"
@@ -33,17 +34,17 @@ func NewUDP(addr string, lc C.InboundListenConfig, pickCipher core.Cipher, tunne
 	conn := pickCipher.PacketConn(N.NewEnhancePacketConn(l))
 	go func() {
 		for {
-			data, put, remoteAddr, err := conn.WaitReadFrom()
+			data, remoteAddr, err := conn.WaitReadFrom()
 			if err != nil {
-				if put != nil {
-					put()
+				if data != nil {
+					_ = pool.Put(data)
 				}
 				if sl.closed {
 					break
 				}
 				continue
 			}
-			handleSocksUDP(conn, tunnel, data, put, remoteAddr, additions...)
+			handleSocksUDP(conn, tunnel, data, remoteAddr, additions...)
 		}
 	}()
 
@@ -59,13 +60,11 @@ func (l *UDPListener) LocalAddr() net.Addr {
 	return l.packetConn.LocalAddr()
 }
 
-func handleSocksUDP(pc net.PacketConn, tunnel C.Tunnel, buf []byte, put func(), addr netip.AddrPort, additions ...inbound.Addition) {
+func handleSocksUDP(pc net.PacketConn, tunnel C.Tunnel, buf []byte, addr netip.AddrPort, additions ...inbound.Addition) {
 	tgtAddr := socks5.SplitAddr(buf)
 	if tgtAddr == nil {
 		// Unresolved UDP packet, return buffer to the pool
-		if put != nil {
-			put()
-		}
+		_ = pool.Put(buf)
 		return
 	}
 	target := tgtAddr
@@ -74,8 +73,8 @@ func handleSocksUDP(pc net.PacketConn, tunnel C.Tunnel, buf []byte, put func(), 
 	packet := &packet{
 		pc:      pc,
 		rAddr:   net.UDPAddrFromAddrPort(addr),
+		data:   buf,
 		payload: payload,
-		put:     put,
 	}
 	tunnel.HandleUDPPacket(inbound.NewPacket(target, packet, C.SHADOWSOCKS, additions...))
 }

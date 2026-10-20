@@ -7,23 +7,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/stretchr/testify/require"
 )
 
 type stubPacketConn struct {
 	data       []byte
-	put        func()
 	addr       netip.AddrPort
 	waitErr    error
 	waitCalled int
 }
 
-func (c *stubPacketConn) WaitReadFrom() ([]byte, func(), netip.AddrPort, error) {
+func (c *stubPacketConn) WaitReadFrom() ([]byte, netip.AddrPort, error) {
 	c.waitCalled++
 	if c.waitErr != nil {
-		return nil, nil, netip.AddrPort{}, c.waitErr
+		return nil, netip.AddrPort{}, c.waitErr
 	}
-	return c.data, c.put, c.addr, nil
+	return c.data, c.addr, nil
 }
 
 func (*stubPacketConn) ReadFrom([]byte) (int, net.Addr, error) { return 0, nil, net.ErrClosed }
@@ -36,29 +36,23 @@ func (*stubPacketConn) SetWriteDeadline(time.Time) error       { return nil }
 
 func TestPacketConnWaitReadFromDecodes(t *testing.T) {
 	source := netip.MustParseAddrPort("1.2.3.4:53")
-	putCalled := false
 	inner := &stubPacketConn{
 		data: []byte("encoded"),
-		put:  func() { putCalled = true },
 		addr: source,
 	}
 	pc := &PacketConn{EnhancePacketConn: inner, Protocol: &origin{}}
 
-	data, put, addr, err := pc.WaitReadFrom()
+	data, addr, err := pc.WaitReadFrom()
 	require.NoError(t, err)
 	require.Equal(t, []byte("encoded"), data)
 	require.Equal(t, source, addr)
-	require.NotNil(t, put)
-	put()
-	require.True(t, putCalled)
+	_ = pool.Put(data)
 }
 
 func TestPacketConnWaitReadFromDropsAnUndecodablePacket(t *testing.T) {
 	source := netip.MustParseAddrPort("1.2.3.4:53")
-	putCalled := false
 	inner := &stubPacketConn{
 		data: []byte("encoded"),
-		put:  func() { putCalled = true },
 		addr: source,
 	}
 	pc := &PacketConn{
@@ -66,12 +60,10 @@ func TestPacketConnWaitReadFromDropsAnUndecodablePacket(t *testing.T) {
 		Protocol:          &failingDecodeProtocol{},
 	}
 
-	data, put, addr, err := pc.WaitReadFrom()
+	data, addr, err := pc.WaitReadFrom()
 	require.Error(t, err)
 	require.Nil(t, data)
-	require.Nil(t, put, "a dropped packet hands the buffer back itself")
 	require.Equal(t, source, addr, "the error path returns the source address it read")
-	require.True(t, putCalled, "the buffer must return to the pool on a decode failure")
 }
 
 type failingDecodeProtocol struct {
