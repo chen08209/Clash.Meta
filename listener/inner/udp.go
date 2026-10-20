@@ -38,6 +38,7 @@ type innerUDPDatagram struct {
 type innerUDPPacketConn struct {
 	tunnel    C.Tunnel
 	proxy     string
+	target    socks5.Addr
 	localAddr net.Addr
 	readChan  chan innerUDPDatagram
 	done      chan struct{}
@@ -61,11 +62,13 @@ func HandleUdp(tunnel C.Tunnel, network, address, proxy string) (net.PacketConn,
 	if socks5.ParseAddr(address) == nil {
 		return nil, nil, fmt.Errorf("invalid target address %s", address)
 	}
+	target := socks5.ParseAddr(address)
 
 	id := innerUDPConnID.Add(1)
 	conn := &innerUDPPacketConn{
 		tunnel:        tunnel,
 		proxy:         proxy,
+		target:        target,
 		localAddr:     innerUDPAddr{network: network, address: fmt.Sprintf("inner-udp-%d", id)},
 		readChan:      make(chan innerUDPDatagram, innerUDPQueueSize),
 		done:          make(chan struct{}),
@@ -103,14 +106,10 @@ func (c *innerUDPPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	default:
 	}
 
-	target := socks5.ParseAddr(addr.String())
-	if target == nil {
-		return 0, fmt.Errorf("invalid target address %s", addr)
-	}
 	data := pool.Get(len(p))
 	copy(data, p)
 	udpPacket := &innerUDPPacket{conn: c, data: data}
-	packet, metadata := inbound.NewPacket(target, udpPacket, C.INNER)
+	packet, metadata := inbound.NewPacket(c.target, udpPacket, C.INNER)
 	metadata.DNSMode = C.DNSNormal
 	metadata.Process = C.MihomoName
 	metadata.SpecialProxy = c.proxy

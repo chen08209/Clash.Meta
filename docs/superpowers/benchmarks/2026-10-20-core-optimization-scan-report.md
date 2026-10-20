@@ -72,13 +72,15 @@ resolver sends its A and AAAA questions back to back, and the second answer woul
 the first full relay for an allocation saving of one or two on a low-QPS path. The per-query
 goroutine stays.
 
-### F4. `listener/inner` UDP path (code inspection)
+### F4. `listener/inner` UDP path: fixed
 
-`inner.HandleTcp`/`HandleUdp` have no callers inside the repository (the hub only wires
-`inner.New`). Its `WriteTo` also formats and re-parses the target address per packet
-(`addr.String()` + `socks5.ParseAddr`, two to three allocations). Decide first whether the
-embedder API is still needed; if not, the package is dead code to remove, if yes, the
-`WriteTo` path should go netip-native like the rest of the funnel.
+`inner.HandleTcp`/`HandleUdp` are the internal routing entry for the TLS-wrapper listeners
+(jls, reality, restls, shadowtls, shadowquic, sing_hysteria2, sudoku, tlsmirror and the http
+component) - an initial grep missed them behind a display artifact. Its `WriteTo` formatted
+and re-parsed the target address per packet (`addr.String()` + `socks5.ParseAddr`, two to
+three allocations) although every caller writes through a bind conn whose address is the
+conn's own fixed target. The target is parsed once per conn and reused; the per-packet
+format-and-parse round-trip is gone.
 
 ### F7. DNS cache-hit message copy (code inspection)
 
@@ -114,6 +116,5 @@ profiles hot.
 1. F1 (the largest per-packet win, staged as its own project: the no-compatibility
    `WaitReadFrom` contract with a per-caller data-lifetime audit, then per-platform raw
    syscalls for F2).
-2. F4 (decide the embedder question, then delete or netip-native).
-3. F7-F9 (hold until profiling shows they matter; F7 needs a message representation change,
-   F8 a bounded pool, F9 is niche).
+ 2. F7-F9 (hold until profiling shows they matter; F7 needs a message representation change,
+    F8 a bounded pool, F9 is niche).
