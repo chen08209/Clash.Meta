@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"hash/maphash"
 	"net"
 	"net/netip"
 	"runtime"
@@ -93,7 +92,7 @@ func (t tunnel) HandleUDPPacket(packet C.UDPPacket, metadata *C.Metadata) {
 		return
 	}
 
-	hash := maphash.Comparable(flowHashSeed, key)
+	hash := utils.MapHashAddrPort(key)
 	queueNo := uint(hash) % uint(len(udpQueues))
 
 	select {

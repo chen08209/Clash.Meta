@@ -1,10 +1,13 @@
 package tunnel
 
 import (
+	"hash/maphash"
 	"net"
+	"net/netip"
 	"sync/atomic"
 	"testing"
 
+	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/stretchr/testify/require"
 )
@@ -60,6 +63,25 @@ func BenchmarkPacketFlowKey(b *testing.B) {
 			b.Fatal("flow key was invalid")
 		}
 	}
+}
+
+func BenchmarkUDPQueueHash(b *testing.B) {
+	key := netip.MustParseAddrPort("192.168.1.2:54321")
+	seed := maphash.MakeSeed()
+
+	b.Run("maphash", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = maphash.Comparable(seed, key)
+		}
+	})
+
+	b.Run("addrport-fnv", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = utils.MapHashAddrPort(key)
+		}
+	})
 }
 
 type blockingDropPacket struct {
