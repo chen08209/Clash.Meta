@@ -21,7 +21,7 @@ focused test, a benchmark or both.
 | `component/nat` | 54.1% | binary flow keys, allocation-free local-conn lookup |
 | `tunnel/statistic` | 49.0% | stripes, tracker lifecycle, snapshot |
 | `listener/socks` | 17.1% | per-flow metadata cache identity, split targets, warm-path benchmark |
-| `dns` | 27.9% | cache keys, parsed-ip cache, conn pool, exchange errors, the rcode transport codes, the disable-types and edns0-subnet client wrappers including their param tables, and the log-string shapes for a, https and empty questions |
+| `dns` | 31.0% | cache keys, parsed-ip cache, conn pool, exchange errors, the rcode transport codes, the disable-types and edns0-subnet client wrappers including their param tables, the log-string shapes, and the resolver enhancer: mode gating, the fake-ip range against the reserved addresses, the mapping round trip, the ipv6 pool, flush and the reload patch |
 | `hub/route` | 15.6% | real-listener auth matrix, hello/version, read endpoints, provider and group reads with their render keys, and the not-found paths of the proxy and provider lookups plus the unknown-connection close |
 | `component/process` | 8.5% | cache hits, expiry, failure handling, 53ns hit benchmark |
 | `rules/common` | 67.0% | the payload shapes ParseRulePayload accepts, src/no-resolve params, the inbound name/user/type rules with the socks expansion, the process rule over name, path, regex and wildcard, the ip-suffix trailing-bit match, the match and ipcidr rule surfaces, and the geoip lan rule, its dns fallback filter, the geodata-mode metadata codes and the no-database constructor errors |
