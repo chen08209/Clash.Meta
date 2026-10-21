@@ -464,3 +464,20 @@ pointer to the consumer in `ReadFrom`, so a per-loop reusable `*net.UDPAddr` wou
 source addresses for queued datagrams. Making that safe would mean either a new synchronous-write-back
 capability interface across every listener or moving the allocation to the inner read path, neither of
 which is a net win at this blast radius. The per-packet `net.UDPAddrFromAddrPort` stays.
+
+### Task 30: Canonical Domain Search Fast Path
+
+**Files:**
+- Modify: `component/trie/domain.go`
+- Test: `component/trie/domain_test.go`
+- Benchmark: `component/trie/domain_map_test.go`
+
+**Interfaces:**
+- Produces: a canonical-domain fast path before `normalizeDomain` in `DomainTrie.Search`.
+- Preserves: normalized lookup semantics, wildcard priority, invalid-pattern rejection, and Unicode/uppercase fallback.
+
+- [x] Accept ASCII lowercase, non-wildcard, non-empty-label domains without the normalization scan.
+- [x] Route uppercase, Unicode, whitespace, wildcards, empty labels, and trailing dots through `normalizeDomain`.
+- [x] Cover canonical hits, normalized hits, invalid inputs, and misses.
+- [x] Benchmark 6 samples against the pre-change tree with `benchstat`.
+- [x] Run `component/trie`, `tunnel`, and `dns` tests, the full main-module suite, `go vet`, and focused `-race` tests.
