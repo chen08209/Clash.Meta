@@ -64,3 +64,20 @@ func TestLookupProcessNameExpiresAndKeepsFailuresUncached(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 2, calls.Load(), "an expired entry must be looked up again")
 }
+
+func BenchmarkLookupProcessNameCacheHit(b *testing.B) {
+	lookup := func(network string, srcIP netip.Addr, srcPort int) (uint32, string, error) {
+		return 7, "C:\\app.exe", nil
+	}
+	cache := lru.New(lru.WithSize[processCacheKey, processCacheEntry](8))
+	ip := netip.MustParseAddr("192.168.1.2")
+	_, _, _ = lookupProcessName(cache, time.Hour, lookup, "tcp", ip, 54321)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, _, err := lookupProcessName(cache, time.Hour, lookup, "tcp", ip, 54321); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
