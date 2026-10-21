@@ -51,8 +51,10 @@ Removed: the never-wired dns `ClearAll` family, the unused `TunnelStatus`
 text codecs. Kept deliberately (upstream-inherited, dead in this fork's
 wiring but preserved for merge parity and downstream consumers such as CMFA):
 `component/trie` DomainMap and IpCidrTrie families, the anytls skiplist func
-variant, the legacy vmess AEAD codec, and the pre-go1.24 maphash port that the
-`go 1.20` toolchain floor still exercises.
+variant and the legacy vmess AEAD codec. The toolchain floor has since moved
+to go 1.24, so the pre-go1.24 maphash port, the once and contextutils shims
+and the other build-tagged variants are deleted, the x/exp dependencies are
+replaced by the stdlib, and the ci matrix runs go 1.24-1.27.1.
 
 ## Measured and deferred
 
