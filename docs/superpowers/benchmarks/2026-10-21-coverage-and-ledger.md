@@ -22,7 +22,7 @@ focused test, a benchmark or both.
 | `tunnel/statistic` | 49.0% | stripes, tracker lifecycle, snapshot |
 | `listener/socks` | 17.1% | per-flow metadata cache identity, split targets, warm-path benchmark |
 | `dns` | 22.1% | cache keys, parsed-ip cache, conn pool, exchange errors |
-| `hub/route` | 12.8% | real-listener auth matrix, hello/version, read endpoints |
+| `hub/route` | 15.6% | real-listener auth matrix, hello/version, read endpoints, provider and group reads with their render keys, and the not-found paths of the proxy and provider lookups plus the unknown-connection close |
 | `component/process` | 8.5% | cache hits, expiry, failure handling, 53ns hit benchmark |
 | `rules/common` | 67.0% | the payload shapes ParseRulePayload accepts, src/no-resolve params, the inbound name/user/type rules with the socks expansion, the process rule over name, path, regex and wildcard, the ip-suffix trailing-bit match, the match and ipcidr rule surfaces, and the geoip lan rule, its dns fallback filter, the geodata-mode metadata codes and the no-database constructor errors |
 | `common/once` | 100.0% | resettable Once: Done/Reset semantics, single run under concurrency, panic marks done |
