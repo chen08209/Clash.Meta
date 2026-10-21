@@ -20,7 +20,6 @@ jobs:
         os:
           - 'ubuntu-latest' # amd64 linux
           - 'windows-latest' # amd64 windows
-          - 'macos-latest' # arm64 macos
           - 'ubuntu-24.04-arm' # arm64 linux
           - 'windows-11-arm' # arm64 windows
           - 'macos-26-intel' # amd64 macos
