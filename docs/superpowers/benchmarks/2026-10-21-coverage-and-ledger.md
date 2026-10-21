@@ -71,7 +71,9 @@ papered over with getter-only tests.
 ## Dead-code ledger
 
 Removed: the never-wired dns `ClearAll` family, the unused `TunnelStatus`
-text codecs. Kept deliberately (upstream-inherited, dead in this fork's
+text codecs, and `common/net/relay.go`, a whole file of commented-out relay
+code the sing `Relay` replaced (its only live line was `package net`).
+Kept deliberately (upstream-inherited, dead in this fork's
 wiring but preserved for merge parity and downstream consumers such as CMFA):
 `component/trie` DomainMap and IpCidrTrie families, the anytls skiplist func
 variant and the legacy vmess AEAD codec. The toolchain floor has since moved
