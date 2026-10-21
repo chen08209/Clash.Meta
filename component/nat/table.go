@@ -27,6 +27,10 @@ func (t *Table) GetOrCreateForFlow(
 	key netip.AddrPort,
 	maker func() C.PacketSender,
 ) (C.PacketSender, bool) {
+	if item, loaded := t.mapping.Load(key); loaded {
+		return item.PacketSender, true
+	}
+
 	item, loaded := t.mapping.LoadOrStoreFn(key, func() *flowEntry {
 		return &flowEntry{
 			PacketSender: maker(),

@@ -652,3 +652,20 @@ which is a net win at this blast radius. The per-packet `net.UDPAddrFromAddrPort
 - [x] Benchmark the 100-datagram batch before and after with `benchstat`.
 - [x] Run sing tests with `-race`.
 - [x] Run the full main-module suite.
+
+### Task 41: Fast-Path NAT Flow Reads
+
+**Files:**
+- Modify: `component/nat/table.go`
+- Test: `component/nat/table_test.go`
+- Benchmark: `component/nat/table_test.go`
+
+**Interfaces:**
+- Produces: a read-first fast path for existing NAT flows.
+- Preserves: load-or-store semantics, first-mapping behavior, and safe flow creation.
+
+- [x] Check existing flows with `Load` before `LoadOrStoreFn`.
+- [x] Add a zero-alloc load-hit benchmark.
+- [x] Benchmark existing-flow get-or-create before and after with `benchstat`.
+- [x] Run NAT and tunnel tests with `-race`.
+- [x] Run the full main-module suite.

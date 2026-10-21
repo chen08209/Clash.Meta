@@ -108,6 +108,21 @@ func BenchmarkTableGetOrCreateForFlowHit(b *testing.B) {
 	}
 }
 
+func BenchmarkTableLoadForFlowHit(b *testing.B) {
+	table := New()
+	key := netip.MustParseAddrPort("192.168.1.2:54321")
+	sender := &noopPacketSender{}
+	table.GetOrCreateForFlow(key, func() C.PacketSender { return sender })
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, loaded := table.LoadForFlow(key); !loaded {
+			b.Fatal("existing flow was not loaded")
+		}
+	}
+}
+
 func BenchmarkTableCreateUDPFlow(b *testing.B) {
 	keys := make([]netip.AddrPort, b.N)
 	for i := range keys {

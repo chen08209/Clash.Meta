@@ -1,0 +1,12 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/component/nat
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkTableLoadForFlowHit-16    	61361613	        19.17 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTableLoadForFlowHit-16    	64405669	        19.23 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTableLoadForFlowHit-16    	60666420	        19.20 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTableLoadForFlowHit-16    	63693928	        21.69 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTableLoadForFlowHit-16    	60886507	        19.35 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTableLoadForFlowHit-16    	61334641	        18.80 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/component/nat	7.998s
