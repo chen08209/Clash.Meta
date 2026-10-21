@@ -547,3 +547,19 @@ which is a net win at this blast radius. The per-packet `net.UDPAddrFromAddrPort
 - [x] Benchmark tracker construction before and after with `benchstat`.
 - [x] Run statistic and tunnel tests with `-race`.
 - [x] Run the full main-module suite.
+
+### Task 35: Remove The BufferedConn Extended Wrapper
+
+**Files:**
+- Modify: `common/net/bufconn.go`
+- Benchmark: `common/net/bufconn_bench_test.go`
+
+**Interfaces:**
+- Produces: `BufferedConn` holding the underlying `net.Conn` directly.
+- Preserves: peek/growth semantics, cached reads, upstream discovery, `ExtendedConn` passthrough, and deadline handling.
+
+- [x] Stop allocating a Sing `ExtendedConnWrapper` for every plain TCP conn.
+- [x] Implement generic `ReadBuffer`/`WriteBuffer` with optimized passthrough when available.
+- [x] Benchmark construction before and after with `benchstat`.
+- [x] Run `common/net`, `component/sniffer`, and `tunnel` tests with `-race`.
+- [x] Run the full main-module suite.

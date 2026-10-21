@@ -16,7 +16,7 @@ const InitialPeekBufferSize = 512
 
 type BufferedConn struct {
 	r *bufio.Reader
-	ExtendedConn
+	net.Conn
 	peeked bool
 }
 
@@ -24,7 +24,7 @@ func NewBufferedConn(c net.Conn) *BufferedConn {
 	if bc, ok := c.(*BufferedConn); ok {
 		return bc
 	}
-	return &BufferedConn{bufio.NewReaderSize(c, InitialPeekBufferSize), NewExtendedConn(c), false}
+	return &BufferedConn{r: bufio.NewReaderSize(c, InitialPeekBufferSize), Conn: c}
 }
 
 func WarpConnWithBioReader(c net.Conn, br *bufio.Reader) net.Conn {
@@ -32,7 +32,7 @@ func WarpConnWithBioReader(c net.Conn, br *bufio.Reader) net.Conn {
 		if bc, ok := c.(*BufferedConn); ok && bc.r == br {
 			return bc
 		}
-		return &BufferedConn{br, NewExtendedConn(c), true}
+		return &BufferedConn{r: br, Conn: c, peeked: true}
 	}
 	return c
 }
@@ -81,7 +81,19 @@ func (c *BufferedConn) ReadBuffer(buffer *buf.Buffer) (err error) {
 		_, err = buffer.ReadOnceFrom(c.r)
 		return
 	}
-	return c.ExtendedConn.ReadBuffer(buffer)
+	if extended, ok := c.Conn.(ExtendedConn); ok {
+		return extended.ReadBuffer(buffer)
+	}
+	_, err = buffer.ReadOnceFrom(c.Conn)
+	return err
+}
+
+func (c *BufferedConn) WriteBuffer(buffer *buf.Buffer) (err error) {
+	if extended, ok := c.Conn.(ExtendedConn); ok {
+		return extended.WriteBuffer(buffer)
+	}
+	_, err = buffer.WriteTo(c.Conn)
+	return err
 }
 
 func (c *BufferedConn) ReadCached() *buf.Buffer { // call in sing/common/bufio.Copy
@@ -96,7 +108,7 @@ func (c *BufferedConn) ReadCached() *buf.Buffer { // call in sing/common/bufio.C
 }
 
 func (c *BufferedConn) Upstream() any {
-	return c.ExtendedConn
+	return c.Conn
 }
 
 func (c *BufferedConn) ReaderReplaceable() bool {
