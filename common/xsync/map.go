@@ -10,6 +10,7 @@ package xsync
 
 import (
 	"fmt"
+	"hash/maphash"
 	"math"
 	"math/bits"
 	"runtime"
@@ -17,8 +18,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"unsafe"
-
-	"github.com/metacubex/mihomo/common/maphash"
 )
 
 const (

@@ -1,9 +1,9 @@
 package tunnel
 
 import (
+	"hash/maphash"
 	"net/netip"
 
-	"github.com/metacubex/mihomo/common/maphash"
 	C "github.com/metacubex/mihomo/constant"
 )
 

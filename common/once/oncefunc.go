@@ -68,35 +68,3 @@ func OnceValue[T any](f func() T) func() T {
 		return result
 	}
 }
-
-// OnceValues returns a function that invokes f only once and returns the values
-// returned by f. The returned function may be called concurrently.
-//
-// If f panics, the returned function will panic with the same value on every call.
-func OnceValues[T1, T2 any](f func() (T1, T2)) func() (T1, T2) {
-	var (
-		once  sync.Once
-		valid bool
-		p     any
-		r1    T1
-		r2    T2
-	)
-	g := func() {
-		defer func() {
-			p = recover()
-			if !valid {
-				panic(p)
-			}
-		}()
-		r1, r2 = f()
-		f = nil
-		valid = true
-	}
-	return func() (T1, T2) {
-		once.Do(g)
-		if !valid {
-			panic(p)
-		}
-		return r1, r2
-	}
-}
