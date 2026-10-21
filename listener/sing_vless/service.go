@@ -9,6 +9,7 @@ import (
 	"net"
 
 	"github.com/metacubex/mihomo/common/atomic"
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/common/utils"
 	"github.com/metacubex/mihomo/transport/vless"
 	"github.com/metacubex/mihomo/transport/vless/vision"
@@ -258,12 +259,19 @@ func (c *serverPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) 
 	return
 }
 
+// WriteTo sends the length and the payload as one frame: writing the two-byte
+// header on its own cost a second write on the stream and an allocation.
 func (c *serverPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
-	err = binary.Write(c.ExtendedConn, binary.BigEndian, uint16(len(p)))
-	if err != nil {
+	buf := pool.Get(2 + len(p))
+	defer pool.Put(buf)
+
+	binary.BigEndian.PutUint16(buf, uint16(len(p)))
+	copy(buf[2:], p)
+	if _, err = c.ExtendedConn.Write(buf[:2+len(p)]); err != nil {
 		return
 	}
-	return c.ExtendedConn.Write(p)
+	n = len(p)
+	return
 }
 
 func (c *serverPacketConn) ReadPacket(buffer *buf.Buffer) (destination M.Socksaddr, err error) {
