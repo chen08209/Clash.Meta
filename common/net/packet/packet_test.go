@@ -10,12 +10,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newUDPTestPair(tb testing.TB) (*net.UDPConn, EnhancePacketConn) {
+func newUDPTestPair(tb testing.TB, network string, ip net.IP) (*net.UDPConn, EnhancePacketConn) {
 	tb.Helper()
 
-	server, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	server, err := net.ListenUDP(network, &net.UDPAddr{IP: ip})
+	if err != nil && network == "udp6" {
+		tb.Skipf("no loopback for %s: %v", network, err)
+	}
 	require.NoError(tb, err)
-	client, err := net.DialUDP("udp4", nil, server.LocalAddr().(*net.UDPAddr))
+	client, err := net.DialUDP(network, nil, server.LocalAddr().(*net.UDPAddr))
 	require.NoError(tb, err)
 	tb.Cleanup(func() {
 		_ = client.Close()
@@ -26,23 +29,33 @@ func newUDPTestPair(tb testing.TB) (*net.UDPConn, EnhancePacketConn) {
 }
 
 func TestWaitReadFromReturnsAddrPort(t *testing.T) {
-	client, conn := newUDPTestPair(t)
-	payload := []byte("ping")
+	for _, family := range []struct {
+		network string
+		ip      net.IP
+	}{
+		{network: "udp4", ip: net.IPv4(127, 0, 0, 1)},
+		{network: "udp6", ip: net.IPv6loopback},
+	} {
+		t.Run(family.network, func(t *testing.T) {
+			client, conn := newUDPTestPair(t, family.network, family.ip)
+			payload := []byte("ping")
 
-	_, err := client.Write(payload)
-	require.NoError(t, err)
-	data, addr, err := conn.WaitReadFrom()
-	require.NoError(t, err)
-	defer pool.Put(data)
+			_, err := client.Write(payload)
+			require.NoError(t, err)
+			data, addr, err := conn.WaitReadFrom()
+			require.NoError(t, err)
+			defer pool.Put(data)
 
-	require.Equal(t, payload, data)
-	require.Equal(t, client.LocalAddr().(*net.UDPAddr).AddrPort(), addr)
+			require.Equal(t, payload, data)
+			require.Equal(t, client.LocalAddr().(*net.UDPAddr).AddrPort(), addr)
+		})
+	}
 }
 
 func BenchmarkWaitReadFrom(b *testing.B) {
 	for _, size := range []int{64, 1500} {
 		b.Run(testPayloadName(size), func(b *testing.B) {
-			client, conn := newUDPTestPair(b)
+			client, conn := newUDPTestPair(b, "udp4", net.IPv4(127, 0, 0, 1))
 			payload := make([]byte, size)
 
 			b.ReportAllocs()
