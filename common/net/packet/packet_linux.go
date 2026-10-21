@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux && !386
 
 package packet
 
