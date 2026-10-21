@@ -39,6 +39,38 @@ func TestWaitReadFromReturnsAddrPort(t *testing.T) {
 	require.Equal(t, client.LocalAddr().(*net.UDPAddr).AddrPort(), addr)
 }
 
+func TestWaitReadFromReturnsIPv6AddrPort(t *testing.T) {
+	server, err := net.ListenUDP("udp6", &net.UDPAddr{IP: net.IPv6loopback})
+	require.NoError(t, err)
+	client, err := net.DialUDP("udp6", nil, server.LocalAddr().(*net.UDPAddr))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = client.Close()
+		_ = server.Close()
+	})
+
+	conn := NewEnhancePacketConn(server)
+	payload := []byte("ping")
+	_, err = client.Write(payload)
+	require.NoError(t, err)
+	data, addr, err := conn.WaitReadFrom()
+	require.NoError(t, err)
+	defer pool.Put(data)
+
+	require.Equal(t, payload, data)
+	require.Equal(t, client.LocalAddr().(*net.UDPAddr).AddrPort(), addr)
+}
+
+func TestWaitReadFromHandlesZeroLengthDatagram(t *testing.T) {
+	client, conn := newUDPTestPair(t)
+	_, err := client.Write(nil)
+	require.NoError(t, err)
+	data, addr, err := conn.WaitReadFrom()
+	require.NoError(t, err)
+	require.Nil(t, data)
+	require.Equal(t, client.LocalAddr().(*net.UDPAddr).AddrPort(), addr)
+}
+
 func BenchmarkWaitReadFrom(b *testing.B) {
 	for _, size := range []int{64, 1500} {
 		b.Run(testPayloadName(size), func(b *testing.B) {

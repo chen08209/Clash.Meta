@@ -481,3 +481,20 @@ which is a net win at this blast radius. The per-packet `net.UDPAddrFromAddrPort
 - [x] Cover canonical hits, normalized hits, invalid inputs, and misses.
 - [x] Benchmark 6 samples against the pre-change tree with `benchstat`.
 - [x] Run `component/trie`, `tunnel`, and `dns` tests, the full main-module suite, `go vet`, and focused `-race` tests.
+
+### Task 31: Raw Windows UDP Reads
+
+**Files:**
+- Modify: `common/net/packet/packet_windows.go`
+- Test: `common/net/packet/packet_test.go`
+- Benchmark: `common/net/packet/packet_test.go`
+
+**Interfaces:**
+- Produces: a `WSARecvFrom` fast path with a stack `RawSockaddrAny`.
+- Preserves: pooled read buffers, would-block retry, IPv4/IPv6 zones, zero-length datagrams, and the `WaitReadFrom` contract.
+
+- [x] Replace the sockaddr-allocating `Recvfrom` wrapper on the Windows UDP read path.
+- [x] Convert the raw kernel sockaddr straight to `netip.AddrPort`.
+- [x] Cover IPv4, IPv6, and zero-length datagrams.
+- [x] Benchmark 6 samples against the pre-change tree with `benchstat`.
+- [x] Run packet tests with `-race`, `go vet`, the Windows build matrix, and the full main-module suite.

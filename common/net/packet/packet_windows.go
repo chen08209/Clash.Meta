@@ -5,8 +5,8 @@ package packet
 import (
 	"net"
 	"net/netip"
-	"strconv"
 	"syscall"
+	"unsafe"
 
 	"github.com/metacubex/mihomo/common/pool"
 
@@ -27,30 +27,33 @@ func (c *enhanceUDPConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err e
 	err = c.rawConn.Read(func(fd uintptr) (done bool) {
 		if !hasData {
 			hasData = true
-			// A zero-byte read only waits for readiness; Recvfrom runs on the next callback.
+			// A zero-byte read only waits for readiness; recvfrom runs on the next callback.
 			return false
 		}
 		readBuf := pool.Get(pool.UDPBufferSize)
-		var readFrom windows.Sockaddr
-		var readN int
-		readN, readFrom, readErr = windows.Recvfrom(windows.Handle(fd), readBuf, 0)
-		if readN > 0 {
-			data = readBuf[:readN]
-		} else {
-			_ = pool.Put(readBuf)
-		}
+		wsaBuf := &windows.WSABuf{Len: uint32(len(readBuf)), Buf: &readBuf[0]}
+		var rsa windows.RawSockaddrAny
+		rsaLen := int32(unsafe.Sizeof(rsa))
+		var recvd, flags uint32
+		readErr = windows.WSARecvFrom(windows.Handle(fd), wsaBuf, 1, &recvd, &flags, &rsa, &rsaLen, nil, nil)
 		if readErr == windows.WSAEWOULDBLOCK {
+			_ = pool.Put(readBuf)
 			return false
 		}
-		switch from := readFrom.(type) {
-		case *windows.SockaddrInet4:
-			addr = netip.AddrPortFrom(netip.AddrFrom4(from.Addr), uint16(from.Port))
-		case *windows.SockaddrInet6:
-			zone := ""
-			if from.ZoneId != 0 {
-				zone = strconv.FormatInt(int64(from.ZoneId), 10)
-			}
-			addr = netip.AddrPortFrom(netip.AddrFrom16(from.Addr).WithZone(zone).Unmap(), uint16(from.Port))
+		if readErr != nil {
+			_ = pool.Put(readBuf)
+			return true
+		}
+		switch family := rsa.Addr.Family; family {
+		case windows.AF_INET:
+			addr = sockaddrInet4ToAddrPort((*syscall.RawSockaddrInet4)(unsafe.Pointer(&rsa.Addr)))
+		case windows.AF_INET6:
+			addr = sockaddrInet6ToAddrPort((*syscall.RawSockaddrInet6)(unsafe.Pointer(&rsa.Addr)))
+		}
+		if recvd > 0 {
+			data = readBuf[:recvd]
+		} else {
+			_ = pool.Put(readBuf)
 		}
 		hasData = false
 		return true
