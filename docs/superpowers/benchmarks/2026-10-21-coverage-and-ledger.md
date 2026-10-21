@@ -46,6 +46,7 @@ papered over with getter-only tests.
 | `4e2307dec` | restore the escape-based pre-go1.24 comparable hash | ci matrix green on 1.20-1.26 |
 | `5ed65de65` | linux 386 packet fallback | `GOOS=linux GOARCH=386 go build ./...` |
 | `96aee6987` | drop the never-wired dns ClearAll, unused status codecs | deadcode scan, both build entry points |
+| `f07e6fb62` | structured sticky-session hashes instead of string keys | sticky pick benchmark 594-606 ns / 6 allocs -> 438-462 ns / 2 allocs |
 
 ## Dead-code ledger
 
