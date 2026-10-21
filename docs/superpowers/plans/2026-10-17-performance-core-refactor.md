@@ -515,3 +515,20 @@ which is a net win at this blast radius. The per-packet `net.UDPAddrFromAddrPort
 - [x] Keep the existing-flow admission and allocation gates.
 - [x] Benchmark 6+10 samples against the pre-change tree with `benchstat`.
 - [x] Run tunnel tests with `-race` and the full main-module suite.
+
+### Task 33: Skip Empty-Host Hosts Lookups
+
+**Files:**
+- Modify: `tunnel/tunnel.go`
+- Test: `tunnel/metadata_test.go`
+- Benchmark: `tunnel/metadata_test.go`
+
+**Interfaces:**
+- Produces: empty-host short-circuits before `DefaultHosts.Search` in metadata prehandling and rule resolution.
+- Preserves: domain mapping, redir-host lookup, fake-IP handling, process lookup, and rule resolution order.
+
+- [x] Avoid constructing an invalid-domain miss for IP-only metadata.
+- [x] Read the find-process mode once in `resolveMetadata`.
+- [x] Pin the empty-host path at zero allocations.
+- [x] Benchmark 6 samples against the pre-change tree with `benchstat`.
+- [x] Run tunnel tests with `-race` and the full main-module suite.

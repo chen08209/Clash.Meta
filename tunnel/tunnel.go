@@ -312,9 +312,11 @@ func preHandleMetadata(metadata *C.Metadata) error {
 		} else if resolver.IsFakeIP(metadata.DstIP) {
 			return fmt.Errorf("fake DNS record %s missing", metadata.DstIP)
 		}
-	} else if node, ok := resolver.DefaultHosts.Search(metadata.Host, true); ok {
-		// try use domain mapping
-		metadata.Host = node.Domain
+	} else if metadata.Host != "" {
+		if node, ok := resolver.DefaultHosts.Search(metadata.Host, true); ok {
+			// try use domain mapping
+			metadata.Host = node.Domain
+		}
 	}
 
 	return nil
@@ -331,13 +333,16 @@ func resolveMetadata(metadata *C.Metadata) (proxy C.Proxy, rule C.Rule, err erro
 		return
 	}
 	hostsResolved := false
-	processLookupEnabled := FindProcessMode() == process.FindProcessStrict
-	if node, ok := resolver.DefaultHosts.Search(metadata.Host, false); ok {
-		metadata.DstIP, _ = node.RandIP()
-		hostsResolved = true
+	findProcessMode := FindProcessMode()
+	processLookupEnabled := findProcessMode == process.FindProcessStrict
+	if metadata.Host != "" {
+		if node, ok := resolver.DefaultHosts.Search(metadata.Host, false); ok {
+			metadata.DstIP, _ = node.RandIP()
+			hostsResolved = true
+		}
 	}
 
-	switch FindProcessMode() {
+	switch findProcessMode {
 	case process.FindProcessAlways:
 		processContext := &matchContext{
 			metadata:             metadata,
