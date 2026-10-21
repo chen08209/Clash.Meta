@@ -634,3 +634,21 @@ which is a net win at this blast radius. The per-packet `net.UDPAddrFromAddrPort
 - [x] Benchmark sticky-session picking before and after with `benchstat`.
 - [x] Run outbound-group tests with `-race`.
 - [x] Run the full main-module suite.
+
+### Task 40: Consolidate Sing Packet Writer State
+
+**Files:**
+- Modify: `listener/sing/sing.go`
+- Test: `listener/sing/packet_test.go`
+- Benchmark: `listener/sing/metadata_template_test.go`
+
+**Interfaces:**
+- Produces: one `packetWriterState` for the packet writer and write mutex.
+- Preserves: write-back ordering, closed-connection errors, pooled packet wrappers, and buffer recycling.
+
+- [x] Replace separate writer and mutex boxes with one connection state object.
+- [x] Keep close/write-back ordering in one method.
+- [x] Cover the close-once write-back contract.
+- [x] Benchmark the 100-datagram batch before and after with `benchstat`.
+- [x] Run sing tests with `-race`.
+- [x] Run the full main-module suite.

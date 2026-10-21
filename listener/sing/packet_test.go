@@ -1,10 +1,13 @@
 package sing
 
 import (
+	"net"
 	"net/netip"
 	"testing"
 
 	C "github.com/metacubex/mihomo/constant"
+	"github.com/metacubex/sing/common/buf"
+	M "github.com/metacubex/sing/common/metadata"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,4 +33,26 @@ func TestNewPacketAdapterOnSingPacketSkipsTheUDPAddr(t *testing.T) {
 		}
 	})
 	require.EqualValues(t, 1, allocations)
+}
+
+func TestPacketWriterStateClosesOnce(t *testing.T) {
+	state := newSingPacketState(fakePacketWriter{})
+
+	n, err := state.writeBack([]byte("ping"), netip.MustParseAddrPort("127.0.0.1:53"))
+	require.NoError(t, err)
+	require.Equal(t, 4, n)
+
+	state.close()
+	_, err = state.writeBack([]byte("ping"), netip.MustParseAddrPort("127.0.0.1:53"))
+	require.EqualError(t, err, "writeBack to closed connection")
+}
+
+type fakePacketWriter struct{}
+
+func (fakePacketWriter) WritePacket(_ *buf.Buffer, _ M.Socksaddr) error {
+	return nil
+}
+
+func (fakePacketWriter) WriteTo(p []byte, _ net.Addr) (int, error) {
+	return len(p), nil
 }

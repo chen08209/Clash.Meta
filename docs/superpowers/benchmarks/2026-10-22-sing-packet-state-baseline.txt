@@ -1,0 +1,12 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/listener/sing
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkNewPacketConnectionDatagramBatch-16    	  183967	      6553 ns/op	     714 B/op	      11 allocs/op
+BenchmarkNewPacketConnectionDatagramBatch-16    	  184041	      6709 ns/op	     714 B/op	      11 allocs/op
+BenchmarkNewPacketConnectionDatagramBatch-16    	  179460	      6488 ns/op	     715 B/op	      11 allocs/op
+BenchmarkNewPacketConnectionDatagramBatch-16    	  186428	      6729 ns/op	     715 B/op	      11 allocs/op
+BenchmarkNewPacketConnectionDatagramBatch-16    	  181641	     12062 ns/op	     715 B/op	      11 allocs/op
+BenchmarkNewPacketConnectionDatagramBatch-16    	  159397	      7059 ns/op	     714 B/op	      11 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/listener/sing	10.222s

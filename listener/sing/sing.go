@@ -155,16 +155,8 @@ func (h *ListenerHandler) NewPacketConnection(ctx context.Context, conn network.
 	}
 
 	defer func() { _ = conn.Close() }()
-	mutex := sync.Mutex{}
-	writer := bufio.NewNetPacketWriter(conn)
-	writerBox := &writer
-	mutexBox := &mutex
-	defer func() {
-		// this goroutine must exit after all conn.WritePacket() is not running
-		mutexBox.Lock()
-		defer mutexBox.Unlock()
-		writer = nil
-	}()
+	state := newSingPacketState(bufio.NewNetPacketWriter(conn))
+	defer state.close()
 	rwOptions := network.ReadWaitOptions{}
 	readWaiter, isReadWaiter := bufio.CreatePacketReadWaiter(conn)
 	if isReadWaiter {
@@ -205,7 +197,7 @@ func (h *ListenerHandler) NewPacketConnection(ctx context.Context, conn network.
 			}
 			return err
 		}
-		cPacket := newSingPacket(writerBox, mutexBox, metadata.Source.AddrPort(), inAddr, buff)
+		cPacket := newSingPacket(state, metadata.Source.AddrPort(), inAddr, buff)
 		if metadataTemplate != nil && dest == templateDest {
 			h.Tunnel.HandleUDPPacket(cPacket, metadataTemplate)
 			continue
@@ -222,10 +214,9 @@ type localAddr interface {
 }
 
 func (h *ListenerHandler) NewPacket(ctx context.Context, key netip.AddrPort, buffer *buf.Buffer, metadata M.Metadata, init func(natConn network.PacketConn) network.PacketWriter) {
-	writer := bufio.NewNetPacketWriter(init(nil))
-	mutex := sync.Mutex{}
-	cPacket := newSingPacket(&writer, &mutex, metadata.Source.AddrPort(), nil, buffer)
-	if conn, ok := common.Cast[localAddr](writer); ok { // tun does not have real inAddr
+	state := newSingPacketState(bufio.NewNetPacketWriter(init(nil)))
+	cPacket := newSingPacket(state, metadata.Source.AddrPort(), nil, buffer)
+	if conn, ok := common.Cast[localAddr](state.writer); ok { // tun does not have real inAddr
 		cPacket.lAddr = conn.LocalAddr()
 	}
 	h.handlePacket(ctx, cPacket, metadata.Source, metadata.Destination)
@@ -266,11 +257,37 @@ func ShouldIgnorePacketError(err error) bool {
 	return false
 }
 
-func newSingPacket(writer *network.NetPacketWriter, mutex *sync.Mutex, source netip.AddrPort, lAddr net.Addr, buff *buf.Buffer) *packet {
+type packetWriterState struct {
+	writer network.NetPacketWriter
+	mutex  sync.Mutex
+}
+
+func newSingPacketState(writer network.NetPacketWriter) *packetWriterState {
+	return &packetWriterState{writer: writer}
+}
+
+func (s *packetWriterState) close() {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	s.writer = nil
+}
+
+func (s *packetWriterState) writeBack(b []byte, addr netip.AddrPort) (n int, err error) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if s.writer == nil {
+		err = errors.New("writeBack to closed connection")
+		return
+	}
+
+	// sing's writer speaks net.Addr, so the address crosses that one boundary.
+	return s.writer.WriteTo(b, net.UDPAddrFromAddrPort(addr))
+}
+
+func newSingPacket(state *packetWriterState, source netip.AddrPort, lAddr net.Addr, buff *buf.Buffer) *packet {
 	singPacket := singPacketPool.Get().(*packet)
 	*singPacket = packet{
-		writer: writer,
-		mutex:  mutex,
+		state:  state,
 		source: source,
 		lAddr:  lAddr,
 		buff:   buff,
@@ -302,8 +319,7 @@ func newSingBuffer(rwOptions network.ReadWaitOptions) *buf.Buffer {
 }
 
 type packet struct {
-	writer *network.NetPacketWriter
-	mutex  *sync.Mutex
+	state  *packetWriterState
 	source netip.AddrPort
 	lAddr  net.Addr
 	buff   *buf.Buffer
@@ -320,16 +336,7 @@ func (c *packet) FlowKey() netip.AddrPort {
 
 // WriteBack wirtes UDP packet with source(ip, port) = `addr`
 func (c *packet) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	conn := *c.writer
-	if conn == nil {
-		err = errors.New("writeBack to closed connection")
-		return
-	}
-
-	// sing's writer speaks net.Addr, so the address crosses that one boundary
-	return conn.WriteTo(b, net.UDPAddrFromAddrPort(addr))
+	return c.state.writeBack(b, addr)
 }
 
 // LocalAddr returns the source IP/Port of UDP Packet
