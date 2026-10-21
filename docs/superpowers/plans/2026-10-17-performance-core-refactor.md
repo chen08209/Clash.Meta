@@ -498,3 +498,20 @@ which is a net win at this blast radius. The per-packet `net.UDPAddrFromAddrPort
 - [x] Cover IPv4, IPv6, and zero-length datagrams.
 - [x] Benchmark 6 samples against the pre-change tree with `benchstat`.
 - [x] Run packet tests with `-race`, `go vet`, the Windows build matrix, and the full main-module suite.
+
+### Task 32: Reuse The UDP Flow Key
+
+**Files:**
+- Modify: `tunnel/tunnel.go`
+- Test: `tunnel/tunnel_bench_test.go`, `tunnel/tunnel_test.go`
+- Benchmark: `tunnel/tunnel_bench_test.go`
+
+**Interfaces:**
+- Produces: a `udpPacket` queue item carrying the packet and its validated flow key.
+- Preserves: worker hash, overload drop, metadata fixes, sniffing, and flow-creation semantics.
+
+- [x] Compute the flow key once when the packet is admitted to the UDP queue.
+- [x] Load the runtime snapshot only when a new flow must be created.
+- [x] Keep the existing-flow admission and allocation gates.
+- [x] Benchmark 6+10 samples against the pre-change tree with `benchstat`.
+- [x] Run tunnel tests with `-race` and the full main-module suite.

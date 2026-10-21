@@ -63,14 +63,15 @@ func TestHandleUDPConnMissingFakeRecord(t *testing.T) {
 		DstPort: 443,
 	}
 	adapter := C.NewPacketAdapter(packet, metadata)
-	key := adapter.Key()
-	natTable.Delete(key) // clear any entry a previous run left behind
+	flowKey, _ := packetFlowKey(adapter)
+	legacyKey := flowKey.String()
+	natTable.Delete(legacyKey) // clear any entry a previous run left behind
 
-	handleUDPConn(adapter)
+	handleUDPConn(udpPacket{packet: adapter, key: flowKey})
 
 	require.Eventually(t, func() bool {
 		// the failed session must not leave an entry behind
-		_, loaded := natTable.GetOrCreate(key, func() C.PacketSender { return newPacketSender() })
+		_, loaded := natTable.GetOrCreate(legacyKey, func() C.PacketSender { return newPacketSender() })
 		return !loaded
 	}, 2*time.Second, 5*time.Millisecond)
 
