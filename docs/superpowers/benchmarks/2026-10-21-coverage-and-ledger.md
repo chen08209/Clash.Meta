@@ -51,6 +51,7 @@ papered over with getter-only tests.
 | `427435b96` | Hysteria UDP hop pool uses fixed-size array pointers | pool benchmark 27.78-65.95 ns / 1 alloc -> 9.37-10.03 ns, 0 allocs |
 | `4940fbb70` | recycle sing UDP packet wrappers through Drop | 100-datagram batch 11.2-65.6 us / 15.13-15.15 KB / 211 allocs -> 9.41-10.34 us / 7.13 KB / 111 allocs |
 | `4a0ba873b` | reuse sing packet read buffers after Drop | 100-datagram batch 9.41-10.34 us / 7.13 KB / 111 allocs -> 6.10-6.32 us / 714-715 B / 11 allocs |
+| `8caa05d75` | allocate TCP peek buffering only for sniffing or handshakes | direct TCP setup benchmark 45.2-42.1 KB / 134-137 allocs -> 41.3-41.6 KB / 128 allocs; conn-context test pins the lazy path |
 
 ## Dead-code ledger
 
