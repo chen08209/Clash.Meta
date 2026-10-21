@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/netip"
-	"golang.org/x/exp/slices"
+	"slices"
 	"testing"
 
 	C "github.com/metacubex/mihomo/constant"

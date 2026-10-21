@@ -5,10 +5,11 @@ import (
 	"net/netip"
 	"time"
 
+	"slices"
+
 	"github.com/metacubex/mihomo/component/resolver"
 	D "github.com/miekg/dns"
 	"github.com/samber/lo"
-	"golang.org/x/exp/slices"
 )
 
 func ipCacheEntryKey(host string, qtype uint16) ipCacheKey {

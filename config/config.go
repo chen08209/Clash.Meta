@@ -41,7 +41,7 @@ import (
 	RW "github.com/metacubex/mihomo/rules/wrapper"
 	T "github.com/metacubex/mihomo/tunnel"
 
-	"golang.org/x/exp/slices"
+	"slices"
 )
 
 // General config

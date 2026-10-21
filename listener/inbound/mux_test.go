@@ -5,8 +5,9 @@ import (
 
 	"github.com/metacubex/mihomo/adapter/outbound"
 
+	"slices"
+
 	"github.com/stretchr/testify/assert"
-	"golang.org/x/exp/slices"
 )
 
 var singMuxProtocolList = []string{"h2mux", "smux", "yamux"}

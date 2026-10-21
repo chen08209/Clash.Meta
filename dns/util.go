@@ -14,9 +14,10 @@ import (
 	"github.com/metacubex/mihomo/component/resolver"
 	"github.com/metacubex/mihomo/log"
 
+	"slices"
+
 	D "github.com/miekg/dns"
 	"github.com/samber/lo"
-	"golang.org/x/exp/slices"
 )
 
 const (

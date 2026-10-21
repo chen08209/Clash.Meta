@@ -14,7 +14,7 @@ import (
 	"github.com/metacubex/mihomo/log"
 
 	"github.com/metacubex/tls"
-	"golang.org/x/exp/slices"
+	"slices"
 )
 
 const Mode = "shadow-tls"

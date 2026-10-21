@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"golang.org/x/exp/slices"
+	"slices"
 )
 
 // A dialer-proxy can lead back to its own proxy through a group, and the dial

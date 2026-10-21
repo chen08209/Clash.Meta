@@ -18,9 +18,10 @@ import (
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/transport/vmess"
 
+	"slices"
+
 	"github.com/metacubex/http"
 	"github.com/metacubex/http/httptrace"
-	"golang.org/x/exp/slices"
 )
 
 type DialOptionsFunc func() []dialer.Option

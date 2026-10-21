@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"golang.org/x/exp/constraints"
+	"github.com/metacubex/sing/common/x/constraints"
 )
 
 type IntRanges[T constraints.Integer] []Range[T]

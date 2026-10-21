@@ -18,10 +18,11 @@ import (
 	"github.com/metacubex/mihomo/transport/socks5"
 	"github.com/metacubex/mihomo/transport/tuic"
 
+	"slices"
+
 	"github.com/gofrs/uuid/v5"
 	"github.com/metacubex/quic-go"
 	"github.com/metacubex/tls"
-	"golang.org/x/exp/slices"
 )
 
 const ServerMaxIncomingStreams = (1 << 32) - 1

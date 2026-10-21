@@ -18,12 +18,13 @@ import (
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/log"
 
+	"slices"
+
 	"github.com/metacubex/http"
 	"github.com/metacubex/quic-go"
 	"github.com/metacubex/quic-go/http3"
 	"github.com/metacubex/tls"
 	D "github.com/miekg/dns"
-	"golang.org/x/exp/slices"
 )
 
 // Values to configure HTTP and HTTP/2 transport.

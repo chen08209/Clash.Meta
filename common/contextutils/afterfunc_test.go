@@ -14,7 +14,7 @@ const (
 func TestAfterFuncCalledAfterCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	donec := make(chan struct{})
-	stop := afterFunc(ctx, func() {
+	stop := AfterFunc(ctx, func() {
 		close(donec)
 	})
 	select {
@@ -37,7 +37,7 @@ func TestAfterFuncCalledAfterTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), shortDuration)
 	defer cancel()
 	donec := make(chan struct{})
-	afterFunc(ctx, func() {
+	AfterFunc(ctx, func() {
 		close(donec)
 	})
 	select {
@@ -51,7 +51,7 @@ func TestAfterFuncCalledImmediately(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	donec := make(chan struct{})
-	afterFunc(ctx, func() {
+	AfterFunc(ctx, func() {
 		close(donec)
 	})
 	select {
@@ -64,7 +64,7 @@ func TestAfterFuncCalledImmediately(t *testing.T) {
 func TestAfterFuncNotCalledAfterStop(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	donec := make(chan struct{})
-	stop := afterFunc(ctx, func() {
+	stop := AfterFunc(ctx, func() {
 		close(donec)
 	})
 	if !stop() {
@@ -85,7 +85,7 @@ func TestAfterFuncNotCalledAfterStop(t *testing.T) {
 func TestAfterFuncCalledAsynchronously(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	donec := make(chan struct{})
-	stop := afterFunc(ctx, func() {
+	stop := AfterFunc(ctx, func() {
 		// The channel send blocks until donec is read from.
 		donec <- struct{}{}
 	})

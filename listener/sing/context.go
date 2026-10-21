@@ -2,8 +2,8 @@ package sing
 
 import (
 	"context"
-	"golang.org/x/exp/slices"
 	"net"
+	"slices"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 

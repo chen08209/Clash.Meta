@@ -14,6 +14,3 @@ func WriteComparable[T comparable](h *Hash, x T) {
 
 const testComparableAllocations = true
 
-// ComparableAllocationFree reports whether Comparable can run without
-// allocating; the stdlib implementation never allocates.
-const ComparableAllocationFree = true

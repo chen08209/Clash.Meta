@@ -29,7 +29,7 @@ import (
 	"github.com/metacubex/mihomo/log"
 	"github.com/metacubex/mihomo/tunnel/statistic"
 
-	"golang.org/x/exp/slices"
+	"slices"
 )
 
 const (

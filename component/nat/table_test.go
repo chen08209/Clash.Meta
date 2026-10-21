@@ -5,7 +5,6 @@ import (
 	"net/netip"
 	"testing"
 
-	"github.com/metacubex/mihomo/common/maphash"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/stretchr/testify/require"
 )
@@ -71,14 +70,7 @@ func TestLocalConnLookupStaysAllocationFree(t *testing.T) {
 			t.Fatal("local conn lookup missed")
 		}
 	})
-	if maphash.ComparableAllocationFree {
-		require.EqualValues(t, 0, allocations)
-	} else {
-		// The pre-go1.24 hasher port escapes the key on every hash; the
-		// lookup probes three tables, so three hash allocations are the
-		// floor and the table itself must add nothing.
-		require.LessOrEqual(t, int(allocations), 3)
-	}
+	require.EqualValues(t, 0, allocations)
 }
 
 func BenchmarkGetForLocalConnHit(b *testing.B) {

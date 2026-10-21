@@ -13,7 +13,7 @@ import (
 	"github.com/metacubex/tls"
 	utls "github.com/metacubex/utls"
 	"github.com/mroth/weightedrand/v2"
-	"golang.org/x/exp/slices"
+	"slices"
 )
 
 type Conn = utls.Conn

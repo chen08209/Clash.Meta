@@ -10,7 +10,7 @@ import (
 
 	"github.com/metacubex/mihomo/common/utils"
 	"github.com/openacid/low/bitmap"
-	"golang.org/x/exp/slices"
+	"slices"
 )
 
 const (

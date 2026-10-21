@@ -13,7 +13,7 @@ import (
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/log"
 
-	"golang.org/x/exp/slices"
+	"slices"
 )
 
 type GEOIP struct {

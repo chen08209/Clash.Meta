@@ -24,13 +24,14 @@ import (
 	"github.com/metacubex/mihomo/transport/mkcp"
 	mihomoVMess "github.com/metacubex/mihomo/transport/vmess"
 
+	"slices"
+
 	"github.com/metacubex/http"
 	"github.com/metacubex/mhurl"
 	vmess "github.com/metacubex/sing-vmess"
 	"github.com/metacubex/sing/common"
 	"github.com/metacubex/sing/common/metadata"
 	"github.com/metacubex/tls"
-	"golang.org/x/exp/slices"
 )
 
 type Listener struct {

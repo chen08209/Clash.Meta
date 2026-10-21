@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/metacubex/gvisor/pkg/common/x/constraints"
 	"github.com/metacubex/mihomo/adapter/inbound"
 	"github.com/metacubex/mihomo/component/dialer"
 	"github.com/metacubex/mihomo/component/iface"
@@ -22,7 +23,6 @@ import (
 	LC "github.com/metacubex/mihomo/listener/config"
 	"github.com/metacubex/mihomo/listener/sing"
 	"github.com/metacubex/mihomo/log"
-	"golang.org/x/exp/constraints"
 
 	tun "github.com/metacubex/sing-tun"
 	"github.com/metacubex/sing/common"
@@ -31,9 +31,10 @@ import (
 	F "github.com/metacubex/sing/common/format"
 	"github.com/metacubex/sing/common/ranges"
 
+	"maps"
+	"slices"
+
 	"go4.org/netipx"
-	"golang.org/x/exp/maps"
-	"golang.org/x/exp/slices"
 )
 
 var InterfaceName = "Meta"
@@ -571,7 +572,7 @@ func (l *Listener) updateRule(ruleProvider P.RuleProvider, exclude bool, update 
 			} else {
 				delete(l.routeAddressMap, name)
 			}
-			l.routeAddressSet = maps.Values(l.routeAddressMap)
+			l.routeAddressSet = slices.Collect(maps.Values(l.routeAddressMap))
 		} else {
 			ipCidr := rp.ToIpCidr()
 			if ipCidr != nil {
@@ -579,7 +580,7 @@ func (l *Listener) updateRule(ruleProvider P.RuleProvider, exclude bool, update 
 			} else {
 				delete(l.routeExcludeAddressMap, name)
 			}
-			l.routeExcludeAddressSet = maps.Values(l.routeExcludeAddressMap)
+			l.routeExcludeAddressSet = slices.Collect(maps.Values(l.routeExcludeAddressMap))
 		}
 	default:
 		return

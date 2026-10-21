@@ -5,8 +5,9 @@ import (
 
 	C "github.com/metacubex/mihomo/constant"
 
+	"slices"
+
 	"go4.org/netipx"
-	"golang.org/x/exp/slices"
 )
 
 type Tun struct {

@@ -9,7 +9,7 @@ import (
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/transport/socks5"
 
-	"golang.org/x/exp/slices"
+	"slices"
 )
 
 type UDPListener struct {

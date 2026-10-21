@@ -14,9 +14,10 @@ import (
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/log"
 
+	"maps"
+
 	D "github.com/miekg/dns"
 	"github.com/samber/lo"
-	"golang.org/x/exp/maps"
 )
 
 type dnsClient interface {

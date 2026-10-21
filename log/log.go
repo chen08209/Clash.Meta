@@ -114,13 +114,13 @@ func print(data Event) {
 
 	switch data.LogLevel {
 	case INFO:
-		log.Infoln(data.Payload)
+		log.StandardLogger().Log(log.InfoLevel, data.Payload)
 	case WARNING:
-		log.Warnln(data.Payload)
+		log.StandardLogger().Log(log.WarnLevel, data.Payload)
 	case ERROR:
-		log.Errorln(data.Payload)
+		log.StandardLogger().Log(log.ErrorLevel, data.Payload)
 	case DEBUG:
-		log.Debugln(data.Payload)
+		log.StandardLogger().Log(log.DebugLevel, data.Payload)
 	}
 }
 
