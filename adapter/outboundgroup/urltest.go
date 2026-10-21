@@ -295,11 +295,7 @@ func (u *URLTest) IsL3Protocol(metadata *C.Metadata) bool {
 
 // MarshalJSON implements C.ProxyAdapter
 func (u *URLTest) MarshalJSON() ([]byte, error) {
-	proxies := u.GetProxies(false)
-	all := make([]string, 0, len(proxies))
-	for _, proxy := range proxies {
-		all = append(all, proxy.Name())
-	}
+	all := memberNames(u.GetProxies(false))
 	return json.Marshal(map[string]any{
 		"type":           u.Type().String(),
 		"now":            u.Now(),
