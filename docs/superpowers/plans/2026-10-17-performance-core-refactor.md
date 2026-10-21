@@ -579,3 +579,22 @@ which is a net win at this blast radius. The per-packet `net.UDPAddrFromAddrPort
 - [x] Benchmark the writer unwrap/wrap path before and after with `benchstat`.
 - [x] Run `common/net`, `component/sniffer`, and `tunnel` tests with `-race`.
 - [x] Run the full main-module suite.
+
+### Task 37: Fast-Path UDP Sends
+
+**Files:**
+- Modify: `tunnel/connection.go`
+- Test: `tunnel/flow_key_bench_test.go`
+- Benchmark: `tunnel/tunnel_bench_test.go`
+
+**Interfaces:**
+- Produces: an atomic closure check + buffered-channel-only UDP send fast path.
+- Preserves: nonblocking overload drops, closed-sender drops, packet lifecycle, and close/send
+  ordering.
+
+- [x] Publish a closed flag and wait for in-flight sends before draining.
+- [x] Remove `ctx.Done()` from the normal UDP send select.
+- [x] Cover queue-full, closed-sender, and concurrent close/send semantics.
+- [x] Benchmark existing-flow handling before and after with `benchstat`.
+- [x] Run tunnel tests with `-race`.
+- [x] Run the full main-module suite.
