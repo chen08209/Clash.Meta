@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/metacubex/mihomo/common/once"
 	"github.com/metacubex/mihomo/ntp"
 
 	"github.com/metacubex/tls"
@@ -134,7 +133,7 @@ func GetTLSConfig(opt Option) (tlsConfig *tls.Config, err error) {
 	return tlsConfig, nil
 }
 
-var zeroTrustCertPool = once.OnceValue(func() *x509.CertPool {
+var zeroTrustCertPool = sync.OnceValue(func() *x509.CertPool {
 	if len(_CaCertificates) != 0 { // always using embed cert first
 		zeroTrustCertPool := x509.NewCertPool()
 		if zeroTrustCertPool.AppendCertsFromPEM(_CaCertificates) {
