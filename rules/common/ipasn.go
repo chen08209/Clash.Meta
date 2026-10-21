@@ -16,7 +16,7 @@ type ASN struct {
 }
 
 func (a *ASN) Match(metadata *C.Metadata, helper C.RuleMatchHelper) (bool, string) {
-	if !a.noResolveIP && !a.isSourceIP && helper.ResolveIP != nil {
+	if !a.noResolveIP && !a.isSourceIP {
 		helper.ResolveIP()
 	}
 

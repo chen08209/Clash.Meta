@@ -42,9 +42,7 @@ func (u *Uid) RuleType() C.RuleType {
 }
 
 func (u *Uid) Match(metadata *C.Metadata, helper C.RuleMatchHelper) (bool, string) {
-	if helper.FindProcess != nil {
-		helper.FindProcess()
-	}
+	helper.FindProcess()
 	if metadata.Uid != 0 {
 		if u.uids.Check(metadata.Uid) {
 			return true, u.adapter

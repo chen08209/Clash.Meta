@@ -12,12 +12,16 @@ type countingResolve struct {
 	calls int
 }
 
-func (c *countingResolve) helper() C.RuleMatchHelper {
-	return C.RuleMatchHelper{ResolveIP: c.resolve}
+func (c *countingResolve) ResolveIP() {
+	c.calls++
 }
 
-func (c *countingResolve) resolve() {
-	c.calls++
+func (c *countingResolve) FindProcess() {}
+
+func (c *countingResolve) CheckPassRule(string) bool { return false }
+
+func (c *countingResolve) helper() C.RuleMatchHelper {
+	return C.RuleMatchHelper{Context: c}
 }
 
 func TestDomainMatcherSemantics(t *testing.T) {

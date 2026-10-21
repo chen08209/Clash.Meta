@@ -14,11 +14,11 @@ func TestMatchContextResolvesOnce(t *testing.T) {
 	metadata := &C.Metadata{Host: "127.0.0.1"}
 	context := &matchContext{metadata: metadata}
 
-	context.resolveIP()
+	context.ResolveIP()
 	require.True(t, context.resolved)
 	require.True(t, metadata.DstIP.IsValid())
 
-	context.resolveIP()
+	context.ResolveIP()
 	require.Equal(t, metadata.DstIP, netip.MustParseAddr("127.0.0.1"))
 }
 
@@ -30,8 +30,8 @@ func TestMatchContextChecksPassRule(t *testing.T) {
 		},
 	}
 
-	require.True(t, context.checkPassRule("PASS"))
-	require.False(t, context.checkPassRule("MISSING"))
+	require.True(t, context.CheckPassRule("PASS"))
+	require.False(t, context.CheckPassRule("MISSING"))
 }
 
 func TestMatchContextAttemptsProcessLookupOnce(t *testing.T) {
@@ -45,10 +45,10 @@ func TestMatchContextAttemptsProcessLookupOnce(t *testing.T) {
 		attemptProcessLookup: true,
 	}
 
-	context.findProcess()
+	context.FindProcess()
 	require.False(t, context.attemptProcessLookup)
 
-	context.findProcess()
+	context.FindProcess()
 	require.False(t, context.attemptProcessLookup)
 }
 

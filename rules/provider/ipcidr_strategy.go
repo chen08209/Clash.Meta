@@ -23,9 +23,7 @@ func (i *ipcidrStrategy) Behavior() P.RuleBehavior {
 }
 
 func (i *ipcidrStrategy) Match(metadata *C.Metadata, helper C.RuleMatchHelper) bool {
-	if helper.ResolveIP != nil {
-		helper.ResolveIP()
-	}
+	helper.ResolveIP()
 	return i.cidrSet != nil && i.cidrSet.IsContain(metadata.DstIP)
 }
 

@@ -14,12 +14,16 @@ type countingFindProcess struct {
 	calls int
 }
 
-func (c *countingFindProcess) helper() C.RuleMatchHelper {
-	return C.RuleMatchHelper{FindProcess: c.find}
+func (c *countingFindProcess) FindProcess() {
+	c.calls++
 }
 
-func (c *countingFindProcess) find() {
-	c.calls++
+func (c *countingFindProcess) ResolveIP() {}
+
+func (c *countingFindProcess) CheckPassRule(string) bool { return false }
+
+func (c *countingFindProcess) helper() C.RuleMatchHelper {
+	return C.RuleMatchHelper{Context: c}
 }
 
 func TestInboundNameRulesMatchTheirField(test *testing.T) {

@@ -26,9 +26,9 @@ func (rs *RuleSet) Match(metadata *C.Metadata, helper C.RuleMatchHelper) (bool, 
 			metadata.SwapSrcDst()
 			defer metadata.SwapSrcDst()
 
-			helper.ResolveIP = nil // src mode should not resolve ip
+			helper.NoResolve = true // src mode should not resolve ip
 		} else if rs.noResolveIP {
-			helper.ResolveIP = nil
+			helper.NoResolve = true
 		}
 		return provider.Match(metadata, helper), rs.adapter
 	}

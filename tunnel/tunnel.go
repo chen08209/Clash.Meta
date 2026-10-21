@@ -313,7 +313,7 @@ func resolveMetadata(metadata *C.Metadata) (proxy C.Proxy, rule C.Rule, err erro
 			resolved:             hostsResolved,
 			attemptProcessLookup: metadata.Type != C.INNER,
 		}
-		processContext.findProcess()
+		processContext.FindProcess()
 	}
 
 	switch runtimeState.mode {
@@ -630,11 +630,7 @@ func match(
 					attemptProcessLookup: processLookupEnabled &&
 						metadata.Type != C.INNER,
 				}
-				helper = C.RuleMatchHelper{
-					ResolveIP:     activeContext.resolveIP,
-					FindProcess:   activeContext.findProcess,
-					CheckPassRule: activeContext.checkPassRule,
-				}
+				helper = C.RuleMatchHelper{Context: activeContext}
 			}
 			if matched, ada := rule.Match(metadata, helper); matched {
 				adapter, ok := runtimeState.proxies[ada]
