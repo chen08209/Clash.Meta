@@ -53,6 +53,7 @@ papered over with getter-only tests.
 | `4a0ba873b` | reuse sing packet read buffers after Drop | 100-datagram batch 9.41-10.34 us / 7.13 KB / 111 allocs -> 6.10-6.32 us / 714-715 B / 11 allocs |
 | `8caa05d75` | allocate TCP peek buffering only for sniffing or handshakes | direct TCP setup benchmark 45.2-42.1 KB / 134-137 allocs -> 41.3-41.6 KB / 128 allocs; conn-context test pins the lazy path |
 | `e99565b3f` | recycle socks UDP packet wrappers through Drop | warm datagram 86.20-226.0 ns / 80 B / 1 alloc -> 69.18-72.55 ns, 0 allocs (benchstat p=0.000, n=10) |
+| `b02ab5bbf` | recycle tunnel UDP packet wrappers through Drop | tunnel UDP 504 B / 4 allocs -> 440 B / 3 allocs; latency unchanged within noise (p=0.481, n=10) |
 
 ## Dead-code ledger
 
