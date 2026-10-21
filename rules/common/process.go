@@ -30,9 +30,7 @@ func (ps *Process) RuleType() C.RuleType {
 }
 
 func (ps *Process) Match(metadata *C.Metadata, helper C.RuleMatchHelper) (bool, string) {
-	if helper.FindProcess != nil {
-		helper.FindProcess()
-	}
+	helper.FindProcess()
 	var target string
 	switch ps.ruleType {
 	case C.ProcessName, C.ProcessNameRegex, C.ProcessNameWildcard:

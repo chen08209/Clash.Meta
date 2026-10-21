@@ -19,7 +19,7 @@ type matchContext struct {
 	attemptProcessLookup bool
 }
 
-func (c *matchContext) resolveIP() {
+func (c *matchContext) ResolveIP() {
 	if c.resolved || c.metadata.Host == "" || c.metadata.Resolved() {
 		return
 	}
@@ -40,7 +40,7 @@ func (c *matchContext) resolveIP() {
 	c.resolved = true
 }
 
-func (c *matchContext) findProcess() {
+func (c *matchContext) FindProcess() {
 	if !c.attemptProcessLookup {
 		return
 	}
@@ -73,7 +73,7 @@ func (c *matchContext) findProcess() {
 	metadata.Process = pkg
 }
 
-func (c *matchContext) checkPassRule(adapterName string) bool {
+func (c *matchContext) CheckPassRule(adapterName string) bool {
 	adapter, ok := c.runtimeState.proxies[adapterName]
 	if !ok {
 		return false

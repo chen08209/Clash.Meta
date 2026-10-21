@@ -17,6 +17,14 @@ type registryTunnel struct {
 	ruleProviders map[string]P.RuleProvider
 }
 
+type resolvingContext struct{}
+
+func (resolvingContext) ResolveIP() {}
+
+func (resolvingContext) FindProcess() {}
+
+func (resolvingContext) CheckPassRule(string) bool { return false }
+
 func (t *registryTunnel) RuleProviders() map[string]P.RuleProvider {
 	return t.ruleProviders
 }
@@ -94,7 +102,7 @@ func TestRuleSetSrcModeSwapsTheDirection(test *testing.T) {
 func TestRuleSetResolvesIpUnlessToldOtherwise(test *testing.T) {
 	registerRuleProviders(test, map[string]P.RuleProvider{"test-ipcidr": ipcidrRuleProvider("test-ipcidr")})
 
-	resolving := C.RuleMatchHelper{ResolveIP: func() {}}
+	resolving := C.RuleMatchHelper{Context: resolvingContext{}}
 
 	resolveRule, err := NewRuleSet("test-ipcidr", "TestAdapter", false, false)
 	require.NoError(test, err)

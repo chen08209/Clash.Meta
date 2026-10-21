@@ -22,6 +22,9 @@ import (
 
 const loadBalanceHashPrime = 1099511628211
 
+var etldHashCache = lru.New[string, uint64](
+	lru.WithSize[string, uint64](1024))
+
 type LoadBalanceOption struct {
 	Strategy string `group:"strategy,omitempty"`
 	HashKey  string `group:"hash-key,omitempty"`
@@ -49,6 +52,22 @@ func hashAddr(addr netip.Addr) uint64 {
 	return utils.MapHashAddrPort(netip.AddrPortFrom(addr.Unmap(), 0))
 }
 
+func mayBeAddr(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= '0' && c <= '9', c >= 'a' && c <= 'f', c >= 'A' && c <= 'F':
+		case c == '.', c == ':', c == '%':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func getKey(metadata *C.Metadata) uint64 {
 	if metadata == nil {
 		return 0
@@ -56,12 +75,22 @@ func getKey(metadata *C.Metadata) uint64 {
 
 	if metadata.Host != "" {
 		// Parse IP hosts directly instead of formatting every netip.Addr.
-		if ip, err := netip.ParseAddr(metadata.Host); err == nil {
+		if mayBeAddr(metadata.Host) {
+			ip, err := netip.ParseAddr(metadata.Host)
+			if err != nil {
+				return utils.MapHash(metadata.Host)
+			}
 			return hashAddr(ip.Unmap())
 		}
 
+		if hash, cached := etldHashCache.Get(metadata.Host); cached {
+			return hash
+		}
+
 		if etld, err := publicsuffix.EffectiveTLDPlusOne(metadata.Host); err == nil {
-			return utils.MapHash(etld)
+			hash := utils.MapHash(etld)
+			etldHashCache.Set(metadata.Host, hash)
+			return hash
 		}
 	}
 

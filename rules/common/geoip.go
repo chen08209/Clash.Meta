@@ -40,7 +40,7 @@ func (g *GEOIP) RuleType() C.RuleType {
 }
 
 func (g *GEOIP) Match(metadata *C.Metadata, helper C.RuleMatchHelper) (bool, string) {
-	if !g.noResolveIP && !g.isSourceIP && helper.ResolveIP != nil {
+	if !g.noResolveIP && !g.isSourceIP {
 		helper.ResolveIP()
 	}
 

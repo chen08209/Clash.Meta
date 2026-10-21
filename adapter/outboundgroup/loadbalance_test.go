@@ -132,6 +132,26 @@ func TestLoadBalanceHashKeyResolvesTheOptionName(t *testing.T) {
 		identity(getKey)(request("job-1", "a.example.com")))
 }
 
+func TestLoadBalanceKeyDoesNotAllocateForDomainHosts(t *testing.T) {
+	metadata := request("", "a.example.com")
+
+	allocations := testing.AllocsPerRun(100, func() {
+		if getKey(metadata) == 0 {
+			t.Fatal("domain key was zero")
+		}
+	})
+	require.EqualValues(t, 0, allocations)
+}
+
+func TestLoadBalanceKeyHashesIPHostsDirectly(t *testing.T) {
+	metadata := request("", "192.0.2.10")
+
+	require.Equal(t,
+		hashAddr(netip.MustParseAddr("192.0.2.10")),
+		getKey(metadata),
+	)
+}
+
 func TestLoadBalanceHashKeyRejectsUnusableConfigs(t *testing.T) {
 	_, err := hashKey("session")
 	require.ErrorIs(t, err, errHashKey)

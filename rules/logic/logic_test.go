@@ -17,6 +17,14 @@ type stubRule struct {
 	providers []string
 }
 
+type passRuleContext struct{}
+
+func (passRuleContext) ResolveIP() {}
+
+func (passRuleContext) FindProcess() {}
+
+func (passRuleContext) CheckPassRule(adapter string) bool { return adapter == "PASSED" }
+
 func (r *stubRule) RuleType() C.RuleType { return r.ruleType }
 
 func (r *stubRule) Match(metadata *C.Metadata, helper C.RuleMatchHelper) (bool, string) {
@@ -140,9 +148,7 @@ func TestSubRuleCheckPassRuleHelper(t *testing.T) {
 	require.True(t, matched)
 	require.Equal(t, "PASSED", adapter)
 
-	helper := C.RuleMatchHelper{CheckPassRule: func(adapter string) bool {
-		return adapter == "PASSED"
-	}}
+	helper := C.RuleMatchHelper{Context: passRuleContext{}}
 	matched, adapter = sub.Match(&C.Metadata{}, helper)
 	require.True(t, matched)
 	require.Equal(t, "DIRECT", adapter)
