@@ -6,6 +6,7 @@ import (
 
 	"github.com/metacubex/mihomo/adapter"
 	"github.com/metacubex/mihomo/adapter/outbound"
+	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 
 	"github.com/stretchr/testify/require"
@@ -112,8 +113,8 @@ func TestStickySessionsFallsBackToAnAliveProxy(t *testing.T) {
 // instead would herd every anonymous request onto one member.
 func TestLoadBalanceHashKeyInUserFallsBackWhenUnauthenticated(t *testing.T) {
 	keyed := getKeyWithInUser(getKey)
-	require.Equal(t, "example.com", keyed(request("", "a.example.com")))
-	require.Equal(t, "job-1", keyed(request("job-1", "a.example.com")))
+	require.Equal(t, utils.MapHash("example.com"), keyed(request("", "a.example.com")))
+	require.Equal(t, utils.MapHash("job-1"), keyed(request("job-1", "a.example.com")))
 	require.Equal(t, getKey(nil), keyed(nil))
 }
 
@@ -123,7 +124,7 @@ func TestLoadBalanceHashKeyInUserFallsBackWhenUnauthenticated(t *testing.T) {
 func TestLoadBalanceHashKeyResolvesTheOptionName(t *testing.T) {
 	withInUser, err := hashKey("in-user")
 	require.NoError(t, err)
-	require.Equal(t, "job-1", withInUser(getKey)(request("job-1", "a.example.com")))
+	require.Equal(t, utils.MapHash("job-1"), withInUser(getKey)(request("job-1", "a.example.com")))
 
 	identity, err := hashKey("")
 	require.NoError(t, err)
@@ -148,4 +149,29 @@ func TestLoadBalanceHashKeyRejectsUnusableConfigs(t *testing.T) {
 	_, err = NewLoadBalance(GroupCommonOption{Name: "lb"},
 		LoadBalanceOption{Strategy: "consistent-hashing", HashKey: "nonsense"}, nil, nil)
 	require.ErrorIs(t, err, errHashKey)
+}
+
+func BenchmarkStickySessionsProxyPick(b *testing.B) {
+	b.ReportAllocs()
+
+	proxies := balancedProxies(64)
+	strategy := strategyStickySessions(testUrl, getKeyWithSrcAndDst)
+	srcIPs := []netip.Addr{
+		netip.MustParseAddr("192.0.2.1"),
+		netip.MustParseAddr("192.0.2.2"),
+		netip.MustParseAddr("192.0.2.3"),
+		netip.MustParseAddr("192.0.2.4"),
+	}
+	hosts := []string{
+		"a.example.com",
+		"b.example.org",
+		"c.example.net",
+		"d.example.io",
+	}
+
+	for i := 0; b.Loop(); i++ {
+		metadata := request("", hosts[i%len(hosts)])
+		metadata.SrcIP = srcIPs[(i/len(hosts))%len(srcIPs)]
+		_ = strategy(proxies, metadata, false)
+	}
 }

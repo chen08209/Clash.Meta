@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,6 +19,8 @@ import (
 
 	"golang.org/x/net/publicsuffix"
 )
+
+const loadBalanceHashPrime = 1099511628211
 
 type LoadBalanceOption struct {
 	Strategy string `group:"strategy,omitempty"`
@@ -40,40 +42,44 @@ type strategyFn = func(proxies []C.Proxy, metadata *C.Metadata, touch bool) C.Pr
 var errStrategy = errors.New("unsupported strategy")
 var errHashKey = errors.New("unsupported hash-key")
 
-// keyFn derives the value a hashing strategy pins a request on.
-type keyFn = func(metadata *C.Metadata) string
+// keyFn derives the pre-hashed value a hashing strategy pins a request on.
+type keyFn = func(metadata *C.Metadata) uint64
 
-func getKey(metadata *C.Metadata) string {
+func hashAddr(addr netip.Addr) uint64 {
+	return utils.MapHashAddrPort(netip.AddrPortFrom(addr.Unmap(), 0))
+}
+
+func getKey(metadata *C.Metadata) uint64 {
 	if metadata == nil {
-		return ""
+		return 0
 	}
 
 	if metadata.Host != "" {
-		// ip host
-		if ip := net.ParseIP(metadata.Host); ip != nil {
-			return metadata.Host
+		// Parse IP hosts directly instead of formatting every netip.Addr.
+		if ip, err := netip.ParseAddr(metadata.Host); err == nil {
+			return hashAddr(ip.Unmap())
 		}
 
 		if etld, err := publicsuffix.EffectiveTLDPlusOne(metadata.Host); err == nil {
-			return etld
+			return utils.MapHash(etld)
 		}
 	}
 
 	if !metadata.DstIP.IsValid() {
-		return ""
+		return 0
 	}
 
-	return metadata.DstIP.String()
+	return hashAddr(metadata.DstIP)
 }
 
-func getKeyWithSrcAndDst(metadata *C.Metadata) string {
+func getKeyWithSrcAndDst(metadata *C.Metadata) uint64 {
 	dst := getKey(metadata)
-	src := ""
-	if metadata != nil {
-		src = metadata.SrcIP.String()
+	if metadata == nil {
+		return dst
 	}
 
-	return fmt.Sprintf("%s%s", src, dst)
+	src := hashAddr(metadata.SrcIP)
+	return src ^ dst*loadBalanceHashPrime
 }
 
 // getKeyWithInUser pins on the authenticated inbound user instead of on an
@@ -87,9 +93,9 @@ func getKeyWithSrcAndDst(metadata *C.Metadata) string {
 // the strategy's own key rather than collapsing every such request onto one
 // node.
 func getKeyWithInUser(fallback keyFn) keyFn {
-	return func(metadata *C.Metadata) string {
+	return func(metadata *C.Metadata) uint64 {
 		if metadata != nil && metadata.InUser != "" {
-			return metadata.InUser
+			return utils.MapHash(metadata.InUser)
 		}
 
 		return fallback(metadata)
@@ -227,7 +233,7 @@ func strategyRoundRobin(url string) strategyFn {
 func strategyConsistentHashing(url string, keyOf keyFn) strategyFn {
 	maxRetry := 5
 	return func(proxies []C.Proxy, metadata *C.Metadata, touch bool) C.Proxy {
-		key := utils.MapHash(keyOf(metadata))
+		key := keyOf(metadata)
 		buckets := int32(len(proxies))
 		for i := 0; i < maxRetry; i, key = i+1, key+1 {
 			idx := jumpHash(key, buckets)
@@ -255,7 +261,7 @@ func strategyStickySessions(url string, keyOf keyFn) strategyFn {
 		lru.WithAge[uint64, int](int64(ttl.Seconds())),
 		lru.WithSize[uint64, int](1000))
 	return func(proxies []C.Proxy, metadata *C.Metadata, touch bool) C.Proxy {
-		key := utils.MapHash(keyOf(metadata))
+		key := keyOf(metadata)
 		length := len(proxies)
 		idx, has := lruCache.Get(key)
 		if !has || idx >= length {
