@@ -33,6 +33,7 @@ const ICMPTimeout = 10 * time.Second
 
 // A wrapper is returned only by Drop, the tunnel contract's single release point.
 var singPacketPool = sync.Pool{New: func() interface{} { return new(packet) }}
+var singBufferPool sync.Pool
 
 type ListenerConfig struct {
 	Tunnel     C.Tunnel
@@ -191,7 +192,7 @@ func (h *ListenerHandler) NewPacketConnection(ctx context.Context, conn network.
 		if isReadWaiter {
 			buff, dest, err = readWaiter.WaitReadPacket()
 		} else {
-			buff = rwOptions.NewPacketBuffer()
+			buff = newSingBuffer(rwOptions)
 			dest, err = conn.ReadPacket(buff)
 			if buff != nil {
 				rwOptions.PostReturn(buff)
@@ -277,6 +278,29 @@ func newSingPacket(writer *network.NetPacketWriter, mutex *sync.Mutex, source ne
 	return singPacket
 }
 
+func newSingBuffer(rwOptions network.ReadWaitOptions) *buf.Buffer {
+	// Drop returns buffers here; reuse only when the pooled capacity fits the requested MTU/headroom.
+	bufferSize := buf.UDPBufferSize
+	if rwOptions.MTU > 0 {
+		bufferSize = rwOptions.MTU + rwOptions.FrontHeadroom + rwOptions.RearHeadroom
+	}
+	if value := singBufferPool.Get(); value != nil {
+		buffer := value.(*buf.Buffer)
+		if buffer.Cap() >= bufferSize {
+			buffer.Reset()
+			if rwOptions.FrontHeadroom > 0 {
+				buffer.Resize(rwOptions.FrontHeadroom, 0)
+			}
+			if rwOptions.RearHeadroom > 0 {
+				buffer.Reserve(rwOptions.RearHeadroom)
+			}
+			return buffer
+		}
+		buffer.Release()
+	}
+	return rwOptions.NewPacketBuffer()
+}
+
 type packet struct {
 	writer *network.NetPacketWriter
 	mutex  *sync.Mutex
@@ -319,7 +343,8 @@ func (c *packet) Drop() {
 	}
 	buff := c.buff
 	c.buff = nil
-	buff.Release()
+	buff.Reset()
+	singBufferPool.Put(buff)
 	singPacketPool.Put(c)
 }
 
