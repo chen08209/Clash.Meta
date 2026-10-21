@@ -13,6 +13,8 @@ type Picker[T any] struct {
 	ctx    context.Context
 	cancel func()
 
+	done chan struct{}
+
 	wg sync.WaitGroup
 
 	once    sync.Once
@@ -25,6 +27,7 @@ func newPicker[T any](ctx context.Context, cancel func()) *Picker[T] {
 	return &Picker[T]{
 		ctx:    ctx,
 		cancel: cancel,
+		done:   make(chan struct{}),
 	}
 }
 
@@ -44,6 +47,13 @@ func WithTimeout[T any](ctx context.Context, timeout time.Duration) (*Picker[T],
 // Wait blocks until all function calls from the Go method have returned,
 // then returns the first nil error result (if any) from them.
 func (p *Picker[T]) Wait() T {
+	select {
+	case <-p.done:
+		// The first success is in; the losers are aborted through the
+		// cancelled context and finish on their own.
+		return p.result
+	default:
+	}
 	p.wg.Wait()
 	if p.cancel != nil {
 		p.cancel()
@@ -72,6 +82,7 @@ func (p *Picker[T]) Go(f func() (T, error)) {
 					p.cancel()
 					p.cancel = nil
 				}
+				close(p.done)
 			})
 		} else {
 			p.errOnce.Do(func() {
