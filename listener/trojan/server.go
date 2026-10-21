@@ -339,10 +339,9 @@ func (l *Listener) handleConn(inMux bool, conn net.Conn, tunnel C.Tunnel, additi
 				}
 				break
 			}
-			target := socks5.AddrFromStdAddrPort(addr)
 			cPacket := newTrojanPacket(pc, N.AddrPortFromNetAddr(remoteAddr), data)
 
-			tunnel.HandleUDPPacket(inbound.NewPacket(target, cPacket, C.TROJAN, additions...))
+			tunnel.HandleUDPPacket(inbound.NewPacketFromAddrPort(addr, cPacket, C.TROJAN, additions...))
 		}
 	case trojan.CommandMux:
 		if inMux {

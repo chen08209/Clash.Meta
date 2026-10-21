@@ -132,7 +132,7 @@ func listenLocalConn(rAddr, lAddr netip.AddrPort, tunnel C.Tunnel, additions ...
 			}
 			// since following localPackets are pass through this socket which listen rAddr
 			// I choose current listener as packet's packet conn
-			handlePacketConn(lc, tunnel, buf[:br], lAddr, rAddr, additions...)
+			handlePacketConn(lc, tunnel, buf[:br], lAddr, rAddr, 0, additions...)
 		}
 	}()
 	return lc, nil

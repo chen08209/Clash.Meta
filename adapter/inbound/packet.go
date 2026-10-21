@@ -9,7 +9,20 @@ import (
 
 // NewPacket is PacketAdapter generator
 func NewPacket(target socks5.Addr, packet C.UDPPacket, source C.Type, additions ...Addition) (C.UDPPacket, *C.Metadata) {
-	metadata := parseSocksAddr(target)
+	return finishPacket(parseSocksAddr(target), packet, source, additions...)
+}
+
+// NewPacketFromAddrPort is NewPacket for a listener that already holds its
+// destination as an AddrPort: encoding it into a socks5 header only for
+// parseSocksAddr to decode it again allocated that header per datagram.
+func NewPacketFromAddrPort(dst netip.AddrPort, packet C.UDPPacket, source C.Type, additions ...Addition) (C.UDPPacket, *C.Metadata) {
+	return finishPacket(&C.Metadata{
+		DstIP:   dst.Addr().Unmap(),
+		DstPort: dst.Port(),
+	}, packet, source, additions...)
+}
+
+func finishPacket(metadata *C.Metadata, packet C.UDPPacket, source C.Type, additions ...Addition) (C.UDPPacket, *C.Metadata) {
 	metadata.NetWork = C.UDP
 	metadata.Type = source
 	setSrcAddr(metadata, packet)
