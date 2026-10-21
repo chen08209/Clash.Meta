@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/transport/socks5"
 	"github.com/stretchr/testify/require"
 )
@@ -104,5 +105,62 @@ func BenchmarkPacketWriteBack(b *testing.B) {
 		if _, err := pkt.WriteBack(data, addr); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+type mieruDropTunnel struct {
+	C.Tunnel
+	wrappers []*packet
+	data     [][]byte
+}
+
+func (c *mieruDropTunnel) HandleUDPPacket(udpPacket C.UDPPacket, _ *C.Metadata) {
+	if mieruPacket, ok := udpPacket.(*packet); ok {
+		c.wrappers = append(c.wrappers, mieruPacket)
+	}
+	c.data = append(c.data, append([]byte(nil), udpPacket.Data()...))
+	udpPacket.Drop()
+}
+
+func TestMieruUDPPacketWrappersReleaseTheirBuffers(t *testing.T) {
+	conn := &recordingPacketConn{}
+	tunnel := &mieruDropTunnel{}
+	source := netip.MustParseAddrPort("192.168.1.2:54321")
+	data := append([]byte{0, 0, 0, 1}, netip.MustParseAddr("1.2.3.4").AsSlice()...)
+	data = append(data, 0x01, 0xbb, 'f', 'i', 'r', 's', 't')
+
+	handleMieruUDPPacket(conn, tunnel, data, source)
+	handleMieruUDPPacket(conn, tunnel, data, source)
+
+	require.Len(t, tunnel.wrappers, 2)
+	require.Len(t, tunnel.data, 2)
+	require.Equal(t, []byte("first"), tunnel.data[0])
+	for _, wrapper := range tunnel.wrappers {
+		require.Nil(t, wrapper.data)
+		require.Nil(t, wrapper.payload)
+		require.Same(t, conn, wrapper.pc)
+	}
+}
+
+type mieruDropOnlyTunnel struct {
+	C.Tunnel
+}
+
+func (mieruDropOnlyTunnel) HandleUDPPacket(udpPacket C.UDPPacket, _ *C.Metadata) {
+	udpPacket.Drop()
+}
+
+func BenchmarkMieruUDPHandle(b *testing.B) {
+	tunnel := mieruDropOnlyTunnel{}
+	conn := &recordingPacketConn{}
+	source := netip.MustParseAddrPort("192.168.1.2:54321")
+	data := append([]byte{0, 0, 0, 1}, netip.MustParseAddr("1.2.3.4").AsSlice()...)
+	data = append(data, 0x01, 0xbb, 'p', 'a', 'y')
+	handleMieruUDPPacket(conn, tunnel, data, source)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		handleMieruUDPPacket(conn, tunnel, data, source)
 	}
 }

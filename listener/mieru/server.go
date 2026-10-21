@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"sync"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	N "github.com/metacubex/mihomo/common/net"
@@ -71,19 +72,33 @@ func Handle(conn net.Conn, tunnel C.Tunnel, request *mierumodel.Request, additio
 				}
 				continue
 			}
-			target, payload, err := socks5.DecodeUDPPacket(data)
-			if err != nil {
-				return
-			}
-			packet := &packet{
-				pc:      ep,
-				udpAddr: net.UDPAddrFromAddrPort(addr),
-				data:    data,
-				payload: payload,
-			}
-			tunnel.HandleUDPPacket(inbound.NewPacket(target, packet, C.MIERU, additions...))
+			handleMieruUDPPacket(ep, tunnel, data, addr, additions...)
 		}
 	}
+}
+
+func handleMieruUDPPacket(pc net.PacketConn, tunnel C.Tunnel, data []byte, addr netip.AddrPort, additions ...inbound.Addition) {
+	target, payload, err := socks5.DecodeUDPPacket(data)
+	if err != nil {
+		_ = pool.Put(data)
+		return
+	}
+	packet := newMieruPacket(pc, net.UDPAddrFromAddrPort(addr), data, payload)
+	tunnel.HandleUDPPacket(inbound.NewPacket(target, packet, C.MIERU, additions...))
+}
+
+// A wrapper is returned only by Drop, the tunnel contract's single release point.
+var mieruPacketPool = sync.Pool{New: func() interface{} { return new(packet) }}
+
+func newMieruPacket(pc net.PacketConn, udpAddr *net.UDPAddr, data, payload []byte) *packet {
+	mieruPacket := mieruPacketPool.Get().(*packet)
+	*mieruPacket = packet{
+		pc:      pc,
+		udpAddr: udpAddr,
+		data:    data,
+		payload: payload,
+	}
+	return mieruPacket
 }
 
 type packet struct {
@@ -111,11 +126,13 @@ func (c *packet) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
 }
 
 func (c *packet) Drop() {
-	if c.data != nil {
-		_ = pool.Put(c.data)
-		c.data = nil
+	if c.data == nil {
+		return
 	}
+	_ = pool.Put(c.data)
+	c.data = nil
 	c.payload = nil
+	mieruPacketPool.Put(c)
 }
 
 func (c *packet) LocalAddr() net.Addr {
