@@ -14,7 +14,7 @@ focused test, a benchmark or both.
 | Package | Coverage | Gate added |
 | --- | ---: | --- |
 | `rules/logic` | 92.7% | AND/OR/NOT semantics, PASS-RULE continuation, CheckPassRule helper, sub-rule recursion, parse errors |
-| `component/sniffer` | 80.9% | dispatcher, quic and http sniffers |
+| `component/sniffer` | 84.3% | dispatcher, quic and http sniffers, the tls wrapper over a generated client hello, the per-sniffer network and port support, the need-at-least error chain, the enable gate, the skip-domain policy, and the udp dispatch over both override-dest settings |
 | `rules` (dispatch) | 75.5% | the full ParseRule type table, params, error paths, uid platform gate |
 | `rules/provider` | 76.6% | strategy lifecycles, mrs round trips and text export, file-vehicle initial/update, payload fallback, the inline mapping decode, and the RuleSet rule through the injected tunnel registry (src swap, no-resolve, absent provider) |
 | `tunnel` | 59.2% | rule index, packet flow key, deadlines, sender mapping, metadata template, the mode and status text round trips, and the all-proxies cache: the up-to-date check against missing, extra and bumped providers, the rebuild that follows a version, the explicit drop, and both provider snapshots |
