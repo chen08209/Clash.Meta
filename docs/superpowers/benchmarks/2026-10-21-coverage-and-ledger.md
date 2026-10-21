@@ -23,7 +23,7 @@ focused test, a benchmark or both.
 | `listener/socks` | 20.3% | per-flow metadata cache identity, split targets, warm-path benchmark, and the packet adapter's payload passthrough with the return-once drop of its pooled buffer |
 | `dns` | 31.0% | cache keys, parsed-ip cache, conn pool, exchange errors, the rcode transport codes, the disable-types and edns0-subnet client wrappers including their param tables, the log-string shapes, and the resolver enhancer: mode gating, the fake-ip range against the reserved addresses, the mapping round trip, the ipv6 pool, flush and the reload patch |
 | `hub/route` | 15.6% | real-listener auth matrix, hello/version, read endpoints, provider and group reads with their render keys, and the not-found paths of the proxy and provider lookups plus the unknown-connection close |
-| `component/process` | 8.5% | cache hits, expiry, failure handling, 53ns hit benchmark |
+| `component/process` | 32.3% | cache hits, expiry, failure handling, 53ns hit benchmark, the find-process-mode text round trips, the invalid-network rejection through the public entry, and the package-name resolver delegation |
 | `rules/common` | 67.0% | the payload shapes ParseRulePayload accepts, src/no-resolve params, the inbound name/user/type rules with the socks expansion, the process rule over name, path, regex and wildcard, the ip-suffix trailing-bit match, the match and ipcidr rule surfaces, and the geoip lan rule, its dns fallback filter, the geodata-mode metadata codes and the no-database constructor errors |
 | `common/once` | 100.0% | resettable Once: Done/Reset semantics, single run under concurrency, panic marks done |
 
