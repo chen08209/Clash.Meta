@@ -31,6 +31,9 @@ import (
 const UDPTimeout = 5 * time.Minute
 const ICMPTimeout = 10 * time.Second
 
+// A wrapper is returned only by Drop, the tunnel contract's single release point.
+var singPacketPool = sync.Pool{New: func() interface{} { return new(packet) }}
+
 type ListenerConfig struct {
 	Tunnel     C.Tunnel
 	Type       C.Type
@@ -152,10 +155,13 @@ func (h *ListenerHandler) NewPacketConnection(ctx context.Context, conn network.
 
 	defer func() { _ = conn.Close() }()
 	mutex := sync.Mutex{}
-	writer := bufio.NewNetPacketWriter(conn) // a new interface to set nil in defer
+	writer := bufio.NewNetPacketWriter(conn)
+	writerBox := &writer
+	mutexBox := &mutex
 	defer func() {
-		mutex.Lock() // this goroutine must exit after all conn.WritePacket() is not running
-		defer mutex.Unlock()
+		// this goroutine must exit after all conn.WritePacket() is not running
+		mutexBox.Lock()
+		defer mutexBox.Unlock()
 		writer = nil
 	}()
 	rwOptions := network.ReadWaitOptions{}
@@ -198,13 +204,7 @@ func (h *ListenerHandler) NewPacketConnection(ctx context.Context, conn network.
 			}
 			return err
 		}
-		cPacket := &packet{
-			writer: &writer,
-			mutex:  &mutex,
-			source: metadata.Source.AddrPort(),
-			lAddr:  inAddr,
-			buff:   buff,
-		}
+		cPacket := newSingPacket(writerBox, mutexBox, metadata.Source.AddrPort(), inAddr, buff)
 		if metadataTemplate != nil && dest == templateDest {
 			h.Tunnel.HandleUDPPacket(cPacket, metadataTemplate)
 			continue
@@ -223,12 +223,7 @@ type localAddr interface {
 func (h *ListenerHandler) NewPacket(ctx context.Context, key netip.AddrPort, buffer *buf.Buffer, metadata M.Metadata, init func(natConn network.PacketConn) network.PacketWriter) {
 	writer := bufio.NewNetPacketWriter(init(nil))
 	mutex := sync.Mutex{}
-	cPacket := &packet{
-		writer: &writer,
-		mutex:  &mutex,
-		source: metadata.Source.AddrPort(),
-		buff:   buffer,
-	}
+	cPacket := newSingPacket(&writer, &mutex, metadata.Source.AddrPort(), nil, buffer)
 	if conn, ok := common.Cast[localAddr](writer); ok { // tun does not have real inAddr
 		cPacket.lAddr = conn.LocalAddr()
 	}
@@ -270,6 +265,18 @@ func ShouldIgnorePacketError(err error) bool {
 	return false
 }
 
+func newSingPacket(writer *network.NetPacketWriter, mutex *sync.Mutex, source netip.AddrPort, lAddr net.Addr, buff *buf.Buffer) *packet {
+	singPacket := singPacketPool.Get().(*packet)
+	*singPacket = packet{
+		writer: writer,
+		mutex:  mutex,
+		source: source,
+		lAddr:  lAddr,
+		buff:   buff,
+	}
+	return singPacket
+}
+
 type packet struct {
 	writer *network.NetPacketWriter
 	mutex  *sync.Mutex
@@ -307,7 +314,13 @@ func (c *packet) LocalAddr() net.Addr {
 }
 
 func (c *packet) Drop() {
-	c.buff.Release()
+	if c.buff == nil {
+		return
+	}
+	buff := c.buff
+	c.buff = nil
+	buff.Release()
+	singPacketPool.Put(c)
 }
 
 func (c *packet) InAddr() net.Addr {
