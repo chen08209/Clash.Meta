@@ -11,6 +11,8 @@ type packetReader struct {
 	header   packetHeader
 }
 
+// read parses every segment in b. Segment payloads alias b, so b must stay
+// owned by the caller for as long as the returned segments live.
 func (r packetReader) read(b []byte) []segment {
 	if r.header != nil {
 		headerSize := r.header.size()
