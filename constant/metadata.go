@@ -233,7 +233,7 @@ func (m *Metadata) SourceAddrPort() netip.AddrPort {
 
 func (m *Metadata) SourceDetail() string {
 	if m.Type == INNER {
-		return fmt.Sprintf("%s", MihomoName)
+		return MihomoName
 	}
 
 	switch {
@@ -244,7 +244,7 @@ func (m *Metadata) SourceDetail() string {
 	case m.Process != "":
 		return fmt.Sprintf("%s(%s)", m.SourceAddress(), m.Process)
 	default:
-		return fmt.Sprintf("%s", m.SourceAddress())
+		return m.SourceAddress()
 	}
 }
 

@@ -481,9 +481,10 @@ func handleTCPConn(connCtx C.ConnContext) {
 		return
 	}
 
-	defer func(conn net.Conn) {
-		_ = conn.Close()
-	}(connCtx.Conn())
+	originConn := connCtx.Conn()
+	defer func() {
+		_ = originConn.Close()
+	}()
 
 	metadata := connCtx.Metadata()
 	if !metadata.Valid() {
@@ -498,12 +499,21 @@ func handleTCPConn(connCtx C.ConnContext) {
 		preHandleFailed = true
 	}
 
-	conn := connCtx.Conn()
-	conn.ResetPeeked() // reset before sniffer
+	var conn net.Conn = originConn
+	bufferedConn := func() *N.BufferedConn {
+		if buffered, ok := conn.(*N.BufferedConn); ok {
+			return buffered
+		}
+		buffered := N.NewBufferedConn(conn)
+		conn = buffered
+		return buffered
+	}
 	if runtimeState.sniffingEnable && runtimeState.snifferDispatcher.Enable() {
+		buffered := bufferedConn()
+		buffered.ResetPeeked() // reset before sniffer
 		// Try to sniff a domain when `preHandleMetadata` failed, this is usually
 		// caused by a "Fake DNS record missing" error when enhanced-mode is fake-ip.
-		if runtimeState.snifferDispatcher.TCPSniff(conn, metadata) {
+		if runtimeState.snifferDispatcher.TCPSniff(buffered, metadata) {
 			// we now have a domain name
 			preHandleFailed = false
 		}
@@ -545,6 +555,7 @@ func handleTCPConn(connCtx C.ConnContext) {
 		}
 
 		if N.NeedHandshake(remoteConn) {
+			buffered := bufferedConn()
 			defer func() {
 				if err != nil {
 					_ = remoteConn.Close()
@@ -557,21 +568,21 @@ func handleTCPConn(connCtx C.ConnContext) {
 					remoteConn = nil
 				}
 			}()
-			if !conn.Peeked() {
+			if !buffered.Peeked() {
 				// The remote conn exists, so the buffer can be filled now and the
 				// client's hello handed straight to it. A plain relay has no use
 				// for the peek and waits on its own first read.
-				_ = conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
-				_, _ = conn.Peek(1)
-				_ = conn.SetReadDeadline(time.Time{})
+				_ = buffered.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+				_, _ = buffered.Peek(1)
+				_ = buffered.SetReadDeadline(time.Time{})
 			}
-			peekBytes, _ = conn.Peek(conn.Buffered())
+			peekBytes, _ = buffered.Peek(buffered.Buffered())
 			_, err = remoteConn.Write(peekBytes)
 			if err != nil {
 				return
 			}
 			if peekLen = len(peekBytes); peekLen > 0 {
-				_, _ = conn.Discard(peekLen)
+				_, _ = buffered.Discard(peekLen)
 			}
 		}
 		return

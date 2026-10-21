@@ -3,8 +3,6 @@ package constant
 import (
 	"net"
 
-	N "github.com/metacubex/mihomo/common/net"
-
 	"github.com/gofrs/uuid/v5"
 )
 
@@ -15,7 +13,7 @@ type PlainContext interface {
 type ConnContext interface {
 	PlainContext
 	Metadata() *Metadata
-	Conn() *N.BufferedConn
+	Conn() net.Conn
 }
 
 type PacketConnContext interface {
