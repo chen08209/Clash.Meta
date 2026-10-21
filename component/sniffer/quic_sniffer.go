@@ -284,8 +284,8 @@ func (q *quicPacketSender) readQUICPacket(b []byte, coalesced bool) (int, error)
 		return 0, errNotQUIC
 	}
 
-	destConnID := make([]byte, int(connIDLen))
-	if _, err := io.ReadFull(buffer, destConnID); err != nil {
+	destConnID, err := buffer.ReadBytes(int(connIDLen))
+	if err != nil {
 		return 0, errNotQUIC
 	}
 
