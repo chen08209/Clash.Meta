@@ -21,6 +21,7 @@ focused test, a benchmark or both.
 | `component/nat` | 98.4% | binary flow keys, allocation-free local-conn lookup, the string-keyed flow lifecycle with its invalid-key no-ops, the typed load, and the local-conn lock lifecycle from creation through reuse to the fresh lock after a drop |
 | `tunnel/statistic` | 78.0% | stripes, tracker lifecycle, snapshot, the tcp tracker's read/write accounting in both directions with and without a manager push, the udp tracker's packet accounting over a live socket pair, the join/leave lifecycle through the snapshot, and the now/total traffic readers |
 | `listener/socks` | 20.3% | per-flow metadata cache identity, split targets, warm-path benchmark, and the packet adapter's payload passthrough with the return-once drop of its pooled buffer |
+| `listener/shadowsocks` | 26.0% | per-flow metadata cache identity, split targets, the unresolved-header drop, the warm-path 0-alloc benchmark, and the packet adapter's write-back encoding with the return-once drop of its pooled buffer |
 | `dns` | 31.0% | cache keys, parsed-ip cache, conn pool, exchange errors, the rcode transport codes, the disable-types and edns0-subnet client wrappers including their param tables, the log-string shapes, and the resolver enhancer: mode gating, the fake-ip range against the reserved addresses, the mapping round trip, the ipv6 pool, flush and the reload patch |
 | `hub/route` | 15.6% | real-listener auth matrix, hello/version, read endpoints, provider and group reads with their render keys, and the not-found paths of the proxy and provider lookups plus the unknown-connection close |
 | `component/process` | 32.3% | cache hits, expiry, failure handling, 53ns hit benchmark, the find-process-mode text round trips, the invalid-network rejection through the public entry, and the package-name resolver delegation |
@@ -56,6 +57,7 @@ papered over with getter-only tests.
 | `b02ab5bbf` | recycle tunnel UDP packet wrappers through Drop | tunnel UDP 504 B / 4 allocs -> 440 B / 3 allocs; latency unchanged within noise (p=0.481, n=10) |
 | `53f04488c` | recycle tproxy UDP packet wrappers through Drop | tproxy UDP 560 B / 5 allocs -> 448 B / 4 allocs; latency unchanged within noise (p=0.052, n=10) |
 | `af18b7787` | raw WSARecvFrom into a callback-local kernel sockaddr on the windows read path | read gate 169 B / 7 allocs -> 137 B / 6 allocs per datagram (p=0.000, n=10); the wall-clock delta stayed inside the host's load noise across runs, so the allocation count is the gate; the read test now covers udp4 and udp6 |
+| `72a7590e5` | per-flow metadata reuse and wrapper pooling on the shadowsocks udp path | warm datagram 548 B / 4 allocs -> 0 B / 0 allocs (p=0.000, n=10); the host was loaded, so the time delta is recorded but not gated |
 
 ## Dead-code ledger
 
