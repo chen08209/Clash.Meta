@@ -3,9 +3,24 @@ package trojan
 import (
 	"net"
 	"net/netip"
+	"sync"
 
 	"github.com/metacubex/mihomo/common/pool"
 )
+
+// A wrapper is returned only by Drop, the tunnel contract's single release point.
+var trojanPacketPool = sync.Pool{New: func() any { return new(packet) }}
+
+func newTrojanPacket(pc net.PacketConn, source netip.AddrPort, data []byte) *packet {
+	pkt := trojanPacketPool.Get().(*packet)
+	*pkt = packet{
+		pc:      pc,
+		source:  source,
+		data:    data,
+		payload: data,
+	}
+	return pkt
+}
 
 type packet struct {
 	pc      net.PacketConn
@@ -34,11 +49,13 @@ func (c *packet) LocalAddr() net.Addr {
 }
 
 func (c *packet) Drop() {
-	if c.data != nil {
-		_ = pool.Put(c.data)
-		c.data = nil
+	if c.data == nil {
+		return
 	}
+	_ = pool.Put(c.data)
+	c.data = nil
 	c.payload = nil
+	trojanPacketPool.Put(c)
 }
 
 func (c *packet) InAddr() net.Addr {

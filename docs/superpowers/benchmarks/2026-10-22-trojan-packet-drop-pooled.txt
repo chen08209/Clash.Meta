@@ -1,0 +1,14 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/listener/trojan
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkTrojanPacketDrop-16    	36682551	        32.37 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTrojanPacketDrop-16    	39650022	        31.52 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTrojanPacketDrop-16    	40123982	        30.34 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTrojanPacketDrop-16    	39060591	        30.33 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTrojanPacketDrop-16    	39233122	        30.62 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTrojanPacketDrop-16    	38966098	        30.76 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTrojanPacketDrop-16    	40112715	        30.27 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTrojanPacketDrop-16    	38102011	        30.02 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/listener/trojan	10.535s

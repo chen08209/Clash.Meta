@@ -669,3 +669,20 @@ which is a net win at this blast radius. The per-packet `net.UDPAddrFromAddrPort
 - [x] Benchmark existing-flow get-or-create before and after with `benchstat`.
 - [x] Run NAT and tunnel tests with `-race`.
 - [x] Run the full main-module suite.
+
+### Task 42: Pool Trojan UDP Packet Wrappers
+
+**Files:**
+- Modify: `listener/trojan/packet.go`, `listener/trojan/server.go`
+- Test: `listener/trojan/packet_test.go`
+
+**Interfaces:**
+- Produces: pooled Trojan UDP packet wrappers released through `Drop`.
+- Preserves: flow keys, source addresses, payload ownership, and the single
+  release point.
+
+- [x] Reuse the wrapper object from the Trojan UDP receive loop.
+- [x] Return the payload buffer and wrapper together in `Drop`.
+- [x] Benchmark the owned versus pooled wrapper lifecycle with `benchstat`.
+- [x] Run listener and packet tests with `-race`.
+- [x] Run the full main-module suite.

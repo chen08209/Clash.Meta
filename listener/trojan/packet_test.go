@@ -4,6 +4,7 @@ import (
 	"net/netip"
 	"testing"
 
+	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/stretchr/testify/require"
 )
@@ -30,4 +31,15 @@ func TestNewPacketAdapterOnTrojanPacketSkipsTheUDPAddr(t *testing.T) {
 		}
 	})
 	require.EqualValues(t, 1, allocations)
+}
+
+func BenchmarkTrojanPacketDrop(b *testing.B) {
+	pc := &fixedLocalPacketConn{}
+	source := netip.MustParseAddrPort("192.168.1.2:54321")
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		pkt := newTrojanPacket(pc, source, pool.Get(64))
+		pkt.Drop()
+	}
 }

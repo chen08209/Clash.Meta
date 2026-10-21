@@ -340,12 +340,7 @@ func (l *Listener) handleConn(inMux bool, conn net.Conn, tunnel C.Tunnel, additi
 				break
 			}
 			target := socks5.AddrFromStdAddrPort(addr)
-			cPacket := &packet{
-				pc:      pc,
-				source:  N.AddrPortFromNetAddr(remoteAddr),
-				data:    data,
-				payload: data,
-			}
+			cPacket := newTrojanPacket(pc, N.AddrPortFromNetAddr(remoteAddr), data)
 
 			tunnel.HandleUDPPacket(inbound.NewPacket(target, cPacket, C.TROJAN, additions...))
 		}
