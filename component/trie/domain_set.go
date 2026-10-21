@@ -276,7 +276,6 @@ func (ss *DomainSet) keys(f func(key string, nodeId int) bool) {
 	}
 
 	traverse(0, 0)
-	return
 }
 
 // Foreach iterates over the stored domain patterns in unspecified order.

@@ -92,7 +92,6 @@ type HTTPVehicle struct {
 	timeout   time.Duration
 	sizeLimit int64
 	inRead    func(response *http.Response)
-	provider  P.ProxyProvider
 }
 
 func (h *HTTPVehicle) Url() string {

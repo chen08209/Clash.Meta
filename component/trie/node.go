@@ -21,10 +21,6 @@ func (n *Node[T]) getChild(s string) *Node[T] {
 	return n.childMap[s]
 }
 
-func (n *Node[T]) hasChild(s string) bool {
-	return n.getChild(s) != nil
-}
-
 func (n *Node[T]) addChild(s string, child *Node[T]) {
 	if n.childMap == nil {
 		if n.childNode == nil {
@@ -105,10 +101,7 @@ func strClone(key string) string {
 }
 
 func (n *Node[T]) isEmpty() bool {
-	if n == nil || n.inited == false {
-		return true
-	}
-	return false
+	return n == nil || !n.inited
 }
 
 func (n *Node[T]) setData(data T) {
