@@ -10,7 +10,6 @@ import (
 	"github.com/metacubex/mihomo/common/atomic"
 	"github.com/metacubex/mihomo/common/sockopt"
 	"github.com/metacubex/mihomo/component/keepalive"
-	"github.com/metacubex/mihomo/component/mptcp"
 
 	"github.com/metacubex/tfo-go"
 )
@@ -51,7 +50,7 @@ func (l *ListenConfig) SetRouteMark(mark int) {
 func (l ListenConfig) newListenConfig() *tfo.ListenConfig {
 	lc := tfo.ListenConfig{DisableTFO: !Tfo()}
 	keepalive.SetNetListenConfig(&lc.ListenConfig)
-	mptcp.SetNetListenConfig(&lc.ListenConfig, MPTCP())
+	lc.ListenConfig.SetMultipathTCP(MPTCP())
 	lc.Control = func(network, address string, c syscall.RawConn) error {
 		if l.routeMark != 0 {
 			err := sockopt.RawConnMark(c, l.routeMark)

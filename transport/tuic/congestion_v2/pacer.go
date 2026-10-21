@@ -47,11 +47,11 @@ func (p *Pacer) Budget(now monotime.Time) congestion.ByteCount {
 	if budget < 0 { // protect against overflows
 		budget = congestion.ByteCount(1<<62 - 1)
 	}
-	return Min(p.maxBurstSize(), budget)
+	return min(p.maxBurstSize(), budget)
 }
 
 func (p *Pacer) maxBurstSize() congestion.ByteCount {
-	return Max(
+	return max(
 		congestion.ByteCount((maxBurstPacingDelayMultiplier*congestion.MinPacingDelay).Nanoseconds())*p.getBandwidth()/1e9,
 		maxBurstPackets*p.maxDatagramSize,
 	)
@@ -72,7 +72,7 @@ func (p *Pacer) TimeUntilSend() monotime.Time {
 	if diff%bw > 0 {
 		d++
 	}
-	return p.lastSentTime.Add(Max(congestion.MinPacingDelay, time.Duration(d)*time.Nanosecond))
+	return p.lastSentTime.Add(max(congestion.MinPacingDelay, time.Duration(d)*time.Nanosecond))
 }
 
 func (p *Pacer) SetMaxDatagramSize(s congestion.ByteCount) {
