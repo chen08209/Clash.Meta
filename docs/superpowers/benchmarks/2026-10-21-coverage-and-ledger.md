@@ -91,7 +91,14 @@ picks 20.1-20.7 ns (fallback), 24.2-31.4 ns (url-test) and 0.68-0.79 ns
 (getProxies), the 5000-rule ip scan 174-185 ns, and the existing-flow udp
 handle 96-100 ns / 0 allocs. All within noise of the numbers above; the later
 rounds added no forwarding-path cost.
-', '
+A dynamic-profiling attempt against a minimal mixed-port harness hit an
+unresolved environment quirk: the parse produces the configured ports
+(verified by calling config.Parse directly), but the listeners never start
+and the log shows no error. The attempt was parked; the static-analysis
+conclusions stand. Note for anyone resuming this: the config package uses a
+go:linkname into the executor, so in-package tests are the only way to run
+it outside the full binary.
+
 ## Build matrix
 
 The full tree cross-compiles for every ci matrix platform plus freebsd:
