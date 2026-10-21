@@ -728,3 +728,24 @@ which is a net win at this blast radius. The per-packet `net.UDPAddrFromAddrPort
 - [x] Run packet, deadline, tunnel and listener tests with `-race`.
 - [x] Cross-build the affected packages for the ci matrix platforms.
 - [x] Run the full main-module suite.
+
+### Task 45: Persistent Pipe Reader For Emulated Packet Deadlines (target, not started)
+
+**Files:**
+- Modify: `common/net/deadline/packet.go`, `packet_enhance.go`, `packet_sing.go`
+- Test: `common/net/deadline/packet_enhance_test.go`
+
+**Interfaces:**
+- Produces: one pipe reader per conn instead of one goroutine per read while a deadline is set.
+- Preserves: the deadline result, the one-packet buffer between reads, and the reader/writer
+  replaceable markers.
+
+The outbound conns that cannot handle a read deadline natively (the sing-backed ones: hysteria,
+tuic, shadowquic) read through a goroutine per datagram whenever a deadline is set, which is
+the steady state for a busy flow. Measured on a scratch harness: 4.98-9.41us / 0 allocs on the
+direct path against 12.39-17.65us / 96-97 B / 2 allocs on the pipe path.
+
+- [ ] Replace the per-read goroutine with a pipe reader owned by the conn.
+- [ ] Keep the one-token handshake honest across all four read shapes.
+- [ ] Benchmark both the direct and the pipe path with `benchstat`.
+- [ ] Run deadline, tunnel and outbound tests with `-race`.
