@@ -616,3 +616,21 @@ which is a net win at this blast radius. The per-packet `net.UDPAddrFromAddrPort
 - [x] Benchmark construction before and after with `benchstat`.
 - [x] Run `common/net`, `component/sniffer`, and `tunnel` tests with `-race`.
 - [x] Run the full main-module suite.
+
+### Task 39: Cheap Load Balance Keys
+
+**Files:**
+- Modify: `adapter/outboundgroup/loadbalance.go`
+- Test: `adapter/outboundgroup/loadbalance_test.go`
+- Benchmark: `adapter/outboundgroup/loadbalance_test.go`
+
+**Interfaces:**
+- Produces: an address-alphabet precheck and an eTLD+1 hash cache for load-balance keys.
+- Preserves: IP and domain key semantics, consistent hashing, sticky-session identity, and `hash-key` behavior.
+
+- [x] Avoid boxed parse errors on every domain host lookup.
+- [x] Cache repeated public-suffix derivations.
+- [x] Pin domain and IP key semantics with allocation gates.
+- [x] Benchmark sticky-session picking before and after with `benchstat`.
+- [x] Run outbound-group tests with `-race`.
+- [x] Run the full main-module suite.
