@@ -277,17 +277,17 @@ type hyPacketConn struct {
 }
 
 func (c *hyPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
-	b, addrStr, err := c.UDPConn.ReadFrom()
+	b, socksaddr, err := c.UDPConn.ReadFrom()
 	if err != nil {
 		return
 	}
 	n = copy(p, b)
-	addr = M.ParseSocksaddr(addrStr).UDPAddr()
+	addr = socksaddr.UDPAddr()
 	return
 }
 
 func (c *hyPacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
-	b, addrStr, err := c.UDPConn.ReadFrom()
+	b, socksaddr, err := c.UDPConn.ReadFrom()
 	if err != nil {
 		return
 	}
@@ -295,12 +295,12 @@ func (c *hyPacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err err
 	// memory so the caller can recycle it with pool.Put
 	data = pool.Get(len(b))
 	copy(data, b)
-	addr = M.ParseSocksaddr(addrStr).AddrPort()
+	addr = socksaddr.AddrPort()
 	return
 }
 
 func (c *hyPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
-	err = c.UDPConn.WriteTo(p, M.SocksaddrFromNet(addr).String())
+	err = c.UDPConn.WriteTo(p, M.SocksaddrFromNet(addr))
 	if err != nil {
 		return
 	}

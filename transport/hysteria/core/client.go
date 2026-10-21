@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strconv"
 	"sync"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/metacubex/quic-go"
 	"github.com/metacubex/quic-go/congestion"
 	"github.com/metacubex/randv2"
+	M "github.com/metacubex/sing/common/metadata"
 	"github.com/metacubex/tls"
 )
 
@@ -340,8 +340,8 @@ func (w *quicConn) SetWriteDeadline(t time.Time) error {
 }
 
 type UDPConn interface {
-	ReadFrom() ([]byte, string, error)
-	WriteTo([]byte, string) error
+	ReadFrom() ([]byte, M.Socksaddr, error)
+	WriteTo([]byte, M.Socksaddr) error
 	Close() error
 	LocalAddr() net.Addr
 	SetDeadline(t time.Time) error
@@ -369,29 +369,25 @@ func (c *quicPktConn) Hold() {
 	_ = c.Close()
 }
 
-func (c *quicPktConn) ReadFrom() ([]byte, string, error) {
+func (c *quicPktConn) ReadFrom() ([]byte, M.Socksaddr, error) {
 	msg := <-c.MsgCh
 	if msg == nil {
 		// Closed
-		return nil, "", ErrClosed
+		return nil, M.Socksaddr{}, ErrClosed
 	}
-	return msg.Data, net.JoinHostPort(msg.Host, strconv.Itoa(int(msg.Port))), nil
+	return msg.Data, M.ParseSocksaddrHostPort(msg.Host, msg.Port), nil
 }
 
-func (c *quicPktConn) WriteTo(p []byte, addr string) error {
-	host, port, err := utils.SplitHostPort(addr)
-	if err != nil {
-		return err
-	}
+func (c *quicPktConn) WriteTo(p []byte, addr M.Socksaddr) error {
 	msg := udpMessage{
 		SessionID: c.UDPSessionID,
-		Host:      host,
-		Port:      port,
+		Host:      addr.AddrString(),
+		Port:      addr.Port,
 		FragCount: 1,
 		Data:      p,
 	}
 	// try no frag first
-	err = c.Session.SendDatagram(msg.Pack())
+	err := c.Session.SendDatagram(msg.Pack())
 	if err != nil {
 		var errSize *quic.DatagramTooLargeError
 		if errors.As(err, &errSize) {
