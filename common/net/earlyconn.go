@@ -2,7 +2,6 @@ package net
 
 import (
 	"net"
-	"sync"
 
 	"github.com/metacubex/mihomo/common/buf"
 	"github.com/metacubex/mihomo/common/once"
@@ -11,7 +10,7 @@ import (
 type earlyConn struct {
 	ExtendedConn // only expose standard N.ExtendedConn function to outside
 	resFunc      func() error
-	resOnce      sync.Once
+	resOnce      once.Once
 	resErr       error
 }
 
@@ -43,7 +42,7 @@ func (conn *earlyConn) Upstream() any {
 }
 
 func (conn *earlyConn) Success() bool {
-	return once.Done(&conn.resOnce) && conn.resErr == nil
+	return conn.resOnce.Done() && conn.resErr == nil
 }
 
 func (conn *earlyConn) ReaderReplaceable() bool {

@@ -24,6 +24,7 @@ focused test, a benchmark or both.
 | `hub/route` | 12.8% | real-listener auth matrix, hello/version, read endpoints |
 | `component/process` | 8.5% | cache hits, expiry, failure handling, 53ns hit benchmark |
 | `rules/common` | 15.6% | per-connection matcher semantics, resolve-helper contract |
+| `common/once` | 100.0% | resettable Once: Done/Reset semantics, single run under concurrency, panic marks done |
 
 The listener and transport protocol packages without test files are
 integration surfaces; the remaining zero-coverage entries there are noted, not
@@ -54,7 +55,11 @@ wiring but preserved for merge parity and downstream consumers such as CMFA):
 variant and the legacy vmess AEAD codec. The toolchain floor has since moved
 to go 1.24, so the pre-go1.24 maphash port, the once and contextutils shims
 and the other build-tagged variants are deleted, the x/exp dependencies are
-replaced by the stdlib, and the ci matrix runs go 1.24-1.27.1.
+replaced by the stdlib, and the ci matrix runs go 1.24-1.27.1. The once
+package is now a single resettable `Once` with `Do`/`Done`/`Reset`, replacing
+the unsafe `sync.Once` introspection that read the runtime's internal layout,
+and `component/keepalive` lost its go1.21/go1.22/go1.23 halves, keeping one
+implementation per platform.
 
 ## Measured and deferred
 

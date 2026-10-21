@@ -1,4 +1,4 @@
-//go:build go1.23 && windows
+//go:build windows
 
 // copy and modify from golang1.23's internal/syscall/windows/version_windows.go
 

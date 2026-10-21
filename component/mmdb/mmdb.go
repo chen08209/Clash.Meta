@@ -1,9 +1,7 @@
 package mmdb
 
 import (
-	"sync"
-
-	mihomoOnce "github.com/metacubex/mihomo/common/once"
+	"github.com/metacubex/mihomo/common/once"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/log"
 
@@ -21,8 +19,8 @@ const (
 var (
 	ipReader  IPReader
 	asnReader ASNReader
-	ipOnce    sync.Once
-	asnOnce   sync.Once
+	ipOnce    once.Once
+	asnOnce   once.Once
 )
 
 func LoadFromBytes(buffer []byte) {
@@ -88,9 +86,9 @@ func ASNInstance() ASNReader {
 }
 
 func ReloadIP() {
-	mihomoOnce.Reset(&ipOnce)
+	ipOnce.Reset()
 }
 
 func ReloadASN() {
-	mihomoOnce.Reset(&asnOnce)
+	asnOnce.Reset()
 }
