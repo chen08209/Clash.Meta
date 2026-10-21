@@ -63,6 +63,7 @@ papered over with getter-only tests.
 | `72a7590e5` | per-flow metadata reuse and wrapper pooling on the shadowsocks udp path | warm datagram 548 B / 4 allocs -> 0 B / 0 allocs (p=0.000, n=10); the host was loaded, so the time delta is recorded but not gated |
 | `99c4773b` | pooled Trojan UDP packet wrappers through Drop | wrapper drop 70.08n / 96 B / 1 alloc -> 30.48n / 0 B / 0 allocs (p=0.000, n=8) |
 | `bc7bc77be` | take the udp destination as an AddrPort on the tproxy and trojan paths | tproxy read-loop shape 480 B / 6 allocs -> 440 B / 3 allocs per datagram (p=0.000, n=10); the plain handle path 448 B / 4 allocs -> 440 B / 3 |
+| `390d17525` | reuse trojan UDP flow metadata per destination | inbound baseline 506 B / 4 allocs -> 22 B / 0 allocs (p=0.000, n=10); the loaded host kept the time delta off the gate |
 
 ## Dead-code ledger
 
