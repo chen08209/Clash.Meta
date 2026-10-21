@@ -118,6 +118,8 @@ func (c *BufferedConn) ReaderReplaceable() bool {
 	return true
 }
 
+// WriterReplaceable returns false so relay code keeps this ExtendedWriter
+// instead of unwrapping to a raw conn and wrapping it again.
 func (c *BufferedConn) WriterReplaceable() bool {
-	return true
+	return false
 }

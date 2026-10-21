@@ -563,3 +563,19 @@ which is a net win at this blast radius. The per-packet `net.UDPAddrFromAddrPort
 - [x] Benchmark construction before and after with `benchstat`.
 - [x] Run `common/net`, `component/sniffer`, and `tunnel` tests with `-race`.
 - [x] Run the full main-module suite.
+
+### Task 36: Keep The BufferedConn Writer
+
+**Files:**
+- Modify: `common/net/bufconn.go`
+- Benchmark: `common/net/bufconn_bench_test.go`
+
+**Interfaces:**
+- Produces: a non-replaceable `BufferedConn` writer.
+- Preserves: peeked-byte reader replacement, upstream discovery, `ExtendedConn` passthrough, and deadline handling.
+
+- [x] Stop unwrapping an empty `BufferedConn` to a raw socket on the write path.
+- [x] Avoid recreating Sing's extended writer wrapper in relay copies.
+- [x] Benchmark the writer unwrap/wrap path before and after with `benchstat`.
+- [x] Run `common/net`, `component/sniffer`, and `tunnel` tests with `-race`.
+- [x] Run the full main-module suite.
