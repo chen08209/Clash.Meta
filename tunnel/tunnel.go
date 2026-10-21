@@ -612,6 +612,11 @@ func match(
 	processLookupEnabled bool,
 ) (C.Proxy, C.Rule, error) {
 	var activeContext *matchContext
+	defer func() {
+		if activeContext != nil {
+			releaseMatchContext(activeContext)
+		}
+	}()
 	var helper C.RuleMatchHelper
 	var rematchChain []string
 	for {
@@ -623,13 +628,13 @@ func match(
 		for cursor < len(rules) {
 			rule := rules[cursor]
 			if index.usesHelperAt(cursor, rules) && activeContext == nil {
-				activeContext = &matchContext{
-					metadata:     metadata,
-					runtimeState: runtimeState,
-					resolved:     hostsResolved,
-					attemptProcessLookup: processLookupEnabled &&
+				activeContext = acquireMatchContext(
+					metadata,
+					runtimeState,
+					hostsResolved,
+					processLookupEnabled &&
 						metadata.Type != C.INNER,
-				}
+				)
 				helper = C.RuleMatchHelper{Context: activeContext}
 			}
 			if matched, ada := rule.Match(metadata, helper); matched {

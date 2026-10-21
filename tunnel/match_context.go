@@ -3,6 +3,7 @@ package tunnel
 import (
 	"context"
 	"path/filepath"
+	"sync"
 
 	"github.com/metacubex/mihomo/component/process"
 	"github.com/metacubex/mihomo/component/resolver"
@@ -17,6 +18,32 @@ type matchContext struct {
 	runtimeState         *runtimeSnapshot
 	resolved             bool
 	attemptProcessLookup bool
+}
+
+var matchContextPool = sync.Pool{
+	New: func() any { return new(matchContext) },
+}
+
+func acquireMatchContext(
+	metadata *C.Metadata,
+	runtimeState *runtimeSnapshot,
+	resolved bool,
+	attemptProcessLookup bool,
+) *matchContext {
+	c := matchContextPool.Get().(*matchContext)
+	c.metadata = metadata
+	c.runtimeState = runtimeState
+	c.resolved = resolved
+	c.attemptProcessLookup = attemptProcessLookup
+	return c
+}
+
+func releaseMatchContext(c *matchContext) {
+	c.metadata = nil
+	c.runtimeState = nil
+	c.resolved = false
+	c.attemptProcessLookup = false
+	matchContextPool.Put(c)
 }
 
 func (c *matchContext) ResolveIP() {
