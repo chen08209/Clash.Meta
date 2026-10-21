@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/metacubex/mihomo/common/contextutils"
 	"github.com/metacubex/mihomo/component/dialer"
 	"github.com/metacubex/mihomo/component/resolver"
 	C "github.com/metacubex/mihomo/constant"
@@ -256,7 +255,7 @@ func (o *OpenVPN) Close() error {
 
 func (o *OpenVPN) run(ctx context.Context) (ipStack, resolver.Resolver, error) {
 	runCtx, cancel := context.WithCancel(ctx)
-	stop := contextutils.AfterFunc(o.runCtx, cancel)
+	stop := context.AfterFunc(o.runCtx, cancel)
 	defer func() {
 		stop()
 		cancel()

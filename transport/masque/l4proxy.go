@@ -6,7 +6,6 @@ import (
 	"net"
 	"unsafe"
 
-	"github.com/metacubex/mihomo/common/contextutils"
 
 	"github.com/metacubex/http"
 	"github.com/metacubex/quic-go"
@@ -73,7 +72,7 @@ func (c *L4Client) dialConn(ctx context.Context) (*http3.ClientConn, error) {
 
 	dialCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stop := contextutils.AfterFunc(c.runCtx, cancel)
+	stop := context.AfterFunc(c.runCtx, cancel)
 	defer stop()
 
 	_, quicConn, err := c.dialFn(dialCtx)

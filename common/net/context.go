@@ -4,7 +4,6 @@ import (
 	"context"
 	"net"
 
-	"github.com/metacubex/mihomo/common/contextutils"
 )
 
 // SetupContextForConn is a helper function that starts connection I/O interrupter.
@@ -21,7 +20,7 @@ import (
 //	}
 func SetupContextForConn(ctx context.Context, conn net.Conn) (done func(*error)) {
 	stopc := make(chan struct{})
-	stop := contextutils.AfterFunc(ctx, func() {
+	stop := context.AfterFunc(ctx, func() {
 		// Close the connection, discarding the error
 		_ = conn.Close()
 		close(stopc)
@@ -47,7 +46,7 @@ func RelayContext(ctx context.Context, leftConn, rightConn net.Conn) error {
 	}
 
 	done := make(chan struct{})
-	stop := contextutils.AfterFunc(ctx, func() {
+	stop := context.AfterFunc(ctx, func() {
 		_ = leftConn.Close()
 		_ = rightConn.Close()
 		close(done)

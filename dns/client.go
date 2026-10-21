@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/metacubex/mihomo/common/contextutils"
 	"github.com/metacubex/mihomo/component/resolver"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/log"
@@ -118,7 +117,7 @@ func exchangeWithConn(ctx context.Context, dClient *D.Client, m *D.Msg, conn net
 		Conn:    conn,
 		UDPSize: dClient.UDPSize,
 	}
-	stop := contextutils.AfterFunc(ctx, func() {
+	stop := context.AfterFunc(ctx, func() {
 		_ = conn.Close()
 	})
 	defer stop()
