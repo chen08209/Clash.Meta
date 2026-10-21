@@ -57,6 +57,7 @@ papered over with getter-only tests.
 | `b02ab5bbf` | recycle tunnel UDP packet wrappers through Drop | tunnel UDP 504 B / 4 allocs -> 440 B / 3 allocs; latency unchanged within noise (p=0.481, n=10) |
 | `53f04488c` | recycle tproxy UDP packet wrappers through Drop | tproxy UDP 560 B / 5 allocs -> 448 B / 4 allocs; latency unchanged within noise (p=0.052, n=10) |
 | `af18b7787` | raw WSARecvFrom into a callback-local kernel sockaddr on the windows read path | read gate 169 B / 7 allocs -> 137 B / 6 allocs per datagram (p=0.000, n=10); the wall-clock delta stayed inside the host's load noise across runs, so the allocation count is the gate; the read test now covers udp4 and udp6 |
+| `329f8ef03` | replace the match helper's three function fields with one context interface | rule matching 72 B / 4 allocs -> 24 B / 1 alloc (p=0.000, n=10); the remaining allocation is the match context |
 | `72a7590e5` | per-flow metadata reuse and wrapper pooling on the shadowsocks udp path | warm datagram 548 B / 4 allocs -> 0 B / 0 allocs (p=0.000, n=10); the host was loaded, so the time delta is recorded but not gated |
 
 ## Dead-code ledger
