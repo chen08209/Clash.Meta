@@ -61,6 +61,7 @@ papered over with getter-only tests.
 | `329f8ef03` | replace the match helper's three function fields with one context interface | rule matching 72 B / 4 allocs -> 24 B / 1 alloc (p=0.000, n=10); the remaining allocation is the match context |
 | `90ea4115f` | pool and reset the rule match context | rule matching 24 B / 1 alloc -> 0 B / 0 allocs (p=0.000, n=10); IP rule scans 22-55% faster |
 | `72a7590e5` | per-flow metadata reuse and wrapper pooling on the shadowsocks udp path | warm datagram 548 B / 4 allocs -> 0 B / 0 allocs (p=0.000, n=10); the host was loaded, so the time delta is recorded but not gated |
+| `99c4773b` | pooled Trojan UDP packet wrappers through Drop | wrapper drop 70.08n / 96 B / 1 alloc -> 30.48n / 0 B / 0 allocs (p=0.000, n=8) |
 
 ## Dead-code ledger
 
