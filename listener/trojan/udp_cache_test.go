@@ -93,3 +93,15 @@ func BenchmarkTrojanUDPHandle(b *testing.B) {
 		session.handle(data, target)
 	}
 }
+
+func BenchmarkTrojanPacketWriteBack(b *testing.B) {
+	pkt := &packet{pc: &fixedLocalPacketConn{}}
+	addr := netip.MustParseAddrPort("1.2.3.4:53")
+	payload := []byte("payload")
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = pkt.WriteBack(payload, addr)
+	}
+}

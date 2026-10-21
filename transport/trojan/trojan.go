@@ -69,6 +69,42 @@ func writePacket(w io.Writer, socks5Addr, payload []byte) (int, error) {
 	return len(payload), nil
 }
 
+func writePacketAddrPort(w io.Writer, addr netip.AddrPort, payload []byte) (int, error) {
+	if !addr.IsValid() {
+		return 0, errors.New("invalid address")
+	}
+
+	buf := pool.GetBuffer()
+	defer pool.PutBuffer(buf)
+
+	var header [1 + net.IPv6len + 2]byte
+	headerLen := 1 + net.IPv4len + 2
+	addr = netip.AddrPortFrom(addr.Addr().Unmap(), addr.Port())
+	if addr.Addr().Is4() {
+		a4 := addr.Addr().As4()
+		header[0] = socks5.AtypIPv4
+		copy(header[1:], a4[:])
+	} else {
+		a16 := addr.Addr().As16()
+		header[0] = socks5.AtypIPv6
+		copy(header[1:], a16[:])
+		headerLen = 1 + net.IPv6len + 2
+	}
+	binary.BigEndian.PutUint16(header[headerLen-2:], addr.Port())
+	buf.Write(header[:headerLen])
+
+	var length [2]byte
+	binary.BigEndian.PutUint16(length[:], uint16(len(payload)))
+	buf.Write(length[:])
+	buf.Write(crlf)
+	buf.Write(payload)
+
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		return 0, err
+	}
+	return len(payload), nil
+}
+
 func WritePacket(w io.Writer, socks5Addr, payload []byte) (int, error) {
 	if len(payload) <= maxLength {
 		return writePacket(w, socks5Addr, payload)
@@ -142,7 +178,16 @@ type PacketConn struct {
 }
 
 func (pc *PacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+	if addrPort, ok := addr.(interface{ AddrPort() netip.AddrPort }); ok {
+		if addrPort := addrPort.AddrPort(); addrPort.IsValid() {
+			return pc.WriteToAddrPort(b, addrPort)
+		}
+	}
 	return WritePacket(pc, socks5.ParseAddrToSocksAddr(addr), b)
+}
+
+func (pc *PacketConn) WriteToAddrPort(b []byte, addr netip.AddrPort) (int, error) {
+	return writePacketAddrPort(pc, addr, b)
 }
 
 func (pc *PacketConn) ReadFrom(b []byte) (int, net.Addr, error) {

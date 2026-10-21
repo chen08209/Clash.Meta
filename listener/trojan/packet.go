@@ -13,7 +13,7 @@ import (
 // last handed the sender so replies can be written back through it, and Drop
 // runs long before that flow ends. Recycling the object here would let the next
 // datagram claim it and move those replies onto another client's socket.
-func newTrojanPacket(pc net.PacketConn, source netip.AddrPort, data []byte) *packet {
+func newTrojanPacket(pc trojanUDPConn, source netip.AddrPort, data []byte) *packet {
 	return &packet{
 		pc:      pc,
 		source:  source,
@@ -23,16 +23,21 @@ func newTrojanPacket(pc net.PacketConn, source netip.AddrPort, data []byte) *pac
 }
 
 type packet struct {
-	pc      net.PacketConn
+	pc      trojanUDPConn
 	source  netip.AddrPort
 	data    []byte
 	payload []byte
 }
 
+type trojanUDPConn interface {
+	net.PacketConn
+	WriteToAddrPort([]byte, netip.AddrPort) (int, error)
+}
+
 const trojanUDPFlowCacheSize = 256
 
 type trojanUDPSession struct {
-	pc        net.PacketConn
+	pc        trojanUDPConn
 	source    netip.AddrPort
 	tunnel    C.Tunnel
 	additions []inbound.Addition
@@ -40,7 +45,7 @@ type trojanUDPSession struct {
 }
 
 func newTrojanUDPSession(
-	pc net.PacketConn,
+	pc trojanUDPConn,
 	source netip.AddrPort,
 	tunnel C.Tunnel,
 	additions []inbound.Addition,
@@ -79,7 +84,7 @@ func (c *packet) FlowKey() netip.AddrPort {
 
 // WriteBack wirtes UDP packet with source(ip, port) = `addr`
 func (c *packet) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
-	return c.pc.WriteTo(b, net.UDPAddrFromAddrPort(addr))
+	return c.pc.WriteToAddrPort(b, addr)
 }
 
 // LocalAddr returns the source IP/Port of UDP Packet

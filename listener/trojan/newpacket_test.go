@@ -18,11 +18,14 @@ var fixedLocalAddr = &net.UDPAddr{Port: 1080}
 
 func (*fixedLocalPacketConn) ReadFrom([]byte) (int, net.Addr, error) { return 0, nil, net.ErrClosed }
 func (*fixedLocalPacketConn) WriteTo([]byte, net.Addr) (int, error)  { return 0, net.ErrClosed }
-func (*fixedLocalPacketConn) Close() error                           { return nil }
-func (*fixedLocalPacketConn) LocalAddr() net.Addr                    { return fixedLocalAddr }
-func (*fixedLocalPacketConn) SetDeadline(time.Time) error            { return nil }
-func (*fixedLocalPacketConn) SetReadDeadline(time.Time) error        { return nil }
-func (*fixedLocalPacketConn) SetWriteDeadline(time.Time) error       { return nil }
+func (*fixedLocalPacketConn) WriteToAddrPort([]byte, netip.AddrPort) (int, error) {
+	return 0, net.ErrClosed
+}
+func (*fixedLocalPacketConn) Close() error                     { return nil }
+func (*fixedLocalPacketConn) LocalAddr() net.Addr              { return fixedLocalAddr }
+func (*fixedLocalPacketConn) SetDeadline(time.Time) error      { return nil }
+func (*fixedLocalPacketConn) SetReadDeadline(time.Time) error  { return nil }
+func (*fixedLocalPacketConn) SetWriteDeadline(time.Time) error { return nil }
 
 func TestInboundNewPacketAllocationCount(t *testing.T) {
 	source := netip.MustParseAddrPort("192.168.1.2:54321")
