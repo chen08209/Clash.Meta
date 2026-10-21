@@ -24,7 +24,6 @@ import (
 	"github.com/metacubex/mihomo/component/sniffer"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
-	icontext "github.com/metacubex/mihomo/context"
 	"github.com/metacubex/mihomo/log"
 	"github.com/metacubex/mihomo/tunnel/statistic"
 
@@ -32,7 +31,7 @@ import (
 )
 
 const (
-	queueCapacity  = 64  // chan capacity tcpQueue and udpQueue
+	queueCapacity  = 64  // chan capacity of the UDP worker queues
 	senderCapacity = 128 // chan capacity of PacketSender
 )
 
@@ -41,12 +40,6 @@ var (
 	udpInit   sync.Once
 	udpQueues []chan udpPacket
 	natTable  = nat.New()
-
-	// for compatibility, lazy init
-	tcpQueue  chan C.ConnContext
-	tcpInOnce sync.Once
-	udpQueue  chan C.PacketAdapter
-	udpInOnce sync.Once
 
 	// default timeout for UDP session
 	udpTimeout = 60 * time.Second
@@ -69,8 +62,7 @@ var _ P.Tunnel = Tunnel
 var _ proxydialer.Tunnel = Tunnel
 
 func (t tunnel) HandleTCPConn(conn net.Conn, metadata *C.Metadata) {
-	connCtx := icontext.NewConnContext(conn, metadata)
-	handleTCPConn(connCtx)
+	handleTCPConn(conn, metadata)
 }
 
 func initUDP() {
@@ -153,34 +145,6 @@ func SetSniffing(b bool) {
 
 func IsSniffing() bool {
 	return loadRuntime().sniffingEnable
-}
-
-// TCPIn return fan-in queue
-// Deprecated: using Tunnel instead
-func TCPIn() chan<- C.ConnContext {
-	tcpInOnce.Do(func() {
-		tcpQueue = make(chan C.ConnContext, queueCapacity)
-		go func() {
-			for connCtx := range tcpQueue {
-				go handleTCPConn(connCtx)
-			}
-		}()
-	})
-	return tcpQueue
-}
-
-// UDPIn return fan-in udp queue
-// Deprecated: using Tunnel instead
-func UDPIn() chan<- C.PacketAdapter {
-	udpInOnce.Do(func() {
-		udpQueue = make(chan C.PacketAdapter, queueCapacity)
-		go func() {
-			for packet := range udpQueue {
-				Tunnel.HandleUDPPacket(packet, packet.Metadata())
-			}
-		}()
-	})
-	return udpQueue
 }
 
 // NatTable return nat table
@@ -479,19 +443,18 @@ func dialUDPSender(originMetadata *C.Metadata, metadata *C.Metadata, packet C.Pa
 	return pc, writeBackProxy, nil
 }
 
-func handleTCPConn(connCtx C.ConnContext) {
+func handleTCPConn(conn net.Conn, metadata *C.Metadata) {
 	runtimeState := loadRuntime()
-	if !isHandle(connCtx.Metadata().Type) {
-		_ = connCtx.Conn().Close()
+	if !isHandle(metadata.Type) {
+		_ = conn.Close()
 		return
 	}
 
-	originConn := connCtx.Conn()
+	originConn := conn
 	defer func() {
 		_ = originConn.Close()
 	}()
 
-	metadata := connCtx.Metadata()
 	if !metadata.Valid() {
 		log.Warnln("[Metadata] not valid: %#v", metadata)
 		return
@@ -504,7 +467,6 @@ func handleTCPConn(connCtx C.ConnContext) {
 		preHandleFailed = true
 	}
 
-	var conn net.Conn = originConn
 	bufferedConn := func() *N.BufferedConn {
 		if buffered, ok := conn.(*N.BufferedConn); ok {
 			return buffered
