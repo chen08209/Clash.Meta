@@ -437,6 +437,12 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 				if err != nil {
 					dcBuf, _ = encRaw.DecodeString(cipherRaw)
 					cipher, password, found = strings.Cut(string(dcBuf), ":")
+					if !found {
+						continue
+					}
+					if err = VerifyMethod(cipher, password); err != nil {
+						continue
+					}
 				}
 			}
 
