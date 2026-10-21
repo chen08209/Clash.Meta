@@ -54,12 +54,14 @@ wiring but preserved for merge parity and downstream consumers such as CMFA):
 variant, the legacy vmess AEAD codec, and the pre-go1.24 maphash port that the
 `go 1.20` toolchain floor still exercises.
 
-## Deferred
+## Measured and deferred
 
-`Resolver.LookupIP` still starts one goroutine per uncached lookup and the
-dns message cache still deep-copies on non-IP hits; both were investigated in
-the 2026-10-20 scan and stay deferred until a profile shows the dns qps that
-would pay for them.
+New benchmarks quantify the two deferred dns paths on a typical two-answer
+reply: the message-cache hit deep copy costs ~0.4 microseconds / 344 B / 7
+allocs per hit and the parsed-ip lookup path ~0.2 microseconds / 48 B / 1
+alloc - together well under 0.1 percent of a core at a thousand hits per
+second, so the copy-on-write and worker-pool reworks stay rejected as
+risk-without-payoff.
 
 ## Regression re-run
 
