@@ -256,8 +256,10 @@ func ShouldIgnorePacketError(err error) bool {
 }
 
 type packetWriterState struct {
-	writer network.NetPacketWriter
-	mutex  sync.Mutex
+	writer    network.NetPacketWriter
+	mutex     sync.Mutex
+	writeAddr net.UDPAddr
+	writeIP   [net.IPv6len]byte
 }
 
 func newSingPacketState(writer network.NetPacketWriter) *packetWriterState {
@@ -278,8 +280,21 @@ func (s *packetWriterState) writeBack(b []byte, addr netip.AddrPort) (n int, err
 		return
 	}
 
+	ipAddr := addr.Addr().Unmap()
+	if ipAddr.Is4() {
+		a4 := ipAddr.As4()
+		copy(s.writeIP[:net.IPv4len], a4[:])
+		s.writeAddr.IP = s.writeIP[:net.IPv4len]
+	} else {
+		a16 := ipAddr.As16()
+		copy(s.writeIP[:], a16[:])
+		s.writeAddr.IP = s.writeIP[:]
+	}
+	s.writeAddr.Port = int(addr.Port())
+	s.writeAddr.Zone = ipAddr.Zone()
+
 	// sing's writer speaks net.Addr, so the address crosses that one boundary.
-	return s.writer.WriteTo(b, net.UDPAddrFromAddrPort(addr))
+	return s.writer.WriteTo(b, &s.writeAddr)
 }
 
 // The wrapper is allocated per datagram on purpose: a flow keeps the packet it
