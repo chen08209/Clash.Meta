@@ -17,7 +17,7 @@ focused test, a benchmark or both.
 | `component/sniffer` | 80.9% | dispatcher, quic and http sniffers |
 | `rules` (dispatch) | 75.5% | the full ParseRule type table, params, error paths, uid platform gate |
 | `rules/provider` | 76.6% | strategy lifecycles, mrs round trips and text export, file-vehicle initial/update, payload fallback, the inline mapping decode, and the RuleSet rule through the injected tunnel registry (src swap, no-resolve, absent provider) |
-| `tunnel` | 56.7% | rule index, packet flow key, deadlines, sender mapping, metadata template |
+| `tunnel` | 59.2% | rule index, packet flow key, deadlines, sender mapping, metadata template, the mode and status text round trips, and the all-proxies cache: the up-to-date check against missing, extra and bumped providers, the rebuild that follows a version, the explicit drop, and both provider snapshots |
 | `component/nat` | 54.1% | binary flow keys, allocation-free local-conn lookup |
 | `tunnel/statistic` | 49.0% | stripes, tracker lifecycle, snapshot |
 | `listener/socks` | 17.1% | per-flow metadata cache identity, split targets, warm-path benchmark |
