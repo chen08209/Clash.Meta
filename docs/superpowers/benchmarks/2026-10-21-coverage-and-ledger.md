@@ -24,7 +24,7 @@ focused test, a benchmark or both.
 | `dns` | 22.1% | cache keys, parsed-ip cache, conn pool, exchange errors |
 | `hub/route` | 12.8% | real-listener auth matrix, hello/version, read endpoints |
 | `component/process` | 8.5% | cache hits, expiry, failure handling, 53ns hit benchmark |
-| `rules/common` | 15.6% | per-connection matcher semantics, resolve-helper contract |
+| `rules/common` | 51.4% | the payload shapes ParseRulePayload accepts (comma payloads, targets, params), src/no-resolve params, the inbound name/user/type rules with the socks expansion, the process rule over name, path, regex and wildcard, the ip-suffix trailing-bit match, and the match and ipcidr rule surfaces |
 | `common/once` | 100.0% | resettable Once: Done/Reset semantics, single run under concurrency, panic marks done |
 
 The listener and transport protocol packages without test files are
