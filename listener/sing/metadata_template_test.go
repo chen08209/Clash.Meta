@@ -37,7 +37,23 @@ type dropTunnel struct {
 	C.Tunnel
 }
 
-func (dropTunnel) HandleUDPPacket(C.UDPPacket, *C.Metadata) {}
+func (dropTunnel) HandleUDPPacket(packet C.UDPPacket, _ *C.Metadata) {
+	packet.Drop()
+}
+
+type recycleTunnel struct {
+	C.Tunnel
+	wrappers []*packet
+	data     [][]byte
+}
+
+func (c *recycleTunnel) HandleUDPPacket(udpPacket C.UDPPacket, _ *C.Metadata) {
+	if singPacket, ok := udpPacket.(*packet); ok {
+		c.wrappers = append(c.wrappers, singPacket)
+	}
+	c.data = append(c.data, append([]byte(nil), udpPacket.Data()...))
+	udpPacket.Drop()
+}
 
 type fakeDatagram struct {
 	data []byte
@@ -107,8 +123,8 @@ func TestNewPacketConnectionReusesPerFlowMetadata(t *testing.T) {
 	}
 }
 
-// One run forwards a fixed batch through one flow, so the reported allocs are
-// per batch: one metadata build plus one packet per datagram.
+// One run forwards a fixed batch through one flow and drops each packet, so
+// the reported allocs are per batch with the same ownership tunnel uses.
 func BenchmarkNewPacketConnectionDatagramBatch(b *testing.B) {
 	dest := M.SocksaddrFrom(netip.MustParseAddr("1.2.3.4"), 443)
 	source := M.SocksaddrFrom(netip.MustParseAddr("192.168.1.2"), 54321)
@@ -128,4 +144,26 @@ func BenchmarkNewPacketConnectionDatagramBatch(b *testing.B) {
 		conn := &fakePacketConn{datagrams: datagrams}
 		_ = handler.NewPacketConnection(context.Background(), conn, metadata)
 	}
+}
+
+func TestNewPacketConnectionRecyclesPacketWrappers(t *testing.T) {
+	dest := M.SocksaddrFrom(netip.MustParseAddr("1.2.3.4"), 443)
+	source := M.SocksaddrFrom(netip.MustParseAddr("192.168.1.2"), 54321)
+	tunnel := &recycleTunnel{}
+	conn := &fakePacketConn{datagrams: []fakeDatagram{
+		{data: []byte("first"), dest: dest},
+		{data: []byte("second"), dest: dest},
+		{data: []byte("third"), dest: dest},
+	}}
+	handler := &ListenerHandler{ListenerConfig: ListenerConfig{Tunnel: tunnel, Type: C.TUN}}
+
+	err := handler.NewPacketConnection(context.Background(), conn, M.Metadata{Source: source, Destination: dest})
+	require.True(t, err == nil || errors.Is(err, io.EOF), "unexpected error: %v", err)
+
+	require.Len(t, tunnel.wrappers, 3)
+	require.Same(t, tunnel.wrappers[0], tunnel.wrappers[1])
+	require.Same(t, tunnel.wrappers[0], tunnel.wrappers[2])
+	require.Equal(t, []byte("first"), tunnel.data[0])
+	require.Equal(t, []byte("second"), tunnel.data[1])
+	require.Equal(t, []byte("third"), tunnel.data[2])
 }

@@ -126,7 +126,7 @@ func (c *tfoConn) WriterReplaceable() bool {
 }
 
 func dialTFO(ctx context.Context, netDialer net.Dialer, network, address string) (net.Conn, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), DefaultTCPTimeout)
+	ctx, cancel := context.WithTimeout(ctx, DefaultTCPTimeout)
 	dialer := tfo.Dialer{Dialer: netDialer, DisableTFO: false}
 	return &tfoConn{
 		dialed: make(chan bool, 1),

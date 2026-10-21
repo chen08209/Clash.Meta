@@ -23,7 +23,6 @@ type BundleFile func() (fs.File, error)
 type Fetcher[V any] struct {
 	ctx          context.Context
 	ctxCancel    context.CancelFunc
-	resourceType string
 	name         string
 	vehicle      P.Vehicle
 	bundleFile   BundleFile
@@ -55,18 +54,20 @@ func (f *Fetcher[V]) UpdatedAt() time.Time {
 
 func (f *Fetcher[V]) Initial() (V, error) {
 	if stat, fErr := os.Stat(f.vehicle.Path()); fErr == nil {
-		// local file exists, use it first
-		buf, err := os.ReadFile(f.vehicle.Path())
-		modTime := stat.ModTime()
-		contents, _, err := f.loadBuf(buf, utils.MakeHash(buf), false)
-		f.updatedAt = modTime // reset updatedAt to file's modTime
+		buf, readErr := os.ReadFile(f.vehicle.Path())
+		if readErr != nil {
+			log.Warnln("[Provider] %s read local file error: %s", f.Name(), readErr.Error())
+		} else {
+			modTime := stat.ModTime()
+			contents, _, err := f.loadBuf(buf, utils.MakeHash(buf), false)
+			f.updatedAt = modTime
 
-		if err == nil {
-			err = f.startPullLoop(time.Since(modTime) > f.interval)
-			if err != nil {
-				return lo.Empty[V](), err
+			if err == nil {
+				if err = f.startPullLoop(time.Since(modTime) > f.interval); err != nil {
+					return lo.Empty[V](), err
+				}
+				return contents, nil
 			}
-			return contents, nil
 		}
 	}
 
@@ -75,23 +76,25 @@ func (f *Fetcher[V]) Initial() (V, error) {
 		// bundle file exists, use it first
 		if file, fErr := f.bundleFile(); fErr == nil {
 			defer file.Close()
-			buf, err := io.ReadAll(file)
-			var modTime time.Time
-			if stat, sErr := file.Stat(); sErr == nil {
-				modTime = stat.ModTime()
-			}
-			contents, _, err := f.loadBuf(buf, utils.MakeHash(buf), true)
-			f.updatedAt = modTime // reset updatedAt to file's modTime
-
-			if err == nil {
-				log.Infoln("[Provider] %s extract successful from bundle file", f.Name())
-				err = f.startPullLoop(time.Since(modTime) > f.interval)
-				if err != nil {
-					return lo.Empty[V](), err
+			if buf, readErr := io.ReadAll(file); readErr == nil {
+				var modTime time.Time
+				if stat, sErr := file.Stat(); sErr == nil {
+					modTime = stat.ModTime()
 				}
-				return contents, nil
+				contents, _, err := f.loadBuf(buf, utils.MakeHash(buf), true)
+				f.updatedAt = modTime
+
+				if err == nil {
+					log.Infoln("[Provider] %s extract successful from bundle file", f.Name())
+					if err = f.startPullLoop(time.Since(modTime) > f.interval); err != nil {
+						return lo.Empty[V](), err
+					}
+					return contents, nil
+				}
+				log.Warnln("[Provider] %s read bundle file error: %s", f.Name(), err.Error())
+			} else {
+				log.Warnln("[Provider] %s read bundle file error: %s", f.Name(), readErr.Error())
 			}
-			log.Warnln("[Provider] %s read bundle file error: %s", f.Name(), err.Error())
 		} else {
 			log.Warnln("[Provider] %s read bundle file error: %s", f.Name(), fErr.Error())
 		}
@@ -246,7 +249,6 @@ func (f *Fetcher[V]) updateWithLog() {
 	}
 
 	log.Infoln("[Provider] %s's content update", f.Name())
-	return
 }
 
 func NewFetcher[V any](name string, interval time.Duration, vehicle P.Vehicle, bundleFile BundleFile, parser Parser[V], onUpdate func(V)) *Fetcher[V] {

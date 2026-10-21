@@ -2,10 +2,6 @@ package context
 
 import (
 	"context"
-
-	"github.com/metacubex/mihomo/common/utils"
-
-	"github.com/gofrs/uuid/v5"
 )
 
 const (
@@ -17,21 +13,13 @@ const (
 type DNSContext struct {
 	context.Context
 
-	id uuid.UUID
 	tp string
 }
 
 func NewDNSContext(ctx context.Context) *DNSContext {
 	return &DNSContext{
 		Context: ctx,
-
-		id: utils.NewUUIDV4(),
 	}
-}
-
-// ID implement C.PlainContext ID
-func (c *DNSContext) ID() uuid.UUID {
-	return c.id
 }
 
 // SetType set type of response

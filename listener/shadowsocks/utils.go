@@ -3,12 +3,27 @@ package shadowsocks
 import (
 	"net"
 	"net/netip"
+	"sync"
 
 	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/transport/socks5"
 
 	"github.com/metacubex/mhurl"
 )
+
+// A wrapper is returned only by Drop, the tunnel contract's single release point.
+var ssPacketPool = sync.Pool{New: func() interface{} { return new(packet) }}
+
+func newSSPacket(pc net.PacketConn, rAddr net.Addr, data, payload []byte) *packet {
+	ssPacket := ssPacketPool.Get().(*packet)
+	*ssPacket = packet{
+		pc:      pc,
+		rAddr:   rAddr,
+		data:    data,
+		payload: payload,
+	}
+	return ssPacket
+}
 
 type packet struct {
 	pc      net.PacketConn
@@ -38,11 +53,13 @@ func (c *packet) LocalAddr() net.Addr {
 }
 
 func (c *packet) Drop() {
-	if c.data != nil {
-		_ = pool.Put(c.data)
-		c.data = nil
+	if c.data == nil {
+		return
 	}
+	_ = pool.Put(c.data)
+	c.data = nil
 	c.payload = nil
+	ssPacketPool.Put(c)
 }
 
 func (c *packet) InAddr() net.Addr {

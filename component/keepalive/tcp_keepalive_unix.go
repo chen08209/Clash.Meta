@@ -1,4 +1,4 @@
-//go:build go1.23 && unix
+//go:build unix
 
 package keepalive
 

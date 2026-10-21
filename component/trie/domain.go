@@ -220,26 +220,6 @@ func (t *DomainTrie[T]) searchFrom(
 	return node.getChild(dotWildcard)
 }
 
-func (t *DomainTrie[T]) search(node *Node[T], parts []string) *Node[T] {
-	if len(parts) == 0 {
-		return node
-	}
-
-	if c := node.getChild(parts[len(parts)-1]); c != nil {
-		if n := t.search(c, parts[:len(parts)-1]); !n.isEmpty() {
-			return n
-		}
-	}
-
-	if c := node.getChild(wildcard); c != nil {
-		if n := t.search(c, parts[:len(parts)-1]); !n.isEmpty() {
-			return n
-		}
-	}
-
-	return node.getChild(dotWildcard)
-}
-
 func (t *DomainTrie[T]) Optimize() {
 	t.root.optimize()
 }

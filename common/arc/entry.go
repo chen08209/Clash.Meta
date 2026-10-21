@@ -13,12 +13,6 @@ type entry[K comparable, V any] struct {
 	expires int64
 }
 
-func (e *entry[K, V]) setLRU(list *list.List[*entry[K, V]]) {
-	e.detach()
-	e.ll = list
-	e.el = e.ll.PushBack(e)
-}
-
 func (e *entry[K, V]) setMRU(list *list.List[*entry[K, V]]) {
 	e.detach()
 	e.ll = list

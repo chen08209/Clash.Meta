@@ -27,33 +27,40 @@ func (c *enhanceUDPConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err e
 	err = c.rawConn.Read(func(fd uintptr) (done bool) {
 		if !hasData {
 			hasData = true
-			// A zero-byte read only waits for readiness; recvfrom runs on the next callback.
+			// A zero-byte read only waits for readiness; the recv runs on the next callback.
 			return false
 		}
 		readBuf := pool.Get(pool.UDPBufferSize)
-		wsaBuf := &windows.WSABuf{Len: uint32(len(readBuf)), Buf: &readBuf[0]}
+		var buf windows.WSABuf
+		buf.Len = uint32(len(readBuf))
+		buf.Buf = &readBuf[0]
+		var recvd uint32
+		var flags uint32
+		// The kernel sockaddr stays a callback local so concurrent readers
+		// cannot share it; the syscall wrapper would heap-allocate one per
+		// datagram instead.
 		var rsa windows.RawSockaddrAny
 		rsaLen := int32(unsafe.Sizeof(rsa))
-		var recvd, flags uint32
-		readErr = windows.WSARecvFrom(windows.Handle(fd), wsaBuf, 1, &recvd, &flags, &rsa, &rsaLen, nil, nil)
+		readErr = windows.WSARecvFrom(windows.Handle(fd), &buf, 1, &recvd, &flags, &rsa, &rsaLen, nil, nil)
 		if readErr == windows.WSAEWOULDBLOCK {
 			_ = pool.Put(readBuf)
 			return false
 		}
 		if readErr != nil {
 			_ = pool.Put(readBuf)
-			return true
-		}
-		switch family := rsa.Addr.Family; family {
-		case windows.AF_INET:
-			addr = sockaddrInet4ToAddrPort((*syscall.RawSockaddrInet4)(unsafe.Pointer(&rsa.Addr)))
-		case windows.AF_INET6:
-			addr = sockaddrInet6ToAddrPort((*syscall.RawSockaddrInet6)(unsafe.Pointer(&rsa.Addr)))
-		}
-		if recvd > 0 {
+		} else if recvd > 0 {
 			data = readBuf[:recvd]
 		} else {
+			// A zero-length datagram is a successful UDP read, not EOF.
 			_ = pool.Put(readBuf)
+		}
+		// AF_INET6 is 23 on windows, not the POSIX value the shared
+		// converters sit beside, so match on the windows constants.
+		switch rsa.Addr.Family {
+		case windows.AF_INET:
+			addr = sockaddrInet4ToAddrPort((*syscall.RawSockaddrInet4)(unsafe.Pointer(&rsa)))
+		case windows.AF_INET6:
+			addr = sockaddrInet6ToAddrPort((*syscall.RawSockaddrInet6)(unsafe.Pointer(&rsa)))
 		}
 		hasData = false
 		return true

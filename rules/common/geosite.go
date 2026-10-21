@@ -14,10 +14,9 @@ import (
 
 type GEOSITE struct {
 	Base
-	country    string
-	adapter    string
-	recodeSize int
-	matcher    commonatomic.TypedValue[cachedGeoSiteMatcher]
+	country string
+	adapter string
+	matcher commonatomic.TypedValue[cachedGeoSiteMatcher]
 }
 
 type cachedGeoSiteMatcher struct {

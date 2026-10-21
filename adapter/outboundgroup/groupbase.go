@@ -267,6 +267,14 @@ func proxyNameIndex(proxies []C.Proxy) map[string]C.Proxy {
 	return byName
 }
 
+func memberNames(proxies []C.Proxy) []string {
+	names := make([]string, 0, len(proxies))
+	for _, proxy := range proxies {
+		names = append(names, proxy.Name())
+	}
+	return names
+}
+
 func (gb *GroupBase) indexedProxyByName(name string) (C.Proxy, bool) {
 	cache := gb.providerCache.Load()
 	if cache == nil || cache.byName == nil || !gb.providerVersionsEqual(cache.versions) {

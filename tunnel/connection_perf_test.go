@@ -442,3 +442,23 @@ func BenchmarkProcessPacketHit(b *testing.B) {
 		sender.processPacket(pc, packet)
 	}
 }
+
+// The accepted conn is handed to the handler as-is; wrapping it in a
+// per-connection context object used to cost an allocation on every TCP conn.
+func TestHandleTCPConnEntryAllocatesNothing(t *testing.T) {
+	previousStatus := status.Load()
+	status.Store(Suspend)
+	t.Cleanup(func() { status.Store(previousStatus) })
+
+	conn, remote := net.Pipe()
+	t.Cleanup(func() {
+		_ = conn.Close()
+		_ = remote.Close()
+	})
+	metadata := &C.Metadata{NetWork: C.TCP, Type: C.HTTP}
+
+	allocations := testing.AllocsPerRun(1000, func() {
+		Tunnel.HandleTCPConn(conn, metadata)
+	})
+	require.Zero(t, allocations)
+}

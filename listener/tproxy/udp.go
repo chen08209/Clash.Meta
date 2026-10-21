@@ -98,12 +98,6 @@ func NewUDP(addr string, tunnel C.Tunnel, additions ...inbound.Addition) (*UDPLi
 
 func handlePacketConn(pc net.PacketConn, tunnel C.Tunnel, buf []byte, lAddr, rAddr netip.AddrPort, additions ...inbound.Addition) {
 	target := socks5.AddrFromStdAddrPort(rAddr)
-	pkt := &packet{
-		pc:        pc,
-		lAddr:     lAddr,
-		buf:       buf,
-		tunnel:    tunnel,
-		additions: additions,
-	}
+	pkt := newTproxyPacket(pc, lAddr, buf, tunnel, additions)
 	tunnel.HandleUDPPacket(inbound.NewPacket(target, pkt, C.TPROXY, additions...))
 }

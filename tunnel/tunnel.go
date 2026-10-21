@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"hash/maphash"
 	"net"
 	"net/netip"
 	"runtime"
@@ -25,7 +24,6 @@ import (
 	"github.com/metacubex/mihomo/component/sniffer"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
-	icontext "github.com/metacubex/mihomo/context"
 	"github.com/metacubex/mihomo/log"
 	"github.com/metacubex/mihomo/tunnel/statistic"
 
@@ -33,7 +31,7 @@ import (
 )
 
 const (
-	queueCapacity  = 64  // chan capacity tcpQueue and udpQueue
+	queueCapacity  = 64  // chan capacity of the UDP worker queues
 	senderCapacity = 128 // chan capacity of PacketSender
 )
 
@@ -42,12 +40,6 @@ var (
 	udpInit   sync.Once
 	udpQueues []chan udpPacket
 	natTable  = nat.New()
-
-	// for compatibility, lazy init
-	tcpQueue  chan C.ConnContext
-	tcpInOnce sync.Once
-	udpQueue  chan C.PacketAdapter
-	udpInOnce sync.Once
 
 	// default timeout for UDP session
 	udpTimeout = 60 * time.Second
@@ -70,8 +62,7 @@ var _ P.Tunnel = Tunnel
 var _ proxydialer.Tunnel = Tunnel
 
 func (t tunnel) HandleTCPConn(conn net.Conn, metadata *C.Metadata) {
-	connCtx := icontext.NewConnContext(conn, metadata)
-	handleTCPConn(connCtx)
+	handleTCPConn(conn, metadata)
 }
 
 func initUDP() {
@@ -98,7 +89,7 @@ func (t tunnel) HandleUDPPacket(packet C.UDPPacket, metadata *C.Metadata) {
 		return
 	}
 
-	hash := maphash.Comparable(flowHashSeed, key)
+	hash := utils.MapHashAddrPort(key)
 	queueNo := uint(hash) % uint(len(udpQueues))
 
 	select {
@@ -154,34 +145,6 @@ func SetSniffing(b bool) {
 
 func IsSniffing() bool {
 	return loadRuntime().sniffingEnable
-}
-
-// TCPIn return fan-in queue
-// Deprecated: using Tunnel instead
-func TCPIn() chan<- C.ConnContext {
-	tcpInOnce.Do(func() {
-		tcpQueue = make(chan C.ConnContext, queueCapacity)
-		go func() {
-			for connCtx := range tcpQueue {
-				go handleTCPConn(connCtx)
-			}
-		}()
-	})
-	return tcpQueue
-}
-
-// UDPIn return fan-in udp queue
-// Deprecated: using Tunnel instead
-func UDPIn() chan<- C.PacketAdapter {
-	udpInOnce.Do(func() {
-		udpQueue = make(chan C.PacketAdapter, queueCapacity)
-		go func() {
-			for packet := range udpQueue {
-				Tunnel.HandleUDPPacket(packet, packet.Metadata())
-			}
-		}()
-	})
-	return udpQueue
 }
 
 // NatTable return nat table
@@ -480,18 +443,18 @@ func dialUDPSender(originMetadata *C.Metadata, metadata *C.Metadata, packet C.Pa
 	return pc, writeBackProxy, nil
 }
 
-func handleTCPConn(connCtx C.ConnContext) {
+func handleTCPConn(conn net.Conn, metadata *C.Metadata) {
 	runtimeState := loadRuntime()
-	if !isHandle(connCtx.Metadata().Type) {
-		_ = connCtx.Conn().Close()
+	if !isHandle(metadata.Type) {
+		_ = conn.Close()
 		return
 	}
 
-	defer func(conn net.Conn) {
-		_ = conn.Close()
-	}(connCtx.Conn())
+	originConn := conn
+	defer func() {
+		_ = originConn.Close()
+	}()
 
-	metadata := connCtx.Metadata()
 	if !metadata.Valid() {
 		log.Warnln("[Metadata] not valid: %#v", metadata)
 		return
@@ -504,12 +467,20 @@ func handleTCPConn(connCtx C.ConnContext) {
 		preHandleFailed = true
 	}
 
-	conn := connCtx.Conn()
-	conn.ResetPeeked() // reset before sniffer
+	bufferedConn := func() *N.BufferedConn {
+		if buffered, ok := conn.(*N.BufferedConn); ok {
+			return buffered
+		}
+		buffered := N.NewBufferedConn(conn)
+		conn = buffered
+		return buffered
+	}
 	if runtimeState.sniffingEnable && runtimeState.snifferDispatcher.Enable() {
+		buffered := bufferedConn()
+		buffered.ResetPeeked() // reset before sniffer
 		// Try to sniff a domain when `preHandleMetadata` failed, this is usually
 		// caused by a "Fake DNS record missing" error when enhanced-mode is fake-ip.
-		if runtimeState.snifferDispatcher.TCPSniff(conn, metadata) {
+		if runtimeState.snifferDispatcher.TCPSniff(buffered, metadata) {
 			// we now have a domain name
 			preHandleFailed = false
 		}
@@ -551,6 +522,7 @@ func handleTCPConn(connCtx C.ConnContext) {
 		}
 
 		if N.NeedHandshake(remoteConn) {
+			buffered := bufferedConn()
 			defer func() {
 				if err != nil {
 					_ = remoteConn.Close()
@@ -563,21 +535,21 @@ func handleTCPConn(connCtx C.ConnContext) {
 					remoteConn = nil
 				}
 			}()
-			if !conn.Peeked() {
+			if !buffered.Peeked() {
 				// The remote conn exists, so the buffer can be filled now and the
 				// client's hello handed straight to it. A plain relay has no use
 				// for the peek and waits on its own first read.
-				_ = conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
-				_, _ = conn.Peek(1)
-				_ = conn.SetReadDeadline(time.Time{})
+				_ = buffered.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+				_, _ = buffered.Peek(1)
+				_ = buffered.SetReadDeadline(time.Time{})
 			}
-			peekBytes, _ = conn.Peek(conn.Buffered())
+			peekBytes, _ = buffered.Peek(buffered.Buffered())
 			_, err = remoteConn.Write(peekBytes)
 			if err != nil {
 				return
 			}
 			if peekLen = len(peekBytes); peekLen > 0 {
-				_, _ = conn.Discard(peekLen)
+				_, _ = buffered.Discard(peekLen)
 			}
 		}
 		return

@@ -56,11 +56,7 @@ func (s *Selector) IsL3Protocol(metadata *C.Metadata) bool {
 
 // MarshalJSON implements C.ProxyAdapter
 func (s *Selector) MarshalJSON() ([]byte, error) {
-	proxies := s.GetProxies(false)
-	all := make([]string, 0, len(proxies))
-	for _, proxy := range proxies {
-		all = append(all, proxy.Name())
-	}
+	all := memberNames(s.GetProxies(false))
 	// When testurl is the default value
 	// do not append a value to ensure that the web dashboard follows the settings of the dashboard
 	var url string

@@ -1,13 +1,10 @@
 package tunnel
 
 import (
-	"hash/maphash"
 	"net/netip"
 
 	C "github.com/metacubex/mihomo/constant"
 )
-
-var flowHashSeed = maphash.MakeSeed()
 
 func packetFlowKey(packet C.PacketAdapter) (netip.AddrPort, bool) {
 	if flowPacket, ok := packet.(interface {

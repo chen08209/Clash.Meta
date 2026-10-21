@@ -25,7 +25,23 @@ type socksDropTunnel struct {
 	C.Tunnel
 }
 
-func (socksDropTunnel) HandleUDPPacket(C.UDPPacket, *C.Metadata) {}
+func (socksDropTunnel) HandleUDPPacket(udpPacket C.UDPPacket, _ *C.Metadata) {
+	udpPacket.Drop()
+}
+
+type socksRecycleTunnel struct {
+	C.Tunnel
+	wrappers []*packet
+	data     [][]byte
+}
+
+func (c *socksRecycleTunnel) HandleUDPPacket(udpPacket C.UDPPacket, _ *C.Metadata) {
+	if socksPacket, ok := udpPacket.(*packet); ok {
+		c.wrappers = append(c.wrappers, socksPacket)
+	}
+	c.data = append(c.data, append([]byte(nil), udpPacket.Data()...))
+	udpPacket.Drop()
+}
 
 type socksFakePacketConn struct{}
 
@@ -102,8 +118,8 @@ func TestSocksUDPFlowCacheSplitsTargets(t *testing.T) {
 	require.EqualValues(t, 8443, tunnel.metadatas[1].DstPort)
 }
 
-// One run forwards one datagram through a warm flow, so the reported allocs
-// are the steady-state cost: the packet carrier only, no metadata rebuild.
+// One run forwards one datagram through a warm flow and drops it, so the
+// reported allocs are the steady-state cost with tunnel ownership.
 func BenchmarkSocksUDPHandleCached(b *testing.B) {
 	tunnel := socksDropTunnel{}
 	listener := newSocksTestListener()
@@ -115,5 +131,24 @@ func BenchmarkSocksUDPHandleCached(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		listener.handleSocksUDP(tunnel, dgram, source)
+	}
+}
+
+func TestSocksUDPPacketWrappersAreRecycled(t *testing.T) {
+	tunnel := &socksRecycleTunnel{}
+	listener := newSocksTestListener()
+	source := netip.MustParseAddrPort("192.168.1.2:54321")
+
+	listener.handleSocksUDP(tunnel, newSocksDatagram(netip.MustParseAddr("1.2.3.4"), 443, "first"), source)
+	listener.handleSocksUDP(tunnel, newSocksDatagram(netip.MustParseAddr("1.2.3.4"), 443, "second"), source)
+	listener.handleSocksUDP(tunnel, newSocksDatagram(netip.MustParseAddr("1.2.3.4"), 443, "third"), source)
+
+	require.Len(t, tunnel.wrappers, 3)
+	require.Equal(t, []byte("first"), tunnel.data[0])
+	require.Equal(t, []byte("second"), tunnel.data[1])
+	require.Equal(t, []byte("third"), tunnel.data[2])
+	for _, wrapper := range tunnel.wrappers {
+		require.Nil(t, wrapper.data)
+		require.Nil(t, wrapper.payload)
 	}
 }
