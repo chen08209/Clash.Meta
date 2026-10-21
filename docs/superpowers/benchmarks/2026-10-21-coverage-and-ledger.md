@@ -87,3 +87,8 @@ The full tree cross-compiles for every ci matrix platform plus freebsd:
 linux amd64/arm64/386, windows amd64/arm64, darwin amd64/arm64 and freebsd
 amd64 all build clean on `c013bb86f`, which covers the platform-specific
 packet, maphash and deadline changes from these rounds.
+
+The FlClash app bridge (`core/go.mod` with the submodule replace) builds and
+vets clean against this line, and its test suite carries one pre-existing
+failure bisected to the released `10befb0c1` as well - an easytier dns test
+scenario, unrelated to this line.
