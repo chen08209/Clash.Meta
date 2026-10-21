@@ -111,12 +111,7 @@ func (l *UDPListener) handleSocksUDP(tunnel C.Tunnel, buf []byte, addr netip.Add
 	}
 	flow, hit := l.flowCache.Get(addr)
 	if !hit || !bytes.Equal(target, flow.target) {
-		packet := &packet{
-			pc:      l.packetConn,
-			rAddr:   net.UDPAddrFromAddrPort(addr),
-			data:    buf,
-			payload: payload,
-		}
+		packet := newSocksPacket(l.packetConn, net.UDPAddrFromAddrPort(addr), buf, payload)
 		_, metadata := inbound.NewPacket(target, packet, C.SOCKS5, additions...)
 		flow = &socksUDPFlow{
 			metadata: metadata,
@@ -126,11 +121,6 @@ func (l *UDPListener) handleSocksUDP(tunnel C.Tunnel, buf []byte, addr netip.Add
 		l.flowCache.Set(addr, flow)
 	}
 
-	packet := &packet{
-		pc:      l.packetConn,
-		rAddr:   flow.rAddr,
-		data:    buf,
-		payload: payload,
-	}
+	packet := newSocksPacket(l.packetConn, flow.rAddr, buf, payload)
 	tunnel.HandleUDPPacket(packet, flow.metadata)
 }
