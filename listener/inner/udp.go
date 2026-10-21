@@ -39,6 +39,7 @@ type innerUDPPacketConn struct {
 	tunnel    C.Tunnel
 	proxy     string
 	target    socks5.Addr
+	metadata  *C.Metadata
 	localAddr net.Addr
 	readChan  chan innerUDPDatagram
 	done      chan struct{}
@@ -75,6 +76,15 @@ func HandleUdp(tunnel C.Tunnel, network, address, proxy string) (net.PacketConn,
 		readDeadline:  deadline.MakePipeDeadline(),
 		writeDeadline: deadline.MakePipeDeadline(),
 	}
+	// The target is fixed per conn, so the metadata is parsed once and shared
+	// by every datagram; only the tunnel's worker goroutine touches it after
+	// handoff and its in-place fixes are idempotent.
+	probe := &innerUDPPacket{conn: conn}
+	_, metadata := inbound.NewPacket(target, probe, C.INNER)
+	metadata.DNSMode = C.DNSNormal
+	metadata.Process = C.MihomoName
+	metadata.SpecialProxy = proxy
+	conn.metadata = metadata
 	return conn, innerUDPAddr{network: network, address: address}, nil
 }
 
@@ -109,11 +119,7 @@ func (c *innerUDPPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	data := pool.Get(len(p))
 	copy(data, p)
 	udpPacket := &innerUDPPacket{conn: c, data: data}
-	packet, metadata := inbound.NewPacket(c.target, udpPacket, C.INNER)
-	metadata.DNSMode = C.DNSNormal
-	metadata.Process = C.MihomoName
-	metadata.SpecialProxy = c.proxy
-	c.tunnel.HandleUDPPacket(packet, metadata)
+	c.tunnel.HandleUDPPacket(udpPacket, c.metadata)
 	return len(p), nil
 }
 
