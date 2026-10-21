@@ -21,18 +21,21 @@ type Parser[V any] func([]byte) (V, error)
 type BundleFile func() (fs.File, error)
 
 type Fetcher[V any] struct {
-	ctx          context.Context
-	ctxCancel    context.CancelFunc
-	name         string
-	vehicle      P.Vehicle
-	bundleFile   BundleFile
-	updatedAt    time.Time
-	hash         utils.HashType
-	parser       Parser[V]
-	interval     time.Duration
-	onUpdate     func(V)
-	watcher      *fswatch.Watcher
+	ctx        context.Context
+	ctxCancel  context.CancelFunc
+	name       string
+	vehicle    P.Vehicle
+	bundleFile BundleFile
+	updatedAt  time.Time
+	hash       utils.HashType
+	parser     Parser[V]
+	interval   time.Duration
+	onUpdate   func(V)
+	watcher    *fswatch.Watcher
+	// loadBufMutex serializes the load pipeline; stateMutex guards the hash
+	// and updatedAt the api reads while the watcher and pull loop update.
 	loadBufMutex sync.Mutex
+	stateMutex   sync.Mutex
 	backoff      slowdown.Backoff
 }
 
@@ -49,7 +52,23 @@ func (f *Fetcher[V]) VehicleType() P.VehicleType {
 }
 
 func (f *Fetcher[V]) UpdatedAt() time.Time {
+	f.stateMutex.Lock()
+	defer f.stateMutex.Unlock()
 	return f.updatedAt
+}
+
+// currentHash is read outside loadBufMutex, so it takes the state lock the
+// load pipeline writes the hash under.
+func (f *Fetcher[V]) currentHash() utils.HashType {
+	f.stateMutex.Lock()
+	defer f.stateMutex.Unlock()
+	return f.hash
+}
+
+func (f *Fetcher[V]) setUpdatedAt(t time.Time) {
+	f.stateMutex.Lock()
+	defer f.stateMutex.Unlock()
+	f.updatedAt = t
 }
 
 func (f *Fetcher[V]) Initial() (V, error) {
@@ -60,7 +79,7 @@ func (f *Fetcher[V]) Initial() (V, error) {
 		} else {
 			modTime := stat.ModTime()
 			contents, _, err := f.loadBuf(buf, utils.MakeHash(buf), false)
-			f.updatedAt = modTime
+			f.setUpdatedAt(modTime)
 
 			if err == nil {
 				if err = f.startPullLoop(time.Since(modTime) > f.interval); err != nil {
@@ -82,7 +101,7 @@ func (f *Fetcher[V]) Initial() (V, error) {
 					modTime = stat.ModTime()
 				}
 				contents, _, err := f.loadBuf(buf, utils.MakeHash(buf), true)
-				f.updatedAt = modTime
+				f.setUpdatedAt(modTime)
 
 				if err == nil {
 					log.Infoln("[Provider] %s extract successful from bundle file", f.Name())
@@ -117,7 +136,7 @@ func (f *Fetcher[V]) Initial() (V, error) {
 }
 
 func (f *Fetcher[V]) Update() (V, bool, error) {
-	buf, hash, err := f.vehicle.Read(f.ctx, f.hash)
+	buf, hash, err := f.vehicle.Read(f.ctx, f.currentHash())
 	if err != nil {
 		f.backoff.AddAttempt() // add a failed attempt to backoff
 		return lo.Empty[V](), false, err
@@ -134,11 +153,14 @@ func (f *Fetcher[V]) loadBuf(buf []byte, hash utils.HashType, updateFile bool) (
 	defer f.loadBufMutex.Unlock()
 
 	now := time.Now()
-	if f.hash.Equal(hash) {
+	f.stateMutex.Lock()
+	sameHash := f.hash.Equal(hash)
+	f.stateMutex.Unlock()
+	if sameHash {
 		if updateFile {
 			_ = os.Chtimes(f.vehicle.Path(), now, now)
 		}
-		f.updatedAt = now
+		f.setUpdatedAt(now)
 		f.backoff.Reset() // no error, reset backoff
 		return lo.Empty[V](), true, nil
 	}
@@ -159,8 +181,10 @@ func (f *Fetcher[V]) loadBuf(buf []byte, hash utils.HashType, updateFile bool) (
 			return lo.Empty[V](), false, err
 		}
 	}
+	f.stateMutex.Lock()
 	f.updatedAt = now
 	f.hash = hash
+	f.stateMutex.Unlock()
 
 	if f.onUpdate != nil {
 		f.onUpdate(contents)
@@ -178,7 +202,7 @@ func (f *Fetcher[V]) Close() error {
 }
 
 func (f *Fetcher[V]) pullLoop(forceUpdate bool) {
-	initialInterval := f.interval - time.Since(f.updatedAt)
+	initialInterval := f.interval - time.Since(f.UpdatedAt())
 	if initialInterval > f.interval {
 		initialInterval = f.interval
 	}
