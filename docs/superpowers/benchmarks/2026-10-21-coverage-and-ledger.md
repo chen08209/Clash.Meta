@@ -19,7 +19,7 @@ focused test, a benchmark or both.
 | `rules/provider` | 76.6% | strategy lifecycles, mrs round trips and text export, file-vehicle initial/update, payload fallback, the inline mapping decode, and the RuleSet rule through the injected tunnel registry (src swap, no-resolve, absent provider) |
 | `tunnel` | 59.2% | rule index, packet flow key, deadlines, sender mapping, metadata template, the mode and status text round trips, and the all-proxies cache: the up-to-date check against missing, extra and bumped providers, the rebuild that follows a version, the explicit drop, and both provider snapshots |
 | `component/nat` | 54.1% | binary flow keys, allocation-free local-conn lookup |
-| `tunnel/statistic` | 49.0% | stripes, tracker lifecycle, snapshot |
+| `tunnel/statistic` | 78.0% | stripes, tracker lifecycle, snapshot, the tcp tracker's read/write accounting in both directions with and without a manager push, the udp tracker's packet accounting over a live socket pair, the join/leave lifecycle through the snapshot, and the now/total traffic readers |
 | `listener/socks` | 17.1% | per-flow metadata cache identity, split targets, warm-path benchmark |
 | `dns` | 31.0% | cache keys, parsed-ip cache, conn pool, exchange errors, the rcode transport codes, the disable-types and edns0-subnet client wrappers including their param tables, the log-string shapes, and the resolver enhancer: mode gating, the fake-ip range against the reserved addresses, the mapping round trip, the ipv6 pool, flush and the reload patch |
 | `hub/route` | 15.6% | real-listener auth matrix, hello/version, read endpoints, provider and group reads with their render keys, and the not-found paths of the proxy and provider lookups plus the unknown-connection close |
