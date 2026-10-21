@@ -598,3 +598,21 @@ which is a net win at this blast radius. The per-packet `net.UDPAddrFromAddrPort
 - [x] Benchmark existing-flow handling before and after with `benchstat`.
 - [x] Run tunnel tests with `-race`.
 - [x] Run the full main-module suite.
+
+### Task 38: Lazily Allocate The BufferedConn Reader
+
+**Files:**
+- Modify: `common/net/bufconn.go`, `common/net/bufconn_unsafe.go`
+- Test: `common/net/bufconn_unsafe_test.go`
+- Benchmark: `common/net/bufconn_bench_test.go`
+
+**Interfaces:**
+- Produces: a `BufferedConn` with a lazily created peek reader.
+- Preserves: peek/growth semantics, cached reads, direct relay reads, upstream discovery, and deadline handling.
+
+- [x] Skip the 512-byte reader allocation on construction.
+- [x] Create the reader only for peek, growth, append/prepend, or explicit reader access.
+- [x] Cover direct reads without a buffered reader.
+- [x] Benchmark construction before and after with `benchstat`.
+- [x] Run `common/net`, `component/sniffer`, and `tunnel` tests with `-race`.
+- [x] Run the full main-module suite.

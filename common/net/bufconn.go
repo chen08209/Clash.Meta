@@ -2,6 +2,8 @@ package net
 
 import (
 	"bufio"
+	"errors"
+	"io"
 	"net"
 
 	"github.com/metacubex/mihomo/common/buf"
@@ -24,7 +26,7 @@ func NewBufferedConn(c net.Conn) *BufferedConn {
 	if bc, ok := c.(*BufferedConn); ok {
 		return bc
 	}
-	return &BufferedConn{r: bufio.NewReaderSize(c, InitialPeekBufferSize), Conn: c}
+	return &BufferedConn{Conn: c}
 }
 
 func WarpConnWithBioReader(c net.Conn, br *bufio.Reader) net.Conn {
@@ -37,9 +39,16 @@ func WarpConnWithBioReader(c net.Conn, br *bufio.Reader) net.Conn {
 	return c
 }
 
+func (c *BufferedConn) reader() *bufio.Reader {
+	if c.r == nil {
+		c.r = bufio.NewReaderSize(c.Conn, InitialPeekBufferSize)
+	}
+	return c.r
+}
+
 // Reader returns the internal bufio.Reader.
 func (c *BufferedConn) Reader() *bufio.Reader {
-	return c.r
+	return c.reader()
 }
 
 func (c *BufferedConn) ResetPeeked() {
@@ -53,26 +62,45 @@ func (c *BufferedConn) Peeked() bool {
 // Peek returns the next n bytes without advancing the reader.
 func (c *BufferedConn) Peek(n int) ([]byte, error) {
 	c.peeked = true
-	return c.r.Peek(n)
+	return c.reader().Peek(n)
 }
 
 func (c *BufferedConn) Discard(n int) (discarded int, err error) {
+	if c.r == nil {
+		return 0, nil
+	}
 	return c.r.Discard(n)
 }
 
 func (c *BufferedConn) Read(p []byte) (int, error) {
+	if c.r == nil {
+		return c.Conn.Read(p)
+	}
 	return c.r.Read(p)
 }
 
 func (c *BufferedConn) ReadByte() (byte, error) {
+	if c.r == nil {
+		var b [1]byte
+		if _, err := io.ReadFull(c.Conn, b[:]); err != nil {
+			return 0, err
+		}
+		return b[0], nil
+	}
 	return c.r.ReadByte()
 }
 
 func (c *BufferedConn) UnreadByte() error {
+	if c.r == nil {
+		return errors.New("unread byte requires a buffered reader")
+	}
 	return c.r.UnreadByte()
 }
 
 func (c *BufferedConn) Buffered() int {
+	if c.r == nil {
+		return 0
+	}
 	return c.r.Buffered()
 }
 

@@ -77,6 +77,17 @@ func TestBufferedConnGrow(t *testing.T) {
 	assert.Equal(t, initialSize, conn.Reader().Size())
 }
 
+func TestBufferedConnReadsWithoutBufferedReader(t *testing.T) {
+	conn := NewBufferedConn(&testReaderConn{Reader: bytes.NewReader([]byte("direct"))})
+	require.Nil(t, conn.r)
+
+	data := make([]byte, 6)
+	_, err := io.ReadFull(conn, data)
+	require.NoError(t, err)
+	require.Equal(t, "direct", string(data))
+	require.Nil(t, conn.r)
+}
+
 func TestBufferedConnAppendData(t *testing.T) {
 	t.Run("prepends to unread underlying data", func(t *testing.T) {
 		conn := NewBufferedConn(&testReaderConn{Reader: bytes.NewReader([]byte("underlying"))})
