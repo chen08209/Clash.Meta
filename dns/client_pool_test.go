@@ -23,7 +23,7 @@ func (c *poolConn) SetReadDeadline(time.Time) error  { return nil }
 func (c *poolConn) SetWriteDeadline(time.Time) error { return nil }
 
 func TestClientUDPPoolReusesIdleConnsLifo(t *testing.T) {
-	c := &client{schema: "udp"}
+	c := &client{network: "udp"}
 	first := &poolConn{}
 	second := &poolConn{}
 	c.keepConn("udp", first)
@@ -45,7 +45,7 @@ func TestClientUDPPoolReusesIdleConnsLifo(t *testing.T) {
 }
 
 func TestClientUDPPoolCapsIdleAndResetDrains(t *testing.T) {
-	c := &client{schema: "udp"}
+	c := &client{network: "udp"}
 	conns := make([]*poolConn, 0, maxIdleDNSConns+1)
 	for i := 0; i < maxIdleDNSConns+1; i++ {
 		conn := &poolConn{}

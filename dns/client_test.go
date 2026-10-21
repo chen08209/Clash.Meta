@@ -134,10 +134,12 @@ func startTruncatedDNSServers(tb testing.TB) string {
 
 func newLocalUDPClient(port string) *client {
 	return &client{
-		host:   "127.0.0.1",
-		port:   port,
-		dialer: newDNSDialer(nil, nil, ""),
-		schema: "udp",
+		host:    "127.0.0.1",
+		port:    port,
+		dialer:  newDNSDialer(nil, nil, ""),
+		network: "udp",
+		addr:    net.JoinHostPort("127.0.0.1", port),
+		dClient: D.Client{UDPSize: 4096, Timeout: 5 * time.Second},
 	}
 }
 

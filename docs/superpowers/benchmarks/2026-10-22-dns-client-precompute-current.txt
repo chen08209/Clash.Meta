@@ -1,0 +1,36 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/dns
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkClientExchangeUDP-16    	   50300	     22463 ns/op	    4887 B/op	      22 allocs/op
+BenchmarkClientExchangeUDP-16    	   51159	     22395 ns/op	    4887 B/op	      22 allocs/op
+BenchmarkClientExchangeUDP-16    	   49806	     64229 ns/op	    4887 B/op	      22 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/dns	7.567s
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/dns
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkClientExchangeUDP-16    	   51248	     22427 ns/op	    4887 B/op	      22 allocs/op
+BenchmarkClientExchangeUDP-16    	   53642	     26527 ns/op	    4887 B/op	      22 allocs/op
+BenchmarkClientExchangeUDP-16    	   20841	     68011 ns/op	    4887 B/op	      22 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/dns	6.382s
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/dns
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkClientExchangeUDP-16    	   50550	     23410 ns/op	    4887 B/op	      22 allocs/op
+BenchmarkClientExchangeUDP-16    	   52857	     24090 ns/op	    4887 B/op	      22 allocs/op
+BenchmarkClientExchangeUDP-16    	   41856	     29307 ns/op	    4887 B/op	      22 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/dns	7.774s
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/dns
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkClientExchangeUDP-16    	   51303	     33665 ns/op	    4887 B/op	      22 allocs/op
+BenchmarkClientExchangeUDP-16    	   45840	     24942 ns/op	    4887 B/op	      22 allocs/op
+BenchmarkClientExchangeUDP-16    	   42486	     39979 ns/op	    4887 B/op	      22 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/dns	7.730s

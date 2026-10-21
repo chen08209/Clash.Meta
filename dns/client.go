@@ -16,10 +16,12 @@ import (
 )
 
 type client struct {
-	port   string
-	host   string
-	dialer *dnsDialer
-	schema string
+	port    string
+	host    string
+	dialer  *dnsDialer
+	network string
+	addr    string
+	dClient D.Client
 
 	idleMu sync.Mutex
 	idle   []net.Conn
@@ -33,42 +35,30 @@ const maxIdleDNSConns = 4
 
 // Address implements dnsClient
 func (c *client) Address() string {
-	return fmt.Sprintf("%s://%s", c.schema, net.JoinHostPort(c.host, c.port))
+	return fmt.Sprintf("%s://%s", c.network, c.addr)
 }
 
 func (c *client) ExchangeContext(ctx context.Context, m *D.Msg) (*D.Msg, error) {
-	network := "udp"
-	if c.schema != "udp" {
-		network = "tcp"
-	}
-
-	addr := net.JoinHostPort(c.host, c.port)
-	conn, err := c.takeConn(ctx, network, addr)
+	conn, err := c.takeConn(ctx, c.network, c.addr)
 	if err != nil {
 		return nil, err
 	}
 
-	dClient := &D.Client{
-		UDPSize: 4096,
-		Timeout: 5 * time.Second,
-	}
-
-	msg, err := exchangeWithConn(ctx, dClient, m, conn)
+	msg, err := exchangeWithConn(ctx, &c.dClient, m, conn)
 
 	// Resolvers MUST resend queries over TCP if they receive a truncated UDP response (with TC=1 set)!
-	if msg != nil && msg.Truncated && network == "udp" {
+	if msg != nil && msg.Truncated && c.network == "udp" {
 		// Truncation is a message property, not a conn failure; the udp conn
 		// returns to the pool before the tcp retry.
-		c.keepConn(network, conn)
-		network = "tcp"
+		c.keepConn(c.network, conn)
 		if log.DebugEnabled() {
 			log.Debugln("[DNS] Truncated reply from %s:%s for %s over UDP, retrying over TCP", c.host, c.port, m.Question[0].String())
 		}
-		tcpConn, dialErr := c.dialer.DialContext(ctx, network, addr)
+		tcpConn, dialErr := c.dialer.DialContext(ctx, "tcp", c.addr)
 		if dialErr != nil {
 			return msg, dialErr
 		}
-		msg, err = exchangeWithConn(ctx, dClient, m, tcpConn)
+		msg, err = exchangeWithConn(ctx, &c.dClient, m, tcpConn)
 		_ = tcpConn.Close()
 		return msg, err
 	}
@@ -77,7 +67,7 @@ func (c *client) ExchangeContext(ctx context.Context, m *D.Msg) (*D.Msg, error) 
 		_ = conn.Close()
 		return msg, err
 	}
-	c.keepConn(network, conn)
+	c.keepConn(c.network, conn)
 	return msg, err
 }
 
@@ -150,14 +140,16 @@ func (c *client) ResetConnection() {
 
 func newClient(addr string, resolver resolver.Resolver, netType string, params map[string]string, proxyAdapter C.ProxyAdapter, proxyName string) *client {
 	host, port, _ := net.SplitHostPort(addr)
-	c := &client{
-		port:   port,
-		host:   host,
-		dialer: newDNSDialer(resolver, proxyAdapter, proxyName),
-		schema: "udp",
-	}
+	network := "udp"
 	if strings.HasPrefix(netType, "tcp") {
-		c.schema = "tcp"
+		network = "tcp"
 	}
-	return c
+	return &client{
+		port:    port,
+		host:    host,
+		dialer:  newDNSDialer(resolver, proxyAdapter, proxyName),
+		network: network,
+		addr:    net.JoinHostPort(host, port),
+		dClient: D.Client{UDPSize: 4096, Timeout: 5 * time.Second},
+	}
 }

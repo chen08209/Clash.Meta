@@ -686,3 +686,22 @@ which is a net win at this blast radius. The per-packet `net.UDPAddrFromAddrPort
 - [x] Benchmark the owned versus pooled wrapper lifecycle with `benchstat`.
 - [x] Run listener and packet tests with `-race`.
 - [x] Run the full main-module suite.
+
+### Task 43: Precompute The UDP DNS Client Transport
+
+**Files:**
+- Modify: `dns/client.go`
+- Test: `dns/client_test.go`, `dns/client_pool_test.go`
+- Benchmark: `dns/client_test.go`
+
+**Interfaces:**
+- Produces: a `client` that carries its transport network, `host:port`, and shared
+  `dns.Client` instead of rebuilding them per query.
+- Preserves: UDP pooling, TCP truncation retry, `Address()` output, and deadline handling.
+
+- [x] Derive the network, joined address, and `dns.Client` once in `newClient`.
+- [x] Drop the `schema` field that always mirrored the network.
+- [x] Hand the read-only shared `dns.Client` to every exchange.
+- [x] Benchmark the UDP exchange before and after with `benchstat`.
+- [x] Run `dns` vet and tests with `-race`.
+- [x] Run the full main-module suite.
