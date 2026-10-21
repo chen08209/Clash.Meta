@@ -1,0 +1,28 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/listener/sudoku
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkUoTPacketDrop-16    	19248231	        53.22 ns/op	     128 B/op	       2 allocs/op
+BenchmarkUoTPacketDrop-16    	26615505	        55.06 ns/op	     128 B/op	       2 allocs/op
+BenchmarkUoTPacketDrop-16    	25683940	        50.12 ns/op	     128 B/op	       2 allocs/op
+BenchmarkUoTPacketDrop-16    	20267325	        52.01 ns/op	     128 B/op	       2 allocs/op
+BenchmarkUoTPacketDrop-16    	23820583	        49.80 ns/op	     128 B/op	       2 allocs/op
+BenchmarkUoTPacketDrop-16    	27652317	        43.24 ns/op	     128 B/op	       2 allocs/op
+BenchmarkUoTPacketDrop-16    	26100120	        43.04 ns/op	     128 B/op	       2 allocs/op
+BenchmarkUoTPacketDrop-16    	29425827	        43.40 ns/op	     128 B/op	       2 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/listener/sudoku	11.320s
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/listener/inner
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkInnerUDPPacketDrop-16    	35621203	        33.66 ns/op	      32 B/op	       1 allocs/op
+BenchmarkInnerUDPPacketDrop-16    	35108865	        34.28 ns/op	      32 B/op	       1 allocs/op
+BenchmarkInnerUDPPacketDrop-16    	33586820	        34.42 ns/op	      32 B/op	       1 allocs/op
+BenchmarkInnerUDPPacketDrop-16    	35757172	        45.78 ns/op	      32 B/op	       1 allocs/op
+BenchmarkInnerUDPPacketDrop-16    	27417158	        57.49 ns/op	      32 B/op	       1 allocs/op
+BenchmarkInnerUDPPacketDrop-16    	33118796	        55.78 ns/op	      32 B/op	       1 allocs/op
+BenchmarkInnerUDPPacketDrop-16    	22382170	        69.48 ns/op	      32 B/op	       1 allocs/op
+BenchmarkInnerUDPPacketDrop-16    	21693277	        48.51 ns/op	      32 B/op	       1 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/listener/inner	12.967s

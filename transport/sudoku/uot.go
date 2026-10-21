@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/log"
 )
 
@@ -45,8 +46,9 @@ func ReadDatagram(r io.Reader) (string, []byte, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	payload := make([]byte, payloadLen)
+	payload := pool.Get(payloadLen)
 	if _, err := io.ReadFull(r, payload); err != nil {
+		_ = pool.Put(payload)
 		return "", nil, err
 	}
 

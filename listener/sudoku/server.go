@@ -8,10 +8,12 @@ import (
 	"net"
 	"net/netip"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	N "github.com/metacubex/mihomo/common/net"
+	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
 	LC "github.com/metacubex/mihomo/listener/config"
 	"github.com/metacubex/mihomo/listener/inner"
@@ -185,13 +187,22 @@ func (l *Listener) handleUoTSession(conn net.Conn, tunnel C.Tunnel, additions ..
 			continue
 		}
 
-		cPacket := &uotPacket{
-			payload: payload,
-			writer:  writer,
-			source:  N.AddrPortFromNetAddr(remoteAddr),
-		}
+		cPacket := newUoTPacket(payload, writer, N.AddrPortFromNetAddr(remoteAddr))
 		tunnel.HandleUDPPacket(inbound.NewPacket(target, cPacket, C.SUDOKU, additions...))
 	}
+}
+
+// A wrapper is returned only by Drop, the tunnel contract's single release point.
+var uotPacketPool = sync.Pool{New: func() any { return new(uotPacket) }}
+
+func newUoTPacket(payload []byte, writer *sudoku.UoTPacketConn, source netip.AddrPort) *uotPacket {
+	packet := uotPacketPool.Get().(*uotPacket)
+	*packet = uotPacket{
+		payload: payload,
+		writer:  writer,
+		source:  source,
+	}
+	return packet
 }
 
 type uotPacket struct {
@@ -214,7 +225,13 @@ func (p *uotPacket) WriteBack(b []byte, addr netip.AddrPort) (int, error) {
 }
 
 func (p *uotPacket) Drop() {
+	if p.payload == nil {
+		return
+	}
+	_ = pool.Put(p.payload)
 	p.payload = nil
+	p.writer = nil
+	uotPacketPool.Put(p)
 }
 
 func (p *uotPacket) LocalAddr() net.Addr {

@@ -749,3 +749,23 @@ direct path against 12.39-17.65us / 96-97 B / 2 allocs on the pipe path.
 - [ ] Keep the one-token handshake honest across all four read shapes.
 - [ ] Benchmark both the direct and the pipe path with `benchstat`.
 - [ ] Run deadline, tunnel and outbound tests with `-race`.
+
+### Task 46: Pool Sudoku And Inner UDP Packets
+
+**Files:**
+- Modify: `listener/sudoku/server.go`, `transport/sudoku/uot.go`
+- Modify: `listener/inner/udp.go`
+- Test: `listener/sudoku/packet_test.go`, `listener/inner/udp_packet_test.go`
+
+**Interfaces:**
+- Produces: pooled Sudoku UoT payloads and wrappers plus a pooled inner UDP
+  wrapper.
+- Preserves: Sudoku framing and flow keys, inner deadline and queue behavior,
+  and the `Drop` release contract.
+
+- [x] Read Sudoku payloads into pooled buffers.
+- [x] Reuse the Sudoku UoT and inner UDP wrappers across datagrams.
+- [x] Return payload buffers and wrappers together in `Drop`.
+- [x] Benchmark both packet lifecycles before and after with `benchstat`.
+- [x] Run Sudoku, inner, transport, and tunnel tests with `-race`.
+- [x] Run the full main-module suite.
