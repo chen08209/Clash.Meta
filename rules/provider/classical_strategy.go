@@ -70,6 +70,9 @@ func (c *classicalStrategy) payloadToRule(rule string) (C.Rule, error) {
 	case "MATCH", "RULE-SET", "SUB-RULE":
 		return nil, fmt.Errorf("unsupported rule type on classical rule-set: %s", tp)
 	}
+	if c.parse == nil {
+		return nil, fmt.Errorf("no rule parser is wired for the classical rule-set")
+	}
 	return c.parse(tp, payload, target, params, nil)
 }
 

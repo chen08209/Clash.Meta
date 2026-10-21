@@ -16,6 +16,7 @@ focused test, a benchmark or both.
 | `rules/logic` | 92.7% | AND/OR/NOT semantics, PASS-RULE continuation, CheckPassRule helper, sub-rule recursion, parse errors |
 | `component/sniffer` | 80.9% | dispatcher, quic and http sniffers |
 | `rules` (dispatch) | 75.5% | the full ParseRule type table, params, error paths, uid platform gate |
+| `rules/provider` | 63.8% | domain/ipcidr/classical strategy insert-match-reset lifecycles, mrs round trips and text export, inline provider parsing and api marshaling |
 | `tunnel` | 56.7% | rule index, packet flow key, deadlines, sender mapping, metadata template |
 | `component/nat` | 54.1% | binary flow keys, allocation-free local-conn lookup |
 | `tunnel/statistic` | 49.0% | stripes, tracker lifecycle, snapshot |
@@ -60,6 +61,11 @@ package is now a single resettable `Once` with `Do`/`Done`/`Reset`, replacing
 the unsafe `sync.Once` introspection that read the runtime's internal layout,
 and `component/keepalive` lost its go1.21/go1.22/go1.23 halves, keeping one
 implementation per platform.
+
+The ipcidr strategy's commented-out `trie` variants are deleted, its
+constructor now builds the cidr set it needs, and a classical strategy without
+a wired parser skips its rules instead of dereferencing nil, which is what the
+`convert-ruleset` entry point used to hit.
 
 ## Measured and deferred
 
