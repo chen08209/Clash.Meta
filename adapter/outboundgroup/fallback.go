@@ -159,8 +159,9 @@ func (f *Fallback) IsL3Protocol(metadata *C.Metadata) bool {
 
 // MarshalJSON implements C.ProxyAdapter
 func (f *Fallback) MarshalJSON() ([]byte, error) {
-	all := []string{}
-	for _, proxy := range f.GetProxies(false) {
+	proxies := f.GetProxies(false)
+	all := make([]string, 0, len(proxies))
+	for _, proxy := range proxies {
 		all = append(all, proxy.Name())
 	}
 	return json.Marshal(map[string]any{

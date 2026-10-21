@@ -201,7 +201,7 @@ func (m *Manager) Memory() uint64 {
 }
 
 func (m *Manager) Snapshot() *Snapshot {
-	var connections []*TrackerInfo
+	connections := make([]*TrackerInfo, 0, m.connections.Size())
 	m.Range(func(c Tracker) bool {
 		connections = append(connections, c.Info())
 		return true
