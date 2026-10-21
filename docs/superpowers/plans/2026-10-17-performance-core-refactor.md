@@ -532,3 +532,18 @@ which is a net win at this blast radius. The per-packet `net.UDPAddrFromAddrPort
 - [x] Pin the empty-host path at zero allocations.
 - [x] Benchmark 6 samples against the pre-change tree with `benchstat`.
 - [x] Run tunnel tests with `-race` and the full main-module suite.
+
+### Task 34: Embed Tracker Info
+
+**Files:**
+- Modify: `tunnel/statistic/tracker.go`
+- Benchmark: `tunnel/statistic/tracker_bench_test.go`
+
+**Interfaces:**
+- Produces: `tcpTracker`/`udpTracker` with an embedded `TrackerInfo` value.
+- Preserves: stable `Info()` pointers, tracker identity, counters, close semantics, and JSON shape.
+
+- [x] Allocate one tracker object instead of a tracker plus separate info object.
+- [x] Benchmark tracker construction before and after with `benchstat`.
+- [x] Run statistic and tunnel tests with `-race`.
+- [x] Run the full main-module suite.
