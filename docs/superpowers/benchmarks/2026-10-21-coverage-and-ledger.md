@@ -54,6 +54,7 @@ papered over with getter-only tests.
 | `8caa05d75` | allocate TCP peek buffering only for sniffing or handshakes | direct TCP setup benchmark 45.2-42.1 KB / 134-137 allocs -> 41.3-41.6 KB / 128 allocs; conn-context test pins the lazy path |
 | `e99565b3f` | recycle socks UDP packet wrappers through Drop | warm datagram 86.20-226.0 ns / 80 B / 1 alloc -> 69.18-72.55 ns, 0 allocs (benchstat p=0.000, n=10) |
 | `b02ab5bbf` | recycle tunnel UDP packet wrappers through Drop | tunnel UDP 504 B / 4 allocs -> 440 B / 3 allocs; latency unchanged within noise (p=0.481, n=10) |
+| `53f04488c` | recycle tproxy UDP packet wrappers through Drop | tproxy UDP 560 B / 5 allocs -> 448 B / 4 allocs; latency unchanged within noise (p=0.052, n=10) |
 | `af18b7787` | raw WSARecvFrom into a callback-local kernel sockaddr on the windows read path | read gate 169 B / 7 allocs -> 137 B / 6 allocs per datagram (p=0.000, n=10); the wall-clock delta stayed inside the host's load noise across runs, so the allocation count is the gate; the read test now covers udp4 and udp6 |
 
 ## Dead-code ledger
