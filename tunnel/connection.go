@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/netip"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,6 +20,8 @@ type packetSender struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	ch     chan C.PacketAdapter
+	closed atomic.Bool
+	active atomic.Int64
 
 	mappingMutex   sync.RWMutex
 	originToTarget map[packetOrigin]netip.Addr
@@ -205,24 +208,37 @@ func (s *packetSender) dropAll() {
 }
 
 func (s *packetSender) Send(packet C.PacketAdapter) {
-	select {
-	case <-s.ctx.Done():
+	if s.closed.Load() {
 		packet.Drop() // sender closed before Send()
 		return
-	default:
 	}
 
+	s.active.Add(1)
+	if s.closed.Load() {
+		s.active.Add(-1)
+		packet.Drop() // sender closed during Send()
+		return
+	}
+
+	queued := false
 	select {
 	case s.ch <- packet:
-		// put ok, so don't drop packet, will process by other side of chan
-	case <-s.ctx.Done():
-		packet.Drop() // sender closed when putting data to chan
+		queued = true
 	default:
+	}
+	s.active.Add(-1)
+	if !queued {
 		packet.Drop() // chan is full
 	}
 }
 
 func (s *packetSender) Close() {
+	if s.closed.Swap(true) {
+		return
+	}
+	for s.active.Load() != 0 {
+		runtime.Gosched()
+	}
 	s.cancel()
 	s.dropAll()
 }

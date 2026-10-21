@@ -42,7 +42,7 @@ func TestHandleUDPConnExistingFlowAdmitsPacket(t *testing.T) {
 		},
 	)
 
-	handleUDPConn(packet)
+	handleUDPConn(udpPacket{packet: packet, key: key})
 
 	select {
 	case queued := <-sender.(*packetSender).ch:
@@ -75,7 +75,7 @@ func TestHandleUDPConnExistingFlowDoesNotAllocate(t *testing.T) {
 	)
 
 	allocations := testing.AllocsPerRun(100, func() {
-		handleUDPConn(packet)
+		handleUDPConn(udpPacket{packet: packet, key: key})
 	})
 	// go 1.20 adds one toolchain-side allocation here that later toolchains
 	// elide; the pre-optimization path allocated five per packet.
@@ -107,7 +107,7 @@ func BenchmarkHandleUDPConnExistingFlow(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		handleUDPConn(packet)
+		handleUDPConn(udpPacket{packet: packet, key: key})
 	}
 }
 

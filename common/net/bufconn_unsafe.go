@@ -28,7 +28,7 @@ func newReadBuffer(size int) []byte {
 // Grow increases the read buffer to at least size while preserving buffered data.
 // The capacity grows geometrically to avoid repeated allocations for small increments.
 func (c *BufferedConn) Grow(size int) {
-	b := (*bufioReader)(unsafe.Pointer(c.r))
+	b := (*bufioReader)(unsafe.Pointer(c.reader()))
 	if size <= len(b.buf) {
 		return
 	}
@@ -41,7 +41,7 @@ func (c *BufferedConn) Grow(size int) {
 }
 
 func (c *BufferedConn) AppendData(buf []byte) (ok bool) {
-	b := (*bufioReader)(unsafe.Pointer(c.r))
+	b := (*bufioReader)(unsafe.Pointer(c.reader()))
 	needed := b.w - b.r + len(buf)
 	if needed > len(b.buf) {
 		c.Grow(needed)
@@ -67,7 +67,7 @@ func (c *BufferedConn) PrependData(buf []byte) {
 		return
 	}
 
-	b := (*bufioReader)(unsafe.Pointer(c.r))
+	b := (*bufioReader)(unsafe.Pointer(c.reader()))
 	if len(buf) <= b.r {
 		// Reuse the consumed space before the unread data without moving it.
 		b.r -= len(buf)

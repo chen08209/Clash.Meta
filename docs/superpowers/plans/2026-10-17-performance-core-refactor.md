@@ -464,3 +464,155 @@ pointer to the consumer in `ReadFrom`, so a per-loop reusable `*net.UDPAddr` wou
 source addresses for queued datagrams. Making that safe would mean either a new synchronous-write-back
 capability interface across every listener or moving the allocation to the inner read path, neither of
 which is a net win at this blast radius. The per-packet `net.UDPAddrFromAddrPort` stays.
+
+### Task 30: Canonical Domain Search Fast Path
+
+**Files:**
+- Modify: `component/trie/domain.go`
+- Test: `component/trie/domain_test.go`
+- Benchmark: `component/trie/domain_map_test.go`
+
+**Interfaces:**
+- Produces: a canonical-domain fast path before `normalizeDomain` in `DomainTrie.Search`.
+- Preserves: normalized lookup semantics, wildcard priority, invalid-pattern rejection, and Unicode/uppercase fallback.
+
+- [x] Accept ASCII lowercase, non-wildcard, non-empty-label domains without the normalization scan.
+- [x] Route uppercase, Unicode, whitespace, wildcards, empty labels, and trailing dots through `normalizeDomain`.
+- [x] Cover canonical hits, normalized hits, invalid inputs, and misses.
+- [x] Benchmark 6 samples against the pre-change tree with `benchstat`.
+- [x] Run `component/trie`, `tunnel`, and `dns` tests, the full main-module suite, `go vet`, and focused `-race` tests.
+
+### Task 31: Raw Windows UDP Reads
+
+**Files:**
+- Modify: `common/net/packet/packet_windows.go`
+- Test: `common/net/packet/packet_test.go`
+- Benchmark: `common/net/packet/packet_test.go`
+
+**Interfaces:**
+- Produces: a `WSARecvFrom` fast path with a stack `RawSockaddrAny`.
+- Preserves: pooled read buffers, would-block retry, IPv4/IPv6 zones, zero-length datagrams, and the `WaitReadFrom` contract.
+
+- [x] Replace the sockaddr-allocating `Recvfrom` wrapper on the Windows UDP read path.
+- [x] Convert the raw kernel sockaddr straight to `netip.AddrPort`.
+- [x] Cover IPv4, IPv6, and zero-length datagrams.
+- [x] Benchmark 6 samples against the pre-change tree with `benchstat`.
+- [x] Run packet tests with `-race`, `go vet`, the Windows build matrix, and the full main-module suite.
+
+### Task 32: Reuse The UDP Flow Key
+
+**Files:**
+- Modify: `tunnel/tunnel.go`
+- Test: `tunnel/tunnel_bench_test.go`, `tunnel/tunnel_test.go`
+- Benchmark: `tunnel/tunnel_bench_test.go`
+
+**Interfaces:**
+- Produces: a `udpPacket` queue item carrying the packet and its validated flow key.
+- Preserves: worker hash, overload drop, metadata fixes, sniffing, and flow-creation semantics.
+
+- [x] Compute the flow key once when the packet is admitted to the UDP queue.
+- [x] Load the runtime snapshot only when a new flow must be created.
+- [x] Keep the existing-flow admission and allocation gates.
+- [x] Benchmark 6+10 samples against the pre-change tree with `benchstat`.
+- [x] Run tunnel tests with `-race` and the full main-module suite.
+
+### Task 33: Skip Empty-Host Hosts Lookups
+
+**Files:**
+- Modify: `tunnel/tunnel.go`
+- Test: `tunnel/metadata_test.go`
+- Benchmark: `tunnel/metadata_test.go`
+
+**Interfaces:**
+- Produces: empty-host short-circuits before `DefaultHosts.Search` in metadata prehandling and rule resolution.
+- Preserves: domain mapping, redir-host lookup, fake-IP handling, process lookup, and rule resolution order.
+
+- [x] Avoid constructing an invalid-domain miss for IP-only metadata.
+- [x] Read the find-process mode once in `resolveMetadata`.
+- [x] Pin the empty-host path at zero allocations.
+- [x] Benchmark 6 samples against the pre-change tree with `benchstat`.
+- [x] Run tunnel tests with `-race` and the full main-module suite.
+
+### Task 34: Embed Tracker Info
+
+**Files:**
+- Modify: `tunnel/statistic/tracker.go`
+- Benchmark: `tunnel/statistic/tracker_bench_test.go`
+
+**Interfaces:**
+- Produces: `tcpTracker`/`udpTracker` with an embedded `TrackerInfo` value.
+- Preserves: stable `Info()` pointers, tracker identity, counters, close semantics, and JSON shape.
+
+- [x] Allocate one tracker object instead of a tracker plus separate info object.
+- [x] Benchmark tracker construction before and after with `benchstat`.
+- [x] Run statistic and tunnel tests with `-race`.
+- [x] Run the full main-module suite.
+
+### Task 35: Remove The BufferedConn Extended Wrapper
+
+**Files:**
+- Modify: `common/net/bufconn.go`
+- Benchmark: `common/net/bufconn_bench_test.go`
+
+**Interfaces:**
+- Produces: `BufferedConn` holding the underlying `net.Conn` directly.
+- Preserves: peek/growth semantics, cached reads, upstream discovery, `ExtendedConn` passthrough, and deadline handling.
+
+- [x] Stop allocating a Sing `ExtendedConnWrapper` for every plain TCP conn.
+- [x] Implement generic `ReadBuffer`/`WriteBuffer` with optimized passthrough when available.
+- [x] Benchmark construction before and after with `benchstat`.
+- [x] Run `common/net`, `component/sniffer`, and `tunnel` tests with `-race`.
+- [x] Run the full main-module suite.
+
+### Task 36: Keep The BufferedConn Writer
+
+**Files:**
+- Modify: `common/net/bufconn.go`
+- Benchmark: `common/net/bufconn_bench_test.go`
+
+**Interfaces:**
+- Produces: a non-replaceable `BufferedConn` writer.
+- Preserves: peeked-byte reader replacement, upstream discovery, `ExtendedConn` passthrough, and deadline handling.
+
+- [x] Stop unwrapping an empty `BufferedConn` to a raw socket on the write path.
+- [x] Avoid recreating Sing's extended writer wrapper in relay copies.
+- [x] Benchmark the writer unwrap/wrap path before and after with `benchstat`.
+- [x] Run `common/net`, `component/sniffer`, and `tunnel` tests with `-race`.
+- [x] Run the full main-module suite.
+
+### Task 37: Fast-Path UDP Sends
+
+**Files:**
+- Modify: `tunnel/connection.go`
+- Test: `tunnel/flow_key_bench_test.go`
+- Benchmark: `tunnel/tunnel_bench_test.go`
+
+**Interfaces:**
+- Produces: an atomic closure check + buffered-channel-only UDP send fast path.
+- Preserves: nonblocking overload drops, closed-sender drops, packet lifecycle, and close/send
+  ordering.
+
+- [x] Publish a closed flag and wait for in-flight sends before draining.
+- [x] Remove `ctx.Done()` from the normal UDP send select.
+- [x] Cover queue-full, closed-sender, and concurrent close/send semantics.
+- [x] Benchmark existing-flow handling before and after with `benchstat`.
+- [x] Run tunnel tests with `-race`.
+- [x] Run the full main-module suite.
+
+### Task 38: Lazily Allocate The BufferedConn Reader
+
+**Files:**
+- Modify: `common/net/bufconn.go`, `common/net/bufconn_unsafe.go`
+- Test: `common/net/bufconn_unsafe_test.go`
+- Benchmark: `common/net/bufconn_bench_test.go`
+
+**Interfaces:**
+- Produces: a `BufferedConn` with a lazily created peek reader.
+- Preserves: peek/growth semantics, cached reads, direct relay reads, upstream discovery, and deadline handling.
+
+- [x] Skip the 512-byte reader allocation on construction.
+- [x] Create the reader only for peek, growth, append/prepend, or explicit reader access.
+- [x] Cover direct reads without a buffered reader.
+- [x] Benchmark construction before and after with `benchstat`.
+- [x] Run `common/net`, `component/sniffer`, and `tunnel` tests with `-race`.
+- [x] Run the full main-module suite.

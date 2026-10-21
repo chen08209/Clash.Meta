@@ -36,7 +36,7 @@ type TrackerInfo struct {
 
 type tcpTracker struct {
 	C.Conn `json:"-"`
-	*TrackerInfo
+	TrackerInfo
 	manager *Manager
 	stripe  *counterStripe
 
@@ -61,7 +61,7 @@ func (tt *tcpTracker) ID() string {
 }
 
 func (tt *tcpTracker) Info() *TrackerInfo {
-	return tt.TrackerInfo
+	return &tt.TrackerInfo
 }
 
 func (tt *tcpTracker) Read(b []byte) (int, error) {
@@ -126,7 +126,7 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
 		Conn:    conn,
 		manager: manager,
 		stripe:  manager.bindStripe(),
-		TrackerInfo: &TrackerInfo{
+		TrackerInfo: TrackerInfo{
 			UUID:          utils.NewUUIDV4(),
 			Start:         time.Now(),
 			Metadata:      metadata,
@@ -160,7 +160,7 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
 
 type udpTracker struct {
 	C.PacketConn `json:"-"`
-	*TrackerInfo
+	TrackerInfo
 	manager *Manager
 	stripe  *counterStripe
 
@@ -185,7 +185,7 @@ func (ut *udpTracker) ID() string {
 }
 
 func (ut *udpTracker) Info() *TrackerInfo {
-	return ut.TrackerInfo
+	return &ut.TrackerInfo
 }
 
 func (ut *udpTracker) ReadFrom(b []byte) (int, net.Addr, error) {
@@ -228,7 +228,7 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
 		PacketConn: conn,
 		manager:    manager,
 		stripe:     manager.bindStripe(),
-		TrackerInfo: &TrackerInfo{
+		TrackerInfo: TrackerInfo{
 			UUID:          utils.NewUUIDV4(),
 			Start:         time.Now(),
 			Metadata:      metadata,

@@ -1,0 +1,12 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/common/net
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkNewBufferedConn-16    	10144516	       101.6 ns/op	     512 B/op	       1 allocs/op
+BenchmarkNewBufferedConn-16    	12656638	        97.26 ns/op	     512 B/op	       1 allocs/op
+BenchmarkNewBufferedConn-16    	11830772	       102.0 ns/op	     512 B/op	       1 allocs/op
+BenchmarkNewBufferedConn-16    	12609200	        98.50 ns/op	     512 B/op	       1 allocs/op
+BenchmarkNewBufferedConn-16    	12630648	       101.2 ns/op	     512 B/op	       1 allocs/op
+BenchmarkNewBufferedConn-16    	10761674	        96.23 ns/op	     512 B/op	       1 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/common/net	8.272s

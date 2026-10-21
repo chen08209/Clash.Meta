@@ -39,7 +39,7 @@ const (
 var (
 	status    = atomic.NewInt32Enum(Suspend)
 	udpInit   sync.Once
-	udpQueues []chan C.PacketAdapter
+	udpQueues []chan udpPacket
 	natTable  = nat.New()
 
 	// for compatibility, lazy init
@@ -58,6 +58,11 @@ var (
 
 type tunnel struct{}
 
+type udpPacket struct {
+	packet C.PacketAdapter
+	key    netip.AddrPort
+}
+
 var Tunnel = tunnel{}
 var _ C.Tunnel = Tunnel
 var _ P.Tunnel = Tunnel
@@ -74,9 +79,9 @@ func initUDP() {
 		numUDPWorkers = num
 	}
 
-	udpQueues = make([]chan C.PacketAdapter, numUDPWorkers)
+	udpQueues = make([]chan udpPacket, numUDPWorkers)
 	for i := 0; i < numUDPWorkers; i++ {
-		queue := make(chan C.PacketAdapter, queueCapacity)
+		queue := make(chan udpPacket, queueCapacity)
 		udpQueues[i] = queue
 		go processUDP(queue)
 	}
@@ -96,7 +101,7 @@ func (t tunnel) HandleUDPPacket(packet C.UDPPacket, metadata *C.Metadata) {
 	queueNo := uint(hash) % uint(len(udpQueues))
 
 	select {
-	case udpQueues[queueNo] <- packetAdapter:
+	case udpQueues[queueNo] <- udpPacket{packet: packetAdapter, key: key}:
 	default:
 		packet.Drop()
 	}
@@ -306,9 +311,11 @@ func preHandleMetadata(metadata *C.Metadata) error {
 		} else if resolver.IsFakeIP(metadata.DstIP) {
 			return fmt.Errorf("fake DNS record %s missing", metadata.DstIP)
 		}
-	} else if node, ok := resolver.DefaultHosts.Search(metadata.Host, true); ok {
-		// try use domain mapping
-		metadata.Host = node.Domain
+	} else if metadata.Host != "" {
+		if node, ok := resolver.DefaultHosts.Search(metadata.Host, true); ok {
+			// try use domain mapping
+			metadata.Host = node.Domain
+		}
 	}
 
 	return nil
@@ -325,13 +332,16 @@ func resolveMetadata(metadata *C.Metadata) (proxy C.Proxy, rule C.Rule, err erro
 		return
 	}
 	hostsResolved := false
-	processLookupEnabled := FindProcessMode() == process.FindProcessStrict
-	if node, ok := resolver.DefaultHosts.Search(metadata.Host, false); ok {
-		metadata.DstIP, _ = node.RandIP()
-		hostsResolved = true
+	findProcessMode := FindProcessMode()
+	processLookupEnabled := findProcessMode == process.FindProcessStrict
+	if metadata.Host != "" {
+		if node, ok := resolver.DefaultHosts.Search(metadata.Host, false); ok {
+			metadata.DstIP, _ = node.RandIP()
+			hostsResolved = true
+		}
 	}
 
-	switch FindProcessMode() {
+	switch findProcessMode {
 	case process.FindProcessAlways:
 		processContext := &matchContext{
 			metadata:             metadata,
@@ -360,14 +370,14 @@ func resolveMetadata(metadata *C.Metadata) (proxy C.Proxy, rule C.Rule, err erro
 }
 
 // processUDP starts a loop to handle udp packet
-func processUDP(queue chan C.PacketAdapter) {
+func processUDP(queue chan udpPacket) {
 	for conn := range queue {
 		handleUDPConn(conn)
 	}
 }
 
-func handleUDPConn(packet C.PacketAdapter) {
-	runtimeState := loadRuntime()
+func handleUDPConn(item udpPacket) {
+	packet := item.packet
 	if !isHandle(packet.Metadata().Type) {
 		packet.Drop()
 		return
@@ -379,20 +389,15 @@ func handleUDPConn(packet C.PacketAdapter) {
 		log.Warnln("[Metadata] not valid: %#v", metadata)
 		return
 	}
-	fixMetadata(metadata) // fix some metadata not set via metadata.SetRemoteAddr or metadata.SetRemoteAddress
-
-	key, valid := packetFlowKey(packet)
-	if !valid {
-		packet.Drop()
-		log.Warnln("[UDP] invalid source address: %#v", packet.Metadata())
-		return
-	}
 	// An existing flow already passed precheck on its first packet; repeating it
 	// per packet only clones metadata and re-queries the resolvers.
-	if sender, exist := natTable.LoadForFlow(key); exist {
+	if sender, exist := natTable.LoadForFlow(item.key); exist {
 		sender.Send(packet) // nonblocking
 		return
 	}
+
+	runtimeState := loadRuntime()
+	fixMetadata(metadata) // fix some metadata not set via metadata.SetRemoteAddr or metadata.SetRemoteAddress
 
 	if err := preHandleMetadata(metadata.Clone()); err != nil { // precheck without modify metadata
 		packet.Drop()
@@ -400,7 +405,7 @@ func handleUDPConn(packet C.PacketAdapter) {
 		return
 	}
 
-	sender, loaded := natTable.GetOrCreateForFlow(key, func() C.PacketSender {
+	sender, loaded := natTable.GetOrCreateForFlow(item.key, func() C.PacketSender {
 		sender := newPacketSender()
 		if runtimeState.sniffingEnable && runtimeState.snifferDispatcher.Enable() {
 			return runtimeState.snifferDispatcher.UDPSniff(packet, sender)
@@ -418,7 +423,7 @@ func handleUDPConn(packet C.PacketAdapter) {
 			DstIP:   metadata.DstIP,
 			DstPort: metadata.DstPort,
 		}
-		go startUDPSender(originMetadata, dialMetadata, packet, sender, key)
+		go startUDPSender(originMetadata, dialMetadata, packet, sender, item.key)
 	}
 	sender.Send(packet) // nonblocking
 }

@@ -4,6 +4,7 @@ import (
 	"hash/maphash"
 	"net"
 	"net/netip"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -45,6 +46,39 @@ func TestPacketSenderDropsWhenQueueIsFull(t *testing.T) {
 	require.EqualValues(t, 1, dropped.Load())
 }
 
+func TestPacketSenderDropsAfterClose(t *testing.T) {
+	sender := newPacketSender()
+	sender.Close()
+
+	var dropped atomic.Int32
+	sender.Send(blockingDropPacket{drops: &dropped})
+
+	require.EqualValues(t, 1, dropped.Load())
+}
+
+func TestPacketSenderCloseDrainsConcurrentSends(t *testing.T) {
+	for iteration := 0; iteration < 100; iteration++ {
+		sender := newPacketSender().(*packetSender)
+		packet := &queuedPacket{}
+		start := make(chan struct{})
+
+		var waiting sync.WaitGroup
+		waiting.Add(1)
+		go func() {
+			defer waiting.Done()
+			<-start
+			for index := 0; index < senderCapacity; index++ {
+				sender.Send(packet)
+			}
+		}()
+
+		close(start)
+		sender.Close()
+		waiting.Wait()
+		require.Zero(t, len(sender.ch))
+	}
+}
+
 func BenchmarkPacketFlowKey(b *testing.B) {
 	adapter := C.NewPacketAdapter(
 		fixedLocalAddrPacket{
@@ -80,6 +114,47 @@ func BenchmarkUDPQueueHash(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			_ = utils.MapHashAddrPort(key)
+		}
+	})
+}
+
+func BenchmarkPacketSenderSend(b *testing.B) {
+	packet := &queuedPacket{}
+
+	b.Run("ready", func(b *testing.B) {
+		sender := newPacketSender().(*packetSender)
+		b.Cleanup(sender.Close)
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			sender.Send(packet)
+			<-sender.ch
+		}
+	})
+
+	b.Run("full", func(b *testing.B) {
+		sender := newPacketSender().(*packetSender)
+		b.Cleanup(sender.Close)
+		for i := 0; i < senderCapacity; i++ {
+			sender.Send(packet)
+		}
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			sender.Send(packet)
+		}
+	})
+
+	b.Run("closed", func(b *testing.B) {
+		sender := newPacketSender().(*packetSender)
+		sender.Close()
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			sender.Send(packet)
 		}
 	})
 }

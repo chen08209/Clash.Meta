@@ -1,0 +1,12 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/tunnel/statistic
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkNewTCPTracker-16    	 2091145	       561.1 ns/op	     736 B/op	       8 allocs/op
+BenchmarkNewTCPTracker-16    	 2141596	       563.8 ns/op	     736 B/op	       8 allocs/op
+BenchmarkNewTCPTracker-16    	 2094957	       564.4 ns/op	     736 B/op	       8 allocs/op
+BenchmarkNewTCPTracker-16    	 2124546	       558.4 ns/op	     736 B/op	       8 allocs/op
+BenchmarkNewTCPTracker-16    	 2145543	       562.1 ns/op	     736 B/op	       8 allocs/op
+BenchmarkNewTCPTracker-16    	 2119221	       563.1 ns/op	     736 B/op	       8 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/tunnel/statistic	11.180s
