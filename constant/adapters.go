@@ -272,6 +272,9 @@ type UDPPacket interface {
 	WriteBack
 
 	// Drop call after packet is used, could recycle buffer in this function.
+	// It must leave WriteBack working: a flow holds the last packet the sender
+	// handed it to answer replies through, and that outlives Drop, so the
+	// packet object itself cannot be recycled here.
 	Drop()
 
 	// LocalAddr returns the source IP/Port of packet

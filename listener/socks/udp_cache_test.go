@@ -134,7 +134,7 @@ func BenchmarkSocksUDPHandleCached(b *testing.B) {
 	}
 }
 
-func TestSocksUDPPacketWrappersAreRecycled(t *testing.T) {
+func TestSocksUDPPacketWrappersReleaseTheirBuffers(t *testing.T) {
 	tunnel := &socksRecycleTunnel{}
 	listener := newSocksTestListener()
 	source := netip.MustParseAddrPort("192.168.1.2:54321")

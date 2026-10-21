@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
-	"sync"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	"github.com/metacubex/mihomo/common/pool"
@@ -13,19 +12,18 @@ import (
 	"github.com/metacubex/mihomo/log"
 )
 
-// A wrapper is returned only by Drop, the tunnel contract's single release point.
-var tproxyPacketPool = sync.Pool{New: func() interface{} { return new(packet) }}
-
+// The wrapper is allocated per datagram on purpose: a flow keeps the packet it
+// last handed the sender so replies can be written back through it, and Drop
+// runs long before that flow ends. Recycling the object here would let the next
+// datagram claim it and move those replies onto another client's socket.
 func newTproxyPacket(pc net.PacketConn, lAddr netip.AddrPort, buf []byte, tunnel C.Tunnel, additions []inbound.Addition) *packet {
-	tproxyPacket := tproxyPacketPool.Get().(*packet)
-	*tproxyPacket = packet{
+	return &packet{
 		pc:        pc,
 		lAddr:     lAddr,
 		buf:       buf,
 		tunnel:    tunnel,
 		additions: additions,
 	}
-	return tproxyPacket
 }
 
 type packet struct {
@@ -66,7 +64,6 @@ func (c *packet) Drop() {
 	}
 	_ = pool.Put(c.buf)
 	c.buf = nil
-	tproxyPacketPool.Put(c)
 }
 
 func (c *packet) InAddr() net.Addr {

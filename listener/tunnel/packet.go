@@ -3,22 +3,20 @@ package tunnel
 import (
 	"net"
 	"net/netip"
-	"sync"
 
 	"github.com/metacubex/mihomo/common/pool"
 )
 
-// A wrapper is returned only by Drop, the tunnel contract's single release point.
-var tunnelPacketPool = sync.Pool{New: func() interface{} { return new(packet) }}
-
+// The wrapper is allocated per datagram on purpose: a flow keeps the packet it
+// last handed the sender so replies can be written back through it, and Drop
+// runs long before that flow ends. Recycling the object here would let the next
+// datagram claim it and move those replies onto another client's socket.
 func newTunnelPacket(pc net.PacketConn, rAddr net.Addr, payload []byte) *packet {
-	tunnelPacket := tunnelPacketPool.Get().(*packet)
-	*tunnelPacket = packet{
+	return &packet{
 		pc:      pc,
 		rAddr:   rAddr,
 		payload: payload,
 	}
-	return tunnelPacket
 }
 
 type packet struct {
@@ -47,7 +45,6 @@ func (c *packet) Drop() {
 	}
 	_ = pool.Put(c.payload)
 	c.payload = nil
-	tunnelPacketPool.Put(c)
 }
 
 func (c *packet) InAddr() net.Addr {
