@@ -63,8 +63,7 @@ func TestWaitReadFromReturnsIPv6AddrPort(t *testing.T) {
 
 func TestWaitReadFromHandlesZeroLengthDatagram(t *testing.T) {
 	client, conn := newUDPTestPair(t)
-	_, err := client.Write(nil)
-	require.NoError(t, err)
+	writeZeroLengthDatagram(t, client)
 	data, addr, err := conn.WaitReadFrom()
 	require.NoError(t, err)
 	require.Nil(t, data)
