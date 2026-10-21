@@ -60,3 +60,14 @@ variant, the legacy vmess AEAD codec, and the pre-go1.24 maphash port that the
 dns message cache still deep-copies on non-IP hits; both were investigated in
 the 2026-10-20 scan and stay deferred until a profile shows the dns qps that
 would pay for them.
+
+## Regression re-run
+
+After the coverage, dead-code and documentation rounds landed on top of the
+optimizations, every ledger benchmark was re-executed (`-count=5`,
+`windows/amd64`): socks warm handle 77-92 ns / 1 alloc, process cache hit
+50.7-53.7 ns / 0 allocs, the sing datagram batch steady at 312 allocs, group
+picks 20.1-20.7 ns (fallback), 24.2-31.4 ns (url-test) and 0.68-0.79 ns
+(getProxies), the 5000-rule ip scan 174-185 ns, and the existing-flow udp
+handle 96-100 ns / 0 allocs. All within noise of the numbers above; the later
+rounds added no forwarding-path cost.
