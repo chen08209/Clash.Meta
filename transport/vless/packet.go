@@ -14,13 +14,18 @@ type PacketConn struct {
 	rAddr netip.AddrPort
 }
 
+// WriteTo sends the length and the payload as one frame: writing the two-byte
+// header on its own cost a second Write on the stream and an allocation.
 func (c *PacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
-	err := binary.Write(c.Conn, binary.BigEndian, uint16(len(b)))
-	if err != nil {
+	buf := pool.Get(2 + len(b))
+	defer pool.Put(buf)
+
+	binary.BigEndian.PutUint16(buf, uint16(len(b)))
+	copy(buf[2:], b)
+	if _, err := c.Conn.Write(buf[:2+len(b)]); err != nil {
 		return 0, err
 	}
-
-	return c.Conn.Write(b)
+	return len(b), nil
 }
 
 func (c *PacketConn) ReadFrom(b []byte) (int, net.Addr, error) {

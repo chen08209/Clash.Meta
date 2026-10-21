@@ -106,11 +106,14 @@ func (m *Mux) Read(b []byte) (int, error) {
 func (m *Mux) Write(b []byte) (int, error) {
 	defer m.buf.Reset() // reset must after write (keep the data fill in NewMux can be sent)
 
-	binary.Write(&m.buf, binary.BigEndian, uint16(4))
+	var length [2]byte
+	binary.BigEndian.PutUint16(length[:], 4)
+	m.buf.Write(length[:])
 	m.buf.Write(m.id[:])
 	m.buf.WriteByte(SessionStatusKeep)
 	m.buf.WriteByte(OptionData)
-	binary.Write(&m.buf, binary.BigEndian, uint16(len(b)))
+	binary.BigEndian.PutUint16(length[:], uint16(len(b)))
+	m.buf.Write(length[:])
 	m.buf.Write(b)
 
 	return m.Conn.Write(m.buf.Bytes())
