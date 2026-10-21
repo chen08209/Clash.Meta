@@ -16,7 +16,7 @@ focused test, a benchmark or both.
 | `rules/logic` | 92.7% | AND/OR/NOT semantics, PASS-RULE continuation, CheckPassRule helper, sub-rule recursion, parse errors |
 | `component/sniffer` | 80.9% | dispatcher, quic and http sniffers |
 | `rules` (dispatch) | 75.5% | the full ParseRule type table, params, error paths, uid platform gate |
-| `rules/provider` | 63.8% | domain/ipcidr/classical strategy insert-match-reset lifecycles, mrs round trips and text export, inline provider parsing and api marshaling |
+| `rules/provider` | 71.1% | strategy insert-match-reset lifecycles, mrs round trips and text export, inline provider parsing and api marshaling, file-vehicle initial/update, payload fallback and the inline mapping decode |
 | `tunnel` | 56.7% | rule index, packet flow key, deadlines, sender mapping, metadata template |
 | `component/nat` | 54.1% | binary flow keys, allocation-free local-conn lookup |
 | `tunnel/statistic` | 49.0% | stripes, tracker lifecycle, snapshot |
