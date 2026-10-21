@@ -73,3 +73,10 @@ picks 20.1-20.7 ns (fallback), 24.2-31.4 ns (url-test) and 0.68-0.79 ns
 (getProxies), the 5000-rule ip scan 174-185 ns, and the existing-flow udp
 handle 96-100 ns / 0 allocs. All within noise of the numbers above; the later
 rounds added no forwarding-path cost.
+', '
+## Build matrix
+
+The full tree cross-compiles for every ci matrix platform plus freebsd:
+linux amd64/arm64/386, windows amd64/arm64, darwin amd64/arm64 and freebsd
+amd64 all build clean on `c013bb86f`, which covers the platform-specific
+packet, maphash and deadline changes from these rounds.
