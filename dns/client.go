@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/metacubex/mihomo/common/contextutils"
@@ -20,9 +21,16 @@ type client struct {
 	host   string
 	dialer *dnsDialer
 	schema string
+
+	idleMu sync.Mutex
+	idle   []net.Conn
 }
 
 var _ dnsClient = (*client)(nil)
+
+// An exchange owns its conn exclusively, so a pooled conn never carries two
+// in-flight queries; concurrent queries that find the pool empty simply dial.
+const maxIdleDNSConns = 4
 
 // Address implements dnsClient
 func (c *client) Address() string {
@@ -36,11 +44,10 @@ func (c *client) ExchangeContext(ctx context.Context, m *D.Msg) (*D.Msg, error) 
 	}
 
 	addr := net.JoinHostPort(c.host, c.port)
-	conn, err := c.dialer.DialContext(ctx, network, addr)
+	conn, err := c.takeConn(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
 
 	dClient := &D.Client{
 		UDPSize: 4096,
@@ -51,6 +58,9 @@ func (c *client) ExchangeContext(ctx context.Context, m *D.Msg) (*D.Msg, error) 
 
 	// Resolvers MUST resend queries over TCP if they receive a truncated UDP response (with TC=1 set)!
 	if msg != nil && msg.Truncated && network == "udp" {
+		// Truncation is a message property, not a conn failure; the udp conn
+		// returns to the pool before the tcp retry.
+		c.keepConn(network, conn)
 		network = "tcp"
 		if log.DebugEnabled() {
 			log.Debugln("[DNS] Truncated reply from %s:%s for %s over UDP, retrying over TCP", c.host, c.port, m.Question[0].String())
@@ -59,11 +69,48 @@ func (c *client) ExchangeContext(ctx context.Context, m *D.Msg) (*D.Msg, error) 
 		if dialErr != nil {
 			return msg, dialErr
 		}
-		defer tcpConn.Close()
 		msg, err = exchangeWithConn(ctx, dClient, m, tcpConn)
+		_ = tcpConn.Close()
+		return msg, err
 	}
 
+	if err != nil {
+		_ = conn.Close()
+		return msg, err
+	}
+	c.keepConn(network, conn)
 	return msg, err
+}
+
+// takeConn hands out an idle udp conn when one exists; tcp conns are not
+// pooled because their lifetime through proxies is not worth the reuse risk.
+func (c *client) takeConn(ctx context.Context, network, addr string) (net.Conn, error) {
+	if network == "udp" {
+		c.idleMu.Lock()
+		if n := len(c.idle); n > 0 {
+			conn := c.idle[n-1]
+			c.idle = c.idle[:n-1]
+			c.idleMu.Unlock()
+			return conn, nil
+		}
+		c.idleMu.Unlock()
+	}
+	return c.dialer.DialContext(ctx, network, addr)
+}
+
+func (c *client) keepConn(network string, conn net.Conn) {
+	if network != "udp" {
+		_ = conn.Close()
+		return
+	}
+	c.idleMu.Lock()
+	if len(c.idle) < maxIdleDNSConns {
+		c.idle = append(c.idle, conn)
+		c.idleMu.Unlock()
+		return
+	}
+	c.idleMu.Unlock()
+	_ = conn.Close()
 }
 
 func exchangeWithConn(ctx context.Context, dClient *D.Client, m *D.Msg, conn net.Conn) (*D.Msg, error) {
@@ -92,7 +139,15 @@ func exchangeWithConn(ctx context.Context, dClient *D.Client, m *D.Msg, conn net
 	return msg, err
 }
 
-func (c *client) ResetConnection() {}
+func (c *client) ResetConnection() {
+	c.idleMu.Lock()
+	idle := c.idle
+	c.idle = nil
+	c.idleMu.Unlock()
+	for _, conn := range idle {
+		_ = conn.Close()
+	}
+}
 
 func newClient(addr string, resolver resolver.Resolver, netType string, params map[string]string, proxyAdapter C.ProxyAdapter, proxyName string) *client {
 	host, port, _ := net.SplitHostPort(addr)

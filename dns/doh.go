@@ -36,9 +36,9 @@ const (
 	// connections in HTTP transport.
 	transportDefaultIdleConnTimeout = 5 * time.Minute
 
-	dialTimeout        = 10 * time.Second
+	dialTimeout = 10 * time.Second
 
-	maxElapsedTime  = time.Second * 30
+	maxElapsedTime = time.Second * 30
 )
 
 var DefaultHTTPVersions = []C.HTTPVersion{C.HTTPVersion11, C.HTTPVersion2}
@@ -215,7 +215,7 @@ func (doh *dnsOverHTTPS) exchangeHTTPS(ctx context.Context, client *http.Client,
 	}
 
 	requestUrl := *doh.url // don't modify origin url
-	requestUrl.RawQuery = fmt.Sprintf("dns=%s", base64.RawURLEncoding.EncodeToString(buf))
+	requestUrl.RawQuery = "dns=" + base64.RawURLEncoding.EncodeToString(buf)
 	httpReq, err := http.NewRequestWithContext(ctx, method, requestUrl.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating http request to %s: %w", doh.url, err)
