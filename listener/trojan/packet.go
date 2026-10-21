@@ -5,7 +5,9 @@ import (
 	"net/netip"
 	"sync"
 
+	"github.com/metacubex/mihomo/adapter/inbound"
 	"github.com/metacubex/mihomo/common/pool"
+	C "github.com/metacubex/mihomo/constant"
 )
 
 // A wrapper is returned only by Drop, the tunnel contract's single release point.
@@ -27,6 +29,45 @@ type packet struct {
 	source  netip.AddrPort
 	data    []byte
 	payload []byte
+}
+
+const trojanUDPFlowCacheSize = 256
+
+type trojanUDPSession struct {
+	pc        net.PacketConn
+	source    netip.AddrPort
+	tunnel    C.Tunnel
+	additions []inbound.Addition
+	flows     map[netip.AddrPort]*C.Metadata
+}
+
+func newTrojanUDPSession(
+	pc net.PacketConn,
+	source netip.AddrPort,
+	tunnel C.Tunnel,
+	additions []inbound.Addition,
+) trojanUDPSession {
+	return trojanUDPSession{
+		pc:        pc,
+		source:    source,
+		tunnel:    tunnel,
+		additions: additions,
+	}
+}
+
+func (s *trojanUDPSession) handle(data []byte, addr netip.AddrPort) {
+	metadata, ok := s.flows[addr]
+	pkt := newTrojanPacket(s.pc, s.source, data)
+	if !ok {
+		if s.flows == nil {
+			s.flows = make(map[netip.AddrPort]*C.Metadata, 8)
+		} else if len(s.flows) >= trojanUDPFlowCacheSize {
+			clear(s.flows)
+		}
+		_, metadata = inbound.NewPacketFromAddrPort(addr, pkt, C.TROJAN, s.additions...)
+		s.flows[addr] = metadata
+	}
+	s.tunnel.HandleUDPPacket(pkt, metadata)
 }
 
 func (c *packet) Data() []byte {

@@ -330,6 +330,7 @@ func (l *Listener) handleConn(inMux bool, conn net.Conn, tunnel C.Tunnel, additi
 	case trojan.CommandUDP:
 		pc := trojan.NewPacketConn(conn)
 		remoteAddr := conn.RemoteAddr()
+		session := newTrojanUDPSession(pc, N.AddrPortFromNetAddr(remoteAddr), tunnel, additions)
 
 		for {
 			data, addr, err := pc.WaitReadFrom()
@@ -339,9 +340,7 @@ func (l *Listener) handleConn(inMux bool, conn net.Conn, tunnel C.Tunnel, additi
 				}
 				break
 			}
-			cPacket := newTrojanPacket(pc, N.AddrPortFromNetAddr(remoteAddr), data)
-
-			tunnel.HandleUDPPacket(inbound.NewPacketFromAddrPort(addr, cPacket, C.TROJAN, additions...))
+			session.handle(data, addr)
 		}
 	case trojan.CommandMux:
 		if inMux {
