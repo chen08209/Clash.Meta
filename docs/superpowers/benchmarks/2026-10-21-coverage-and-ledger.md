@@ -58,6 +58,11 @@ replaced by the stdlib, and the ci matrix runs go 1.24-1.27.1.
 
 ## Measured and deferred
 
+A deadcode re-scan over both build entry points after the toolchain raise
+finds 250 unreachable functions, down 34 from the 284 before the cleanup
+rounds. The only new entry is TunnelStatus.String, whose sole caller was the
+removed status mapping; it stays as the exported enum's Stringer surface.
+
 New benchmarks quantify the two deferred dns paths on a typical two-answer
 reply: the message-cache hit deep copy costs ~0.4 microseconds / 344 B / 7
 allocs per hit and the parsed-ip lookup path ~0.2 microseconds / 48 B / 1
