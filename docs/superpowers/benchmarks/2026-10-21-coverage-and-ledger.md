@@ -48,6 +48,7 @@ papered over with getter-only tests.
 | `96aee6987` | drop the never-wired dns ClearAll, unused status codecs | deadcode scan, both build entry points |
 | `f07e6fb62` | structured sticky-session hashes instead of string keys | sticky pick benchmark 594-606 ns / 6 allocs -> 438-462 ns / 2 allocs |
 | `7dbed4aaf` | direct addrport hashing for the UDP queue picker | queue-hash benchmark 9.83-10.28 ns -> 3.83-3.92 ns, 0 allocs |
+| `427435b96` | Hysteria UDP hop pool uses fixed-size array pointers | pool benchmark 27.78-65.95 ns / 1 alloc -> 9.37-10.03 ns, 0 allocs |
 
 ## Dead-code ledger
 
