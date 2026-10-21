@@ -1,7 +1,6 @@
 package core
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -248,61 +247,37 @@ func (m udpMessage) Size() int {
 }
 
 func (m udpMessage) Pack() []byte {
-	data := make([]byte, 0, m.Size())
-	buffer := bytes.NewBuffer(data)
-	_ = binary.Write(buffer, binary.BigEndian, m.SessionID)
-	_ = binary.Write(buffer, binary.BigEndian, uint16(len(m.Host)))
-	buffer.WriteString(m.Host)
-	_ = binary.Write(buffer, binary.BigEndian, m.Port)
-	_ = binary.Write(buffer, binary.BigEndian, m.MsgID)
-	_ = binary.Write(buffer, binary.BigEndian, m.FragID)
-	_ = binary.Write(buffer, binary.BigEndian, m.FragCount)
-	_ = binary.Write(buffer, binary.BigEndian, uint16(len(m.Data)))
-	buffer.Write(m.Data)
-	return buffer.Bytes()
+	data := make([]byte, m.Size())
+	binary.BigEndian.PutUint32(data, m.SessionID)
+	binary.BigEndian.PutUint16(data[4:], uint16(len(m.Host)))
+	offset := 6 + copy(data[6:], m.Host)
+	binary.BigEndian.PutUint16(data[offset:], m.Port)
+	binary.BigEndian.PutUint16(data[offset+2:], m.MsgID)
+	data[offset+4] = m.FragID
+	data[offset+5] = m.FragCount
+	binary.BigEndian.PutUint16(data[offset+6:], uint16(len(m.Data)))
+	copy(data[offset+8:], m.Data)
+	return data
 }
 
 func (m *udpMessage) Unpack(data []byte) error {
-	reader := bytes.NewReader(data)
-	err := binary.Read(reader, binary.BigEndian, &m.SessionID)
-	if err != nil {
-		return err
+	if len(data) < 6 {
+		return errors.New("invalid message")
 	}
-	var hostLen uint16
-	err = binary.Read(reader, binary.BigEndian, &hostLen)
-	if err != nil {
-		return err
+	m.SessionID = binary.BigEndian.Uint32(data)
+	offset := 6 + int(binary.BigEndian.Uint16(data[4:]))
+	if len(data) < offset+8 {
+		return errors.New("invalid message")
 	}
-	hostBytes := make([]byte, hostLen)
-	_, err = io.ReadFull(reader, hostBytes)
-	if err != nil {
-		return err
-	}
-	m.Host = string(hostBytes)
-	err = binary.Read(reader, binary.BigEndian, &m.Port)
-	if err != nil {
-		return err
-	}
-	err = binary.Read(reader, binary.BigEndian, &m.MsgID)
-	if err != nil {
-		return err
-	}
-	err = binary.Read(reader, binary.BigEndian, &m.FragID)
-	if err != nil {
-		return err
-	}
-	err = binary.Read(reader, binary.BigEndian, &m.FragCount)
-	if err != nil {
-		return err
-	}
-	var dataLen uint16
-	err = binary.Read(reader, binary.BigEndian, &dataLen)
-	if err != nil {
-		return err
-	}
-	if reader.Len() != int(dataLen) {
+	m.Host = string(data[6:offset])
+	m.Port = binary.BigEndian.Uint16(data[offset:])
+	m.MsgID = binary.BigEndian.Uint16(data[offset+2:])
+	m.FragID = data[offset+4]
+	m.FragCount = data[offset+5]
+	dataLen := int(binary.BigEndian.Uint16(data[offset+6:]))
+	if len(data)-offset-8 != dataLen {
 		return errors.New("invalid data length")
 	}
-	m.Data = data[len(data)-reader.Len():]
+	m.Data = data[offset+8:]
 	return nil
 }
