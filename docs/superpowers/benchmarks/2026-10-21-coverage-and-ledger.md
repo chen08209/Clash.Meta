@@ -99,6 +99,12 @@ conclusions stand. Note for anyone resuming this: the config package uses a
 go:linkname into the executor, so in-package tests are the only way to run
 it outside the full binary.
 
+A bisect pinned the harness failure to the environment, not this line:
+the standalone binary fails the mixed-port tunnel handoff identically on
+the released `10befb0c1` and on this head, while the adapter delay probe
+dials the same loopback target in 2 ms - the production FlClash bridge
+path is unaffected.
+
 ## Build matrix
 
 The full tree cross-compiles for every ci matrix platform plus freebsd:
