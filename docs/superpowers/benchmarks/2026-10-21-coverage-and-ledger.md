@@ -65,6 +65,8 @@ papered over with getter-only tests.
 | `99c4773b` | pooled Trojan UDP packet wrappers through Drop | wrapper drop 70.08n / 96 B / 1 alloc -> 30.48n / 0 B / 0 allocs (p=0.000, n=8) |
 | `bc7bc77be` | take the udp destination as an AddrPort on the tproxy and trojan paths | tproxy read-loop shape 480 B / 6 allocs -> 440 B / 3 allocs per datagram (p=0.000, n=10); the plain handle path 448 B / 4 allocs -> 440 B / 3 |
 | `390d17525` | reuse trojan UDP flow metadata per destination | inbound baseline 506 B / 4 allocs -> 22 B / 0 allocs (p=0.000, n=10); the loaded host kept the time delta off the gate |
+| `1a927214` | precompute the udp dns client transport | udp exchange 23 -> 22 allocs (p=0.000, n=12); the localhost round trip swamped the time delta, so the allocation count is the gate |
+| `e1652693` | read udp through the conn poller | read gate 137 B / 6 allocs -> 0 B / 0 allocs per datagram (p=0.000, n=12); the 1500-byte read 12.93us -> 9.36us and 110.6 -> 153.1 MiB/s (p=0.005, n=12) |
 
 ## Dead-code ledger
 
@@ -93,11 +95,12 @@ finds 250 unreachable functions, down 34 from the 284 before the cleanup
 rounds. The only new entry is TunnelStatus.String, whose sole caller was the
 removed status mapping; it stays as the exported enum's Stringer surface.
 
-F2, the per-read syscall address allocation, is now closed on linux and
-windows. darwin and the BSDs still read through the syscall wrappers: their
-sockaddr carries a length byte in front of a one-byte family, so the shared
-linux/windows converters do not fit and each needs its own plus a build path
-no ci job currently exercises.
+F2, the per-read syscall address allocation, is now closed everywhere. The
+per-platform raw recv closures went with it: the wrapped udp conn reads
+through `ReadFromUDPAddrPort`, which fills a stack sockaddr on every platform
+and drives the recvfrom from the poller instead of a second readiness
+callback, so darwin and the BSDs no longer need their own len-prefixed
+sockaddr converter. Only compilation of those paths is verified locally.
 
 New benchmarks quantify the two deferred dns paths on a typical two-answer
 reply: the message-cache hit deep copy costs ~0.4 microseconds / 344 B / 7

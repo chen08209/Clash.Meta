@@ -705,3 +705,26 @@ which is a net win at this blast radius. The per-packet `net.UDPAddrFromAddrPort
 - [x] Benchmark the UDP exchange before and after with `benchstat`.
 - [x] Run `dns` vet and tests with `-race`.
 - [x] Run the full main-module suite.
+
+### Task 44: Read UDP Through The Conn Poller
+
+**Files:**
+- Modify: `common/net/packet/packet.go`
+- Delete: `common/net/packet/packet_windows.go`, `packet_linux.go`, `packet_linux_386.go`,
+  `packet_posix.go`
+- Test: `common/net/packet/packet_test.go`
+- Benchmark: `common/net/packet/packet_test.go`
+
+**Interfaces:**
+- Produces: one `enhanceUDPConn` read path for every platform, on
+  `(*net.UDPConn).ReadFromUDPAddrPort` into pooled memory.
+- Preserves: the pooled-buffer ownership handoff, the zero-length datagram result, the
+  udp4/udp6 address mapping, and both replaceable-reader markers.
+
+- [x] Drop the four per-platform raw recv closures for one shared read.
+- [x] Keep the pooled handoff and the zero-length datagram contract.
+- [x] Delete the per-platform sockaddr converters and their conversion test.
+- [x] Benchmark the read gate before and after with `benchstat`.
+- [x] Run packet, deadline, tunnel and listener tests with `-race`.
+- [x] Cross-build the affected packages for the ci matrix platforms.
+- [x] Run the full main-module suite.

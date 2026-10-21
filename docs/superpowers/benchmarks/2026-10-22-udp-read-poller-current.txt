@@ -1,0 +1,48 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/common/net/packet
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkWaitReadFrom/small-16         	  266272	      4682 ns/op	  13.67 MB/s	       0 B/op	       0 allocs/op
+BenchmarkWaitReadFrom/small-16         	  240170	      5905 ns/op	  10.84 MB/s	       0 B/op	       0 allocs/op
+BenchmarkWaitReadFrom/small-16         	  126346	      8970 ns/op	   7.14 MB/s	       0 B/op	       0 allocs/op
+BenchmarkWaitReadFrom/1500B-16         	  221017	      7454 ns/op	 201.24 MB/s	       0 B/op	       0 allocs/op
+BenchmarkWaitReadFrom/1500B-16         	  123273	      9699 ns/op	 154.66 MB/s	       0 B/op	       0 allocs/op
+BenchmarkWaitReadFrom/1500B-16         	  134037	      9722 ns/op	 154.29 MB/s	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/common/net/packet	10.117s
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/common/net/packet
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkWaitReadFrom/small-16         	  131494	     10004 ns/op	   6.40 MB/s	       0 B/op	       0 allocs/op
+BenchmarkWaitReadFrom/small-16         	  137461	     10203 ns/op	   6.27 MB/s	       0 B/op	       0 allocs/op
+BenchmarkWaitReadFrom/small-16         	  122644	      9155 ns/op	   6.99 MB/s	       0 B/op	       0 allocs/op
+BenchmarkWaitReadFrom/1500B-16         	  105838	     10650 ns/op	 140.84 MB/s	       0 B/op	       0 allocs/op
+BenchmarkWaitReadFrom/1500B-16         	  140968	     10843 ns/op	 138.33 MB/s	       0 B/op	       0 allocs/op
+BenchmarkWaitReadFrom/1500B-16         	  122599	     11172 ns/op	 134.27 MB/s	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/common/net/packet	10.997s
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/common/net/packet
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkWaitReadFrom/small-16         	  134508	      9240 ns/op	   6.93 MB/s	       0 B/op	       0 allocs/op
+BenchmarkWaitReadFrom/small-16         	  121117	     10243 ns/op	   6.25 MB/s	       0 B/op	       0 allocs/op
+BenchmarkWaitReadFrom/small-16         	  124591	      8669 ns/op	   7.38 MB/s	       0 B/op	       0 allocs/op
+BenchmarkWaitReadFrom/1500B-16         	  171157	      6415 ns/op	 233.84 MB/s	       0 B/op	       0 allocs/op
+BenchmarkWaitReadFrom/1500B-16         	  188320	      7133 ns/op	 210.29 MB/s	       0 B/op	       0 allocs/op
+BenchmarkWaitReadFrom/1500B-16         	  237628	      6555 ns/op	 228.84 MB/s	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/common/net/packet	10.379s
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/common/net/packet
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkWaitReadFrom/small-16         	  138354	      8871 ns/op	   7.21 MB/s	       0 B/op	       0 allocs/op
+BenchmarkWaitReadFrom/small-16         	  205216	      6447 ns/op	   9.93 MB/s	       0 B/op	       0 allocs/op
+BenchmarkWaitReadFrom/small-16         	  237523	      6814 ns/op	   9.39 MB/s	       0 B/op	       0 allocs/op
+BenchmarkWaitReadFrom/1500B-16         	  248253	      5297 ns/op	 283.16 MB/s	       0 B/op	       0 allocs/op
+BenchmarkWaitReadFrom/1500B-16         	  204586	      9014 ns/op	 166.41 MB/s	       0 B/op	       0 allocs/op
+BenchmarkWaitReadFrom/1500B-16         	  153153	      9948 ns/op	 150.78 MB/s	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/common/net/packet	13.995s
