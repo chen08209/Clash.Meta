@@ -67,6 +67,7 @@ papered over with getter-only tests.
 | `390d17525` | reuse trojan UDP flow metadata per destination | inbound baseline 506 B / 4 allocs -> 22 B / 0 allocs (p=0.000, n=10); the loaded host kept the time delta off the gate |
 | `1a927214` | precompute the udp dns client transport | udp exchange 23 -> 22 allocs (p=0.000, n=12); the localhost round trip swamped the time delta, so the allocation count is the gate |
 | `e1652693` | read udp through the conn poller | read gate 137 B / 6 allocs -> 0 B / 0 allocs per datagram (p=0.000, n=12); the 1500-byte read 12.93us -> 9.36us and 110.6 -> 153.1 MiB/s (p=0.005, n=12) |
+| `eb5e6bcaa` | recycle generic packet adapters, Snell UDP flow state and Hysteria hop wrappers | adapter warm path 1 -> 0 allocs; Snell warm datagram 0 B / 0 allocs; Hysteria queue wrapper 32 B / 1 alloc -> 0 B / 0 allocs and 21.04-23.29 ns vs 32.46-35.47 ns |
 
 ## Dead-code ledger
 
