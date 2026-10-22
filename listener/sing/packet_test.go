@@ -51,6 +51,18 @@ func TestPacketWriterStateClosesOnce(t *testing.T) {
 	require.EqualError(t, err, "writeBack to closed connection")
 }
 
+func BenchmarkSingPacketWriteBack(b *testing.B) {
+	state := newSingPacketState(fakePacketWriter{})
+	addr := netip.MustParseAddrPort("127.0.0.1:53")
+	payload := []byte("ping")
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = state.writeBack(payload, addr)
+	}
+}
+
 type fakePacketWriter struct{}
 
 func (fakePacketWriter) WritePacket(_ *buf.Buffer, _ M.Socksaddr) error {
