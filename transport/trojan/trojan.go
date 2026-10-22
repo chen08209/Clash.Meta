@@ -57,7 +57,9 @@ func writePacket(w io.Writer, socks5Addr, payload []byte) (int, error) {
 	defer pool.PutBuffer(buf)
 
 	buf.Write(socks5Addr)
-	binary.Write(buf, binary.BigEndian, uint16(len(payload)))
+	var length [2]byte
+	binary.BigEndian.PutUint16(length[:], uint16(len(payload)))
+	buf.Write(length[:])
 	buf.Write(crlf)
 	buf.Write(payload)
 
