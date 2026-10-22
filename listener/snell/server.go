@@ -14,6 +14,7 @@ import (
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	N "github.com/metacubex/mihomo/common/net"
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	LC "github.com/metacubex/mihomo/listener/config"
@@ -26,6 +27,9 @@ import (
 )
 
 const maxPacketLength = 0x3fff
+const snellUDPFlowCacheSize = 256
+
+var snellPacketPool = sync.Pool{New: func() interface{} { return new(udpPacket) }}
 
 type Listener struct {
 	closed    bool
@@ -261,7 +265,18 @@ func (l *Listener) handleUDP(stream *snell.Snell, clientID string, tunnel C.Tunn
 
 	connID := utils.NewUUIDV4().String()
 	localAddr := N.NewCustomAddr(C.SNELL.String(), connID, stream.RemoteAddr())
+	source := N.AddrPortFromNetAddr(stream.RemoteAddr())
 	writeMu := &sync.Mutex{}
+	session := snellUDPSession{
+		listener:  l,
+		stream:    stream,
+		clientID:  clientID,
+		source:    source,
+		localAddr: localAddr,
+		writeMu:   writeMu,
+		tunnel:    tunnel,
+		additions: additions,
+	}
 	buf := make([]byte, maxPacketLength)
 	for {
 		n, err := stream.Read(buf)
@@ -275,21 +290,48 @@ func (l *Listener) handleUDP(stream *snell.Snell, clientID string, tunnel C.Tunn
 		if err != nil {
 			return err
 		}
-		metadata := l.metadata(C.UDP, request.Host, request.Port, stream, clientID, additions...)
+		session.handle(request.Payload, request)
+	}
+}
+
+type snellFlowKey struct {
+	host string
+	ip   netip.Addr
+	port uint16
+}
+
+type snellUDPSession struct {
+	listener  *Listener
+	stream    *snell.Snell
+	clientID  string
+	source    netip.AddrPort
+	localAddr net.Addr
+	writeMu   *sync.Mutex
+	tunnel    C.Tunnel
+	additions []inbound.Addition
+	flows     map[snellFlowKey]*C.Metadata
+}
+
+func (s *snellUDPSession) handle(payload []byte, request snell.UDPRequest) {
+	key := snellFlowKey{host: request.Host, ip: request.Ip, port: request.Port}
+	metadata, ok := s.flows[key]
+	if !ok {
+		if s.flows == nil {
+			s.flows = make(map[snellFlowKey]*C.Metadata, 8)
+		} else if len(s.flows) >= snellUDPFlowCacheSize {
+			clear(s.flows)
+		}
+		metadata = s.listener.metadata(C.UDP, request.Host, request.Port, s.stream, s.clientID, s.additions...)
 		if request.Ip.IsValid() {
 			metadata.Host = ""
 			metadata.DstIP = request.Ip
 		}
-
-		payload := append([]byte(nil), request.Payload...)
-		packet := &udpPacket{
-			data:      payload,
-			conn:      stream,
-			writeMu:   writeMu,
-			localAddr: localAddr,
-		}
-		tunnel.HandleUDPPacket(packet, metadata)
+		s.flows[key] = metadata
 	}
+
+	packet := newSnellPacket(s.stream, s.writeMu, s.localAddr, s.source, pool.Get(len(payload)))
+	copy(packet.data, payload)
+	s.tunnel.HandleUDPPacket(packet, metadata)
 }
 
 func (l *Listener) metadata(network C.NetWork, host string, port uint16, conn net.Conn, clientID string, additions ...inbound.Addition) *C.Metadata {
@@ -388,6 +430,19 @@ type udpPacket struct {
 	conn      *snell.Snell
 	writeMu   *sync.Mutex
 	localAddr net.Addr
+	source    netip.AddrPort
+}
+
+func newSnellPacket(conn *snell.Snell, writeMu *sync.Mutex, localAddr net.Addr, source netip.AddrPort, data []byte) *udpPacket {
+	packet := snellPacketPool.Get().(*udpPacket)
+	*packet = udpPacket{
+		data:      data,
+		conn:      conn,
+		writeMu:   writeMu,
+		localAddr: localAddr,
+		source:    source,
+	}
+	return packet
 }
 
 func (p *udpPacket) Data() []byte {
@@ -401,11 +456,24 @@ func (p *udpPacket) WriteBack(b []byte, addr netip.AddrPort) (int, error) {
 }
 
 func (p *udpPacket) Drop() {
+	if p.data == nil {
+		return
+	}
+	_ = pool.Put(p.data)
 	p.data = nil
+	p.conn = nil
+	p.writeMu = nil
+	p.localAddr = nil
+	p.source = netip.AddrPort{}
+	snellPacketPool.Put(p)
 }
 
 func (p *udpPacket) LocalAddr() net.Addr {
 	return p.localAddr
+}
+
+func (p *udpPacket) FlowKey() netip.AddrPort {
+	return p.source
 }
 
 var _ C.MultiAddrListener = (*Listener)(nil)

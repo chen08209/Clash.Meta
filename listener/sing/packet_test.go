@@ -25,14 +25,16 @@ func TestNewPacketAdapterOnSingPacketSkipsTheUDPAddr(t *testing.T) {
 	source := netip.MustParseAddrPort("192.168.1.2:54321")
 	pkt := &packet{source: source}
 	metadata := &C.Metadata{}
+	C.NewPacketAdapter(pkt, metadata).Drop()
 
 	allocations := testing.AllocsPerRun(100, func() {
 		adapter := C.NewPacketAdapter(pkt, metadata)
 		if key := adapter.(interface{ FlowKey() netip.AddrPort }).FlowKey(); key != source {
 			t.Fatal("adapter lost the flow key")
 		}
+		adapter.Drop()
 	})
-	require.EqualValues(t, 1, allocations)
+	require.Zero(t, allocations)
 }
 
 func TestPacketWriterStateClosesOnce(t *testing.T) {

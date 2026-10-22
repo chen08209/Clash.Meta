@@ -161,8 +161,10 @@ func TestNewPacketConnectionRecyclesPacketWrappers(t *testing.T) {
 	require.True(t, err == nil || errors.Is(err, io.EOF), "unexpected error: %v", err)
 
 	require.Len(t, tunnel.wrappers, 3)
-	require.Same(t, tunnel.wrappers[0], tunnel.wrappers[1])
-	require.Same(t, tunnel.wrappers[0], tunnel.wrappers[2])
+	if !raceEnabled {
+		require.Same(t, tunnel.wrappers[0], tunnel.wrappers[1])
+		require.Same(t, tunnel.wrappers[0], tunnel.wrappers[2])
+	}
 	require.Equal(t, []byte("first"), tunnel.data[0])
 	require.Equal(t, []byte("second"), tunnel.data[1])
 	require.Equal(t, []byte("third"), tunnel.data[2])

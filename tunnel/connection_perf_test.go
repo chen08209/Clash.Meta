@@ -309,6 +309,10 @@ func TestProcessPacketArmsDeadlineOncePerHalfTimeout(t *testing.T) {
 	require.EqualValues(t, 1, pc.sets.Load(), "the first packet must arm the deadline")
 	firstDeadline := pc.last.Load()
 
+	packet = C.NewPacketAdapter(
+		deadlineTestPacket{localAddr: net.UDPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:53535")), data: []byte("ping")},
+		origin,
+	)
 	sender.processPacket(pc, packet)
 	require.EqualValues(t, 1, pc.sets.Load(), "a packet inside the half-timeout window must not re-arm")
 	require.Equal(t, firstDeadline, pc.last.Load())
@@ -372,7 +376,7 @@ func (c *destinationRecordingPacketConn) ResolveUDP(ctx context.Context, metadat
 	return nil
 }
 
-func newDestinationTestFlow(t *testing.T, pc C.PacketConn) (*packetSender, C.PacketAdapter) {
+func newDestinationTestFlow(t *testing.T, pc C.PacketConn) (*packetSender, *C.Metadata) {
 	t.Helper()
 
 	sender := newPacketSender().(*packetSender)
@@ -381,19 +385,22 @@ func newDestinationTestFlow(t *testing.T, pc C.PacketConn) (*packetSender, C.Pac
 	origin := &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.2"), DstPort: 5353}
 	sender.AddMapping(origin, &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.3"), DstPort: 5353})
 
-	packet := C.NewPacketAdapter(
+	return sender, origin
+}
+
+func newDestinationTestPacket(origin *C.Metadata) C.PacketAdapter {
+	return C.NewPacketAdapter(
 		deadlineTestPacket{localAddr: net.UDPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:53535")), data: []byte("ping")},
 		origin,
 	)
-	return sender, packet
 }
 
 func TestProcessPacketReusesDestinationForRepeatedWrites(t *testing.T) {
 	pc := &destinationRecordingPacketConn{}
-	sender, packet := newDestinationTestFlow(t, pc)
+	sender, origin := newDestinationTestFlow(t, pc)
 
-	sender.processPacket(pc, packet)
-	sender.processPacket(pc, packet)
+	sender.processPacket(pc, newDestinationTestPacket(origin))
+	sender.processPacket(pc, newDestinationTestPacket(origin))
 
 	require.Equal(t, 2, pc.written)
 	require.True(t, pc.reused, "a repeated destination must reuse the address object")
@@ -402,10 +409,10 @@ func TestProcessPacketReusesDestinationForRepeatedWrites(t *testing.T) {
 
 func TestProcessPacketReusesDestinationForQueuedConn(t *testing.T) {
 	pc := &destinationRecordingPacketConn{}
-	sender, packet := newDestinationTestFlow(t, pc)
+	sender, origin := newDestinationTestFlow(t, pc)
 
-	sender.processPacket(pc, packet)
-	sender.processPacket(pc, packet)
+	sender.processPacket(pc, newDestinationTestPacket(origin))
+	sender.processPacket(pc, newDestinationTestPacket(origin))
 
 	require.Equal(t, 2, pc.written)
 	require.True(t, pc.reused, "a repeated destination must reuse the address object even for a queued conn")
@@ -414,11 +421,12 @@ func TestProcessPacketReusesDestinationForQueuedConn(t *testing.T) {
 
 func TestProcessPacketRebuildsDestinationWhenPortChanges(t *testing.T) {
 	pc := &destinationRecordingPacketConn{}
-	sender, packet := newDestinationTestFlow(t, pc)
+	sender, origin := newDestinationTestFlow(t, pc)
 
-	sender.processPacket(pc, packet)
-	packet.Metadata().DstPort = 5354
-	sender.processPacket(pc, packet)
+	sender.processPacket(pc, newDestinationTestPacket(origin))
+	changedOrigin := *origin
+	changedOrigin.DstPort = 5354
+	sender.processPacket(pc, newDestinationTestPacket(&changedOrigin))
 
 	require.Equal(t, 2, pc.written)
 	require.False(t, pc.reused, "a changed destination port must rebuild the address")
@@ -431,15 +439,11 @@ func BenchmarkProcessPacketHit(b *testing.B) {
 	b.Cleanup(sender.Close)
 	origin := &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.2"), DstPort: 5353}
 	sender.AddMapping(origin, &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.3"), DstPort: 5353})
-	packet := C.NewPacketAdapter(
-		deadlineTestPacket{localAddr: net.UDPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:53535")), data: []byte("ping")},
-		origin,
-	)
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		sender.processPacket(pc, packet)
+		sender.processPacket(pc, newDestinationTestPacket(origin))
 	}
 }
 
