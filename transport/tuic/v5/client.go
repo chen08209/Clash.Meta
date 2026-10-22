@@ -157,9 +157,10 @@ func (t *clientImpl) handleUniStream(quicConn *quic.Conn) (err error) {
 					assocId = packet.ASSOC_ID
 					if val, ok := t.udpInputMap.Load(assocId); ok {
 						if conn, ok := val.(net.Conn); ok {
-							writer := bufio.NewWriterSize(conn, packet.BytesLen())
-							_ = packet.WriteTo(writer)
-							_ = writer.Flush()
+							buf := pool.GetBuffer()
+							_ = packet.WriteTo(buf)
+							_, _ = conn.Write(buf.Bytes())
+							pool.PutBuffer(buf)
 						}
 					}
 				}
