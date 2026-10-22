@@ -53,8 +53,11 @@ func TestFlowWriteBackKeepsItsClientAfterThePacketIsDropped(t *testing.T) {
 
 	for round := 0; round < 100; round++ {
 		packet := newSocksPacket(clientA, addrA, []byte("request"), []byte("request"))
-		proxy := nat.NewWriteBackProxy(C.NewPacketAdapter(packet, &C.Metadata{}))
-		packet.Drop() // what packetSender.processPacket does right after it sends
+		adapter := C.NewPacketAdapter(packet, &C.Metadata{})
+		proxy := nat.NewWriteBackProxy(adapter)
+		// packetSender.processPacket stores the adapter in the flow's write-back
+		// proxy and then drops that same adapter right after it sends.
+		adapter.Drop()
 
 		// the next datagram on this listener gets its own wrapper
 		_ = newSocksPacket(clientB, addrB, []byte("other"), []byte("other"))

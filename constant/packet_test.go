@@ -110,7 +110,7 @@ func TestNewPacketAdapterWithFlowKeyAllocatesOnlyTheAdapter(t *testing.T) {
 	allocations := testing.AllocsPerRun(100, func() {
 		C.NewPacketAdapter(packet, metadata).Drop()
 	})
-	require.Zero(t, allocations)
+	require.EqualValues(t, 1, allocations)
 }
 
 func TestPacketAdapterDropIsSingleUse(t *testing.T) {
@@ -122,7 +122,8 @@ func TestPacketAdapterDropIsSingleUse(t *testing.T) {
 
 	adapter.Drop()
 	adapter.Drop()
-	require.Nil(t, adapter.Metadata())
+	// The adapter stays whole: a flow keeps it in its write-back proxy past Drop.
+	require.Equal(t, metadata, adapter.Metadata())
 	require.Equal(t, 1, packet.drops)
 }
 

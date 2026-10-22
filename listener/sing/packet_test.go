@@ -34,7 +34,9 @@ func TestNewPacketAdapterOnSingPacketSkipsTheUDPAddr(t *testing.T) {
 		}
 		adapter.Drop()
 	})
-	require.Zero(t, allocations)
+	// The adapter is the only allocation: it stays allocated because the flow
+	// keeps it in its write-back proxy past Drop, so no UDPAddr is materialised.
+	require.EqualValues(t, 1, allocations)
 }
 
 func TestPacketWriterStateClosesOnce(t *testing.T) {

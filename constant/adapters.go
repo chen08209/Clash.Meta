@@ -14,8 +14,6 @@ import (
 	"github.com/metacubex/mihomo/component/dialer"
 )
 
-var packetAdapterPool = sync.Pool{New: func() any { return new(packetAdapter) }}
-
 // Adapter Type
 const (
 	Direct AdapterType = iota
@@ -316,11 +314,10 @@ func (s *packetAdapter) FlowKey() netip.AddrPort {
 }
 
 func NewPacketAdapter(packet UDPPacket, metadata *Metadata) PacketAdapter {
-	adapter := packetAdapterPool.Get().(*packetAdapter)
-	adapter.UDPPacket = packet
-	adapter.metadata = metadata
-	adapter.flowKey = netip.AddrPort{}
-	adapter.released = false
+	adapter := &packetAdapter{
+		UDPPacket: packet,
+		metadata:  metadata,
+	}
 	if keyPacket, ok := packet.(interface{ FlowKey() netip.AddrPort }); ok {
 		// a packet that already holds its source as an AddrPort saves the
 		// materialisation and re-parse of a net.UDPAddr per packet
@@ -331,17 +328,16 @@ func NewPacketAdapter(packet UDPPacket, metadata *Metadata) PacketAdapter {
 	return adapter
 }
 
-// Drop releases the wrapped packet and returns the adapter itself to its pool.
+// Drop releases the wrapped packet exactly once. The adapter itself is never
+// recycled and keeps its fields: a flow answers its replies through the last
+// packet the sender handed it, and that write-back proxy outlives this call,
+// so clearing the wrapped packet here would panic the flow's next reply.
 func (s *packetAdapter) Drop() {
 	if s.released {
 		return
 	}
 	s.released = true
 	s.UDPPacket.Drop()
-	s.UDPPacket = nil
-	s.metadata = nil
-	s.flowKey = netip.AddrPort{}
-	packetAdapterPool.Put(s)
 }
 
 func addrPortFromLocalAddr(addr net.Addr) netip.AddrPort {

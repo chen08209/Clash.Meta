@@ -29,8 +29,6 @@ import (
 const maxPacketLength = 0x3fff
 const snellUDPFlowCacheSize = 256
 
-var snellPacketPool = sync.Pool{New: func() interface{} { return new(udpPacket) }}
-
 type Listener struct {
 	closed    bool
 	config    LC.SnellServer
@@ -434,15 +432,13 @@ type udpPacket struct {
 }
 
 func newSnellPacket(conn *snell.Snell, writeMu *sync.Mutex, localAddr net.Addr, source netip.AddrPort, data []byte) *udpPacket {
-	packet := snellPacketPool.Get().(*udpPacket)
-	*packet = udpPacket{
+	return &udpPacket{
 		data:      data,
 		conn:      conn,
 		writeMu:   writeMu,
 		localAddr: localAddr,
 		source:    source,
 	}
-	return packet
 }
 
 func (p *udpPacket) Data() []byte {
@@ -461,11 +457,6 @@ func (p *udpPacket) Drop() {
 	}
 	_ = pool.Put(p.data)
 	p.data = nil
-	p.conn = nil
-	p.writeMu = nil
-	p.localAddr = nil
-	p.source = netip.AddrPort{}
-	snellPacketPool.Put(p)
 }
 
 func (p *udpPacket) LocalAddr() net.Addr {
