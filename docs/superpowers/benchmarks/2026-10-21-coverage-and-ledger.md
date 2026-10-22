@@ -68,6 +68,8 @@ papered over with getter-only tests.
 | `1a927214` | precompute the udp dns client transport | udp exchange 23 -> 22 allocs (p=0.000, n=12); the localhost round trip swamped the time delta, so the allocation count is the gate |
 | `e1652693` | read udp through the conn poller | read gate 137 B / 6 allocs -> 0 B / 0 allocs per datagram (p=0.000, n=12); the 1500-byte read 12.93us -> 9.36us and 110.6 -> 153.1 MiB/s (p=0.005, n=12) |
 | `eb5e6bcaa` | recycle generic packet adapters, Snell UDP flow state and Hysteria hop wrappers | adapter warm path 1 -> 0 allocs; Snell warm datagram 0 B / 0 allocs; Hysteria queue wrapper 32 B / 1 alloc -> 0 B / 0 allocs and 21.04-23.29 ns vs 32.46-35.47 ns |
+| `078e94db` | pool Sudoku UoT and inner UDP payload/wrapper objects through Drop | Sudoku 128 B / 2 allocs -> 0 B / 0 allocs; inner 32 B / 1 alloc -> 0 B / 0 allocs (p=0.000, n=8) |
+| `d0a8e536` | keep Sudoku UoT addresses as SOCKS bytes and pool address/payload buffers | datagram read 193 B / 10 allocs -> 4 B / 1 alloc, -66.12% seconds (p=0.000, n=8) |
 
 ## Dead-code ledger
 
