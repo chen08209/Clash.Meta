@@ -353,14 +353,6 @@ func (c *packetConn) AddRef(ref any) {
 
 func NewPacketConn(pc net.PacketConn, a ProxyAdapter) C.PacketConn {
 	epc := N.NewEnhancePacketConn(pc)
-	switch pc.(type) {
-	case syscall.Conn: // exclusion system conn like *net.UDPConn
-		break
-	case ipstackConn: // exclusion *mipstack.UDPConn
-		break
-	default:
-		epc = N.NewDeadlineEnhancePacketConn(epc) // most conn from outbound can't handle readDeadline correctly
-	}
 	cpc := &packetConn{epc, nil, nil, a.Name(), utils.NewUUIDV4().String(), a.Addr(), a.ResolveUDP}
 	cpc.AppendToChains(a)
 	return cpc

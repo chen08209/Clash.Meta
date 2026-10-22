@@ -114,15 +114,14 @@ alloc - together well under 0.1 percent of a core at a thousand hits per
 second, so the copy-on-write and worker-pool reworks stay rejected as
 risk-without-payoff.
 
-One measured target is open. The outbound packet conns that cannot handle a
-read deadline natively (the sing-backed ones: hysteria, tuic, shadowquic)
-emulate it with a goroutine per read, and the tunnel keeps a 60s deadline set
-for a busy flow, so the pipe branch is the steady state: 12.39-17.65
-microseconds / 96-97 B / 2 allocs per reply read against 4.98-9.41
-microseconds / 0 allocs on the direct path. It needs the one-token handshake
-across the four read shapes replaced by a conn-owned pipe reader, which is a
-concurrency change rather than a mechanical one, so it is written up in
-`2026-10-22-deadline-pipe-read-report.md` and left for its own round.
+The packet read deadline emulation is closed rather than replaced. The
+outbound packet conns that cannot handle a read deadline natively (the
+sing-backed ones: hysteria, tuic, shadowquic) emulated it with a goroutine per
+read, and the tunnel keeps a 60s deadline set for a busy flow, so the pipe
+branch was the steady state: 96-97 B / 2 allocs per reply read against 0 on
+the direct path. The flow now owns an idle timer that closes its conn instead,
+and the emulation, its pipe reader and the outbound wrapping branch are gone;
+the flow reply read is 0 B / 0 allocs.
 
 ## Regression re-run
 

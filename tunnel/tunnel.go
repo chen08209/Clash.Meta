@@ -433,7 +433,7 @@ func dialUDPSender(originMetadata *C.Metadata, metadata *C.Metadata, packet C.Pa
 	}
 	logMetadata(metadata, rule, rawPc)
 
-	pc := statistic.NewUDPTracker(rawPc, statistic.DefaultManager, metadata, rule, 0, 0, true)
+	pc := statistic.NewUDPTracker(newIdlePacketConn(rawPc), statistic.DefaultManager, metadata, rule, 0, 0, true)
 
 	sender.AddMapping(originMetadata, dialMetadata)
 	oAddrPort := dialMetadata.AddrPort()

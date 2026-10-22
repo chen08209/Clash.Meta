@@ -271,6 +271,50 @@ func refreshReadDeadline(pc C.PacketConn, now time.Time) int64 {
 	return next.UnixNano()
 }
 
+// idlePacketConn owns a udp flow's idle expiry. Closing the conn is the one
+// interruption every outbound packet conn honours: the sing-backed ones
+// (hysteria, tuic, shadowquic) cannot report a read deadline, and emulating one
+// with a pipe reader costs a goroutine per datagram. The deadline the flow sets
+// therefore becomes a timer that closes the conn instead.
+type idlePacketConn struct {
+	C.PacketConn
+	timer *time.Timer
+	once  sync.Once
+}
+
+func newIdlePacketConn(pc C.PacketConn) *idlePacketConn {
+	conn := &idlePacketConn{PacketConn: pc}
+	conn.timer = time.AfterFunc(udpTimeout, conn.shutdown)
+	return conn
+}
+
+func (c *idlePacketConn) SetReadDeadline(t time.Time) error {
+	if t.IsZero() {
+		c.timer.Stop()
+		return nil
+	}
+	// Resetting an AfterFunc timer cannot recall a callback that already
+	// started, which is the same race a socket deadline has when it fires as a
+	// packet arrives.
+	c.timer.Reset(time.Until(t))
+	return nil
+}
+
+func (c *idlePacketConn) shutdown() {
+	c.once.Do(func() { _ = c.PacketConn.Close() })
+}
+
+func (c *idlePacketConn) Close() error {
+	c.timer.Stop()
+	var err error
+	c.once.Do(func() { err = c.PacketConn.Close() })
+	return err
+}
+
+func (c *idlePacketConn) Upstream() any {
+	return c.PacketConn
+}
+
 func handleUDPToLocal(
 	writeBack C.WriteBack,
 	pc C.PacketConn,

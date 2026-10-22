@@ -11,6 +11,7 @@ import (
 	"time"
 
 	N "github.com/metacubex/mihomo/common/net"
+	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/stretchr/testify/require"
 )
@@ -257,8 +258,23 @@ func TestShouldRefreshDeadlineAcrossDeadlineAges(t *testing.T) {
 	require.True(t, shouldRefreshDeadline(now.Add(-time.Second).UnixNano(), now), "an expired deadline must be re-armed")
 }
 
-type deadlineRecordingPacketConn struct {
+// chainlessPacketConn supplies the C.PacketConn surface these tests do not
+// exercise, so each test conn only declares what it observes.
+type chainlessPacketConn struct {
 	N.EnhancePacketConn
+}
+
+func (c *chainlessPacketConn) Chains() C.Chain               { return nil }
+func (c *chainlessPacketConn) ProviderChains() C.Chain       { return nil }
+func (c *chainlessPacketConn) AppendToChains(C.ProxyAdapter) {}
+func (c *chainlessPacketConn) RemoteDestination() string     { return "" }
+
+func (c *chainlessPacketConn) ResolveUDP(ctx context.Context, metadata *C.Metadata) error {
+	return nil
+}
+
+type deadlineRecordingPacketConn struct {
+	chainlessPacketConn
 	sets atomic.Int64
 	last atomic.Int64
 }
@@ -267,15 +283,6 @@ func (c *deadlineRecordingPacketConn) SetReadDeadline(t time.Time) error {
 	c.sets.Add(1)
 	c.last.Store(t.UnixNano())
 	return c.EnhancePacketConn.SetReadDeadline(t)
-}
-
-func (c *deadlineRecordingPacketConn) Chains() C.Chain               { return nil }
-func (c *deadlineRecordingPacketConn) ProviderChains() C.Chain       { return nil }
-func (c *deadlineRecordingPacketConn) AppendToChains(C.ProxyAdapter) {}
-func (c *deadlineRecordingPacketConn) RemoteDestination() string     { return "" }
-
-func (c *deadlineRecordingPacketConn) ResolveUDP(ctx context.Context, metadata *C.Metadata) error {
-	return nil
 }
 
 type deadlineTestPacket struct {
@@ -292,7 +299,7 @@ func TestProcessPacketArmsDeadlineOncePerHalfTimeout(t *testing.T) {
 	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = udp.Close() })
-	pc := &deadlineRecordingPacketConn{EnhancePacketConn: N.NewEnhancePacketConn(udp)}
+	pc := &deadlineRecordingPacketConn{chainlessPacketConn: chainlessPacketConn{EnhancePacketConn: N.NewEnhancePacketConn(udp)}}
 
 	sender := newPacketSender().(*packetSender)
 	t.Cleanup(sender.Close)
@@ -319,12 +326,8 @@ func TestProcessPacketArmsDeadlineOncePerHalfTimeout(t *testing.T) {
 }
 
 func BenchmarkUDPDeadlineUnconditional(b *testing.B) {
-	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
-	if err != nil {
-		b.Fatal(err)
-	}
-	b.Cleanup(func() { _ = udp.Close() })
-	pc := N.NewEnhancePacketConn(udp)
+	pc := newIdlePacketConn(&idleStubPacketConn{})
+	b.Cleanup(func() { _ = pc.Close() })
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -345,8 +348,88 @@ func BenchmarkUDPDeadlineGated(b *testing.B) {
 	}
 }
 
+type idleStubPacketConn struct {
+	C.PacketConn
+	closed atomic.Bool
+	closes atomic.Int64
+}
+
+func (c *idleStubPacketConn) SetReadDeadline(time.Time) error { return nil }
+
+func (c *idleStubPacketConn) Close() error {
+	c.closes.Add(1)
+	c.closed.Store(true)
+	return nil
+}
+
+func TestIdlePacketConnClosesOnTheReadDeadline(t *testing.T) {
+	inner := &idleStubPacketConn{}
+	conn := newIdlePacketConn(inner)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(30*time.Millisecond)))
+	require.Eventually(t, inner.closed.Load, time.Second, 5*time.Millisecond)
+	require.EqualValues(t, 1, inner.closes.Load(), "the idle close must run once")
+}
+
+func TestIdlePacketConnReadDeadlinePostponesTheClose(t *testing.T) {
+	inner := &idleStubPacketConn{}
+	conn := newIdlePacketConn(inner)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(30*time.Millisecond)))
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(400*time.Millisecond)))
+	require.Never(t, inner.closed.Load, 150*time.Millisecond, 10*time.Millisecond, "a refreshed deadline must not fire")
+	require.Eventually(t, inner.closed.Load, time.Second, 10*time.Millisecond)
+}
+
+func TestIdlePacketConnZeroDeadlineAndCloseBothDisarm(t *testing.T) {
+	inner := &idleStubPacketConn{}
+	conn := newIdlePacketConn(inner)
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(30*time.Millisecond)))
+	require.NoError(t, conn.SetReadDeadline(time.Time{}))
+	require.Never(t, inner.closed.Load, 100*time.Millisecond, 10*time.Millisecond, "a cleared deadline must disarm the timer")
+
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(30*time.Millisecond)))
+	require.NoError(t, conn.Close())
+	require.True(t, inner.closed.Load())
+	require.Never(t, func() bool { return inner.closes.Load() > 1 }, 100*time.Millisecond, 10*time.Millisecond, "closing must disarm the timer and close once")
+}
+
+// BenchmarkUDPFlowReplyRead is the shape the tunnel's reply loop reads in: one
+// pooled read per datagram on a flow conn whose idle deadline is armed.
+func BenchmarkUDPFlowReplyRead(b *testing.B) {
+	server, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		b.Fatal(err)
+	}
+	client, err := net.DialUDP("udp4", nil, server.LocalAddr().(*net.UDPAddr))
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { _ = server.Close(); _ = client.Close() })
+
+	pc := newIdlePacketConn(&chainlessPacketConn{EnhancePacketConn: N.NewEnhancePacketConn(server)})
+	b.Cleanup(func() { _ = pc.Close() })
+	require.NoError(b, pc.SetReadDeadline(time.Now().Add(udpTimeout)))
+	payload := make([]byte, 1500)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := client.Write(payload); err != nil {
+			b.Fatal(err)
+		}
+		data, _, err := pc.WaitReadFrom()
+		if err != nil {
+			b.Fatal(err)
+		}
+		_ = pool.Put(data)
+	}
+}
+
 type destinationRecordingPacketConn struct {
-	N.EnhancePacketConn
+	chainlessPacketConn
 	written   int
 	firstAddr net.Addr
 	reused    bool
@@ -366,15 +449,6 @@ func (c *destinationRecordingPacketConn) WriteTo(b []byte, addr net.Addr) (int, 
 }
 
 func (c *destinationRecordingPacketConn) SetReadDeadline(t time.Time) error { return nil }
-
-func (c *destinationRecordingPacketConn) Chains() C.Chain               { return nil }
-func (c *destinationRecordingPacketConn) ProviderChains() C.Chain       { return nil }
-func (c *destinationRecordingPacketConn) AppendToChains(C.ProxyAdapter) {}
-func (c *destinationRecordingPacketConn) RemoteDestination() string     { return "" }
-
-func (c *destinationRecordingPacketConn) ResolveUDP(ctx context.Context, metadata *C.Metadata) error {
-	return nil
-}
 
 func newDestinationTestFlow(t *testing.T, pc C.PacketConn) (*packetSender, *C.Metadata) {
 	t.Helper()
