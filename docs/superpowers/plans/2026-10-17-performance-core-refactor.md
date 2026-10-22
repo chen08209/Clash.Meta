@@ -729,23 +729,28 @@ which is a net win at this blast radius. The per-packet `net.UDPAddrFromAddrPort
 - [x] Cross-build the affected packages for the ci matrix platforms.
 - [x] Run the full main-module suite.
 
-### Task 45: Persistent Pipe Reader For Emulated Packet Deadlines (target, not started)
+### Task 45: Close Idle UDP Flows Instead Of Emulating A Read Deadline
 
 **Files:**
-- Modify: `common/net/deadline/packet.go`, `packet_enhance.go`, `packet_sing.go`
-- Test: `common/net/deadline/packet_enhance_test.go`
+- Modify: `tunnel/connection.go`, `tunnel/tunnel.go`, `adapter/outbound/base.go`,
+  `common/net/packet.go`
+- Delete: `common/net/deadline/packet.go`, `packet_enhance.go`, `packet_sing.go`,
+  `packet_enhance_test.go`
+- Test: `tunnel/connection_perf_test.go`
 
 **Interfaces:**
-- Produces: one pipe reader per conn instead of one goroutine per read while a deadline is set.
-- Preserves: the deadline result, the one-packet buffer between reads, and the reader/writer
-  replaceable markers.
+- Produces: a flow-owned idle timer that closes the outbound conn, replacing the emulated
+  packet read deadline.
+- Preserves: the half-timeout refresh gate in both directions, the end of the flow when its
+  conn goes away, and the pooled read handoff.
 
-The outbound conns that cannot handle a read deadline natively (the sing-backed ones: hysteria,
-tuic, shadowquic) read through a goroutine per datagram whenever a deadline is set, which is
-the steady state for a busy flow. Measured on a scratch harness: 4.98-9.41us / 0 allocs on the
-direct path against 12.39-17.65us / 96-97 B / 2 allocs on the pipe path.
+The outbound conns that cannot report a read deadline (the sing-backed ones: hysteria, tuic,
+shadowquic) read through a goroutine per datagram whenever a deadline was set, which is the
+steady state for a busy flow: 96-97 B / 2 allocs per reply read against 0 on the direct path.
 
-- [ ] Replace the per-read goroutine with a pipe reader owned by the conn.
-- [ ] Keep the one-token handshake honest across all four read shapes.
-- [ ] Benchmark both the direct and the pipe path with `benchstat`.
-- [ ] Run deadline, tunnel and outbound tests with `-race`.
+- [x] Turn the flow's read deadline into an idle close on a flow-owned wrapper.
+- [x] Drop the packet deadline emulation, its pipe reader and the outbound wrapping branch.
+- [x] Pin the idle close, its postponement, the zero deadline and the close-once contract.
+- [x] Benchmark the flow reply read before and after with `benchstat`.
+- [x] Run tunnel, `common/net` and outbound tests with `-race`.
+- [x] Run the full main-module suite.
