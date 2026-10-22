@@ -1,7 +1,6 @@
 package net
 
 import (
-	"github.com/metacubex/mihomo/common/net/deadline"
 	"github.com/metacubex/mihomo/common/net/packet"
 )
 
@@ -12,8 +11,3 @@ var NewEnhancePacketConn = packet.NewEnhancePacketConn
 var NewThreadSafePacketConn = packet.NewThreadSafePacketConn
 var NewRefPacketConn = packet.NewRefPacketConn
 var AddrPortFromNetAddr = packet.AddrPortFromNetAddr
-
-var NewDeadlineNetPacketConn = deadline.NewNetPacketConn
-var NewDeadlineEnhancePacketConn = deadline.NewEnhancePacketConn
-var NewDeadlineSingPacketConn = deadline.NewSingPacketConn
-var NewDeadlineEnhanceSingPacketConn = deadline.NewEnhanceSingPacketConn
