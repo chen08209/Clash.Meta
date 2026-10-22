@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	N "github.com/metacubex/mihomo/common/net"
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/component/ca"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/transport/socks5"
@@ -220,7 +221,9 @@ type socksPacketConn struct {
 }
 
 func (uc *socksPacketConn) WriteTo(b []byte, addr net.Addr) (n int, err error) {
-	packet, err := socks5.EncodeUDPPacket(socks5.ParseAddrToSocksAddr(addr), b)
+	buf := pool.Get(socks5.UDPPacketHeadroom + len(b))
+	defer pool.Put(buf)
+	packet, err := socks5.EncodeUDPPacketInto(buf, N.AddrPortFromNetAddr(addr), b)
 	if err != nil {
 		return
 	}

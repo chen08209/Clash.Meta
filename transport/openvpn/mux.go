@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"github.com/metacubex/mihomo/common/contextutils"
 )
 
 type PacketMux struct {
@@ -153,7 +152,7 @@ func (m *PacketMux) write(ctx context.Context, packet []byte, control bool, canc
 	trackActive := cancelPolicy != ignoreActiveWriteCancel && ctx.Done() != nil
 	if trackActive {
 		abortDone = make(chan struct{})
-		stop = contextutils.AfterFunc(ctx, func() {
+		stop = context.AfterFunc(ctx, func() {
 			defer close(abortDone)
 			activeMu.Lock()
 			isActive := active

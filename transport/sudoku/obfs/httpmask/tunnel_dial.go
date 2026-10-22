@@ -233,7 +233,9 @@ func newHTTPClient(serverAddress string, tlsEnabled bool, hostOverride string, d
 	}
 	dialer := newPreconnectDialer(urlHost, dialAddr, serverName, dialerTLSConfig, dial)
 	transport := &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
+		// Routing and proxy chaining is the caller's dialer's job; an
+		// environment HTTP proxy would hijack the request away from the
+		// configured server, which the masked endpoints cannot serve.
 		ForceAttemptHTTP2:     scheme == "https",
 		DisableCompression:    true,
 		MaxIdleConns:          maxIdleConns,

@@ -1,0 +1,30 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/adapter/outboundgroup
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkFallbackSelectedProxyCached-16    	59294982	        20.39 ns/op	       0 B/op	       0 allocs/op
+BenchmarkFallbackSelectedProxyCached-16    	58044200	        24.36 ns/op	       0 B/op	       0 allocs/op
+BenchmarkFallbackSelectedProxyCached-16    	60370978	        20.19 ns/op	       0 B/op	       0 allocs/op
+BenchmarkFallbackSelectedProxyCached-16    	55353105	        26.01 ns/op	       0 B/op	       0 allocs/op
+BenchmarkFallbackSelectedProxyCached-16    	52778126	        25.99 ns/op	       0 B/op	       0 allocs/op
+BenchmarkFallbackSelectedProxyCached-16    	39901024	        30.37 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetProxiesCacheHit-16             	1000000000	         0.8120 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetProxiesCacheHit-16             	1000000000	         0.7865 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetProxiesCacheHit-16             	1000000000	         0.7823 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetProxiesCacheHit-16             	1000000000	         0.8126 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetProxiesCacheHit-16             	1000000000	         0.7434 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetProxiesCacheHit-16             	1000000000	         0.7873 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStickySessionsProxyPick-16        	 1000000	      1971 ns/op	     464 B/op	       2 allocs/op
+BenchmarkStickySessionsProxyPick-16        	 1000000	      2078 ns/op	     464 B/op	       2 allocs/op
+BenchmarkStickySessionsProxyPick-16        	 1000000	      1707 ns/op	     464 B/op	       2 allocs/op
+BenchmarkStickySessionsProxyPick-16        	 1000000	      1576 ns/op	     464 B/op	       2 allocs/op
+BenchmarkStickySessionsProxyPick-16        	  706168	      1612 ns/op	     464 B/op	       2 allocs/op
+BenchmarkStickySessionsProxyPick-16        	 1000000	      1982 ns/op	     464 B/op	       2 allocs/op
+BenchmarkURLTestSelectedProxyCached-16     	27573591	        41.35 ns/op	       0 B/op	       0 allocs/op
+BenchmarkURLTestSelectedProxyCached-16     	26830390	        53.86 ns/op	       0 B/op	       0 allocs/op
+BenchmarkURLTestSelectedProxyCached-16     	31110972	        48.23 ns/op	       0 B/op	       0 allocs/op
+BenchmarkURLTestSelectedProxyCached-16     	29330601	        48.56 ns/op	       0 B/op	       0 allocs/op
+BenchmarkURLTestSelectedProxyCached-16     	31554450	        41.98 ns/op	       0 B/op	       0 allocs/op
+BenchmarkURLTestSelectedProxyCached-16     	29138997	        38.12 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/adapter/outboundgroup	38.383s

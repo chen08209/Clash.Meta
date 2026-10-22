@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/metacubex/mihomo/common/contextutils"
 	"github.com/metacubex/mihomo/log"
 
 	"github.com/metacubex/http"
@@ -97,7 +96,7 @@ func dialH2(ctx context.Context, rt http.RoundTripper, template *uritemplate.Tem
 		req.Header[k] = v
 	}
 
-	stop := contextutils.AfterFunc(ctx, cancel) // temporarily connect ctx with reqCtx when client.Do
+	stop := context.AfterFunc(ctx, cancel) // temporarily connect ctx with reqCtx when client.Do
 	rsp, err := rt.RoundTrip(req)
 	stop() // disconnect ctx with reqCtx after client.Do
 	if err != nil {

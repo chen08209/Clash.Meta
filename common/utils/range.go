@@ -5,15 +5,17 @@ import (
 	"strconv"
 	"strings"
 
-	"golang.org/x/exp/constraints"
+	"cmp"
+
+	"github.com/metacubex/sing/common/x/constraints"
 )
 
-type Range[T constraints.Ordered] struct {
+type Range[T cmp.Ordered] struct {
 	start T
 	end   T
 }
 
-func NewRange[T constraints.Ordered](start, end T) Range[T] {
+func NewRange[T cmp.Ordered](start, end T) Range[T] {
 	if start > end {
 		return Range[T]{
 			start: end,
@@ -58,10 +60,6 @@ func NewUnsignedRange[T constraints.Unsigned](expected string) (Range[T], error)
 	return newIntRange(expected, parseUnsigned[T])
 }
 
-func NewSignedRange[T constraints.Signed](expected string) (Range[T], error) {
-	return newIntRange(expected, parseSigned[T])
-}
-
 func newIntRange[T constraints.Integer](s string, parseFn func(string) (T, error)) (Range[T], error) {
 	s = strings.TrimSpace(s)
 	if len(s) == 0 {
@@ -94,10 +92,3 @@ func parseUnsigned[T constraints.Unsigned](s string) (T, error) {
 	}
 }
 
-func parseSigned[T constraints.Signed](s string) (T, error) {
-	if val, err := strconv.ParseInt(s, 10, 64); err == nil {
-		return T(val), nil
-	} else {
-		return 0, err
-	}
-}

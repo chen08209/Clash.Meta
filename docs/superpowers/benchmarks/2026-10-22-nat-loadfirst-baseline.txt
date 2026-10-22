@@ -1,0 +1,24 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/component/nat
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkTableGetOrCreateForFlowHit-16    	49019206	        24.61 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTableGetOrCreateForFlowHit-16    	49430518	        24.50 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTableGetOrCreateForFlowHit-16    	51665568	        24.38 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTableGetOrCreateForFlowHit-16    	49907877	        23.70 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTableGetOrCreateForFlowHit-16    	51514747	        24.71 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTableGetOrCreateForFlowHit-16    	51174889	        23.65 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/component/nat	7.902s
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/tunnel
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkHandleUDPConnExistingFlow-16    	30115870	        38.29 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHandleUDPConnExistingFlow-16    	31910224	        38.57 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHandleUDPConnExistingFlow-16    	29710471	        37.72 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHandleUDPConnExistingFlow-16    	29663834	        38.11 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHandleUDPConnExistingFlow-16    	27915350	        39.08 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHandleUDPConnExistingFlow-16    	31861761	        38.92 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/tunnel	7.725s

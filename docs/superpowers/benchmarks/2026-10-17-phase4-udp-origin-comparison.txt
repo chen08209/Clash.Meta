@@ -1,0 +1,15 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/tunnel
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+                      │ D:\Codex\tmp\udp-origin-base.txt │ D:\Codex\tmp\udp-origin-current.txt │
+                      │              sec/op              │    sec/op     vs base               │
+PacketOriginLookup-16                       36.71n ± 13%    17.23n ± 7%  -53.06% (p=0.002 n=6)
+
+                      │ D:\Codex\tmp\udp-origin-base.txt │ D:\Codex\tmp\udp-origin-current.txt │
+                      │               B/op               │    B/op      vs base                │
+PacketOriginLookup-16                         16.00 ± 0%     0.00 ± 0%  -100.00% (p=0.002 n=6)
+
+                      │ D:\Codex\tmp\udp-origin-base.txt │ D:\Codex\tmp\udp-origin-current.txt │
+                      │            allocs/op             │  allocs/op   vs base                │
+PacketOriginLookup-16                         1.000 ± 0%    0.000 ± 0%  -100.00% (p=0.002 n=6)

@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/metacubex/mihomo/common/atomic"
-	"github.com/metacubex/mihomo/common/contextutils"
 	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/component/dialer"
 	"github.com/metacubex/mihomo/component/resolver"
@@ -281,7 +280,7 @@ func (w *Masque) run(ctx context.Context) error {
 		return nil
 	}
 	runCtx, cancel := context.WithCancel(ctx)
-	stop := contextutils.AfterFunc(w.runCtx, cancel)
+	stop := context.AfterFunc(w.runCtx, cancel)
 	defer func() {
 		stop()
 		cancel()
@@ -365,7 +364,7 @@ func (w *Masque) startLocked(ctx context.Context) error {
 	w.running.Store(true)
 
 	runCtx, runCancel := context.WithCancel(w.runCtx)
-	contextutils.AfterFunc(runCtx, func() {
+	context.AfterFunc(runCtx, func() {
 		w.running.Store(false)
 		_ = ipConn.Close()
 		_ = closer.Close()

@@ -102,6 +102,10 @@ func (s *cmdOnlySegment) serialize(b []byte) {
 	binary.BigEndian.PutUint32(b[12:], s.peerRTO)
 }
 
+// readSegment parses one segment out of b. A data payload is returned as a
+// slice of b rather than a copy, so the caller must keep b owned and unmodified
+// for as long as the segment is alive: both receive loops hand it a fresh copy
+// of the datagram.
 func readSegment(b []byte) (segment, []byte) {
 	if len(b) < 4 {
 		return nil, nil
@@ -125,7 +129,7 @@ func readSegment(b []byte) (segment, []byte) {
 			timestamp:   binary.BigEndian.Uint32(b),
 			number:      binary.BigEndian.Uint32(b[4:]),
 			sendingNext: binary.BigEndian.Uint32(b[8:]),
-			payload:     append([]byte(nil), b[14:14+dataLen]...),
+			payload:     b[14 : 14+dataLen],
 		}
 		return seg, b[14+dataLen:]
 	case commandACK:

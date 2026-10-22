@@ -3,6 +3,7 @@ package log
 import (
 	"fmt"
 	"os"
+	"sync/atomic"
 
 	"github.com/metacubex/mihomo/common/observable"
 
@@ -12,10 +13,11 @@ import (
 var (
 	logCh  = make(chan Event)
 	source = observable.NewObservable[Event](logCh)
-	level  = INFO
+	level  atomic.Int32
 )
 
 func init() {
+	level.Store(int32(INFO))
 	log.SetOutput(os.Stdout)
 	log.SetLevel(log.DebugLevel)
 	log.SetFormatter(&log.TextFormatter{
@@ -35,24 +37,36 @@ func (e *Event) Type() string {
 }
 
 func Infoln(format string, v ...any) {
+	if !shouldLog(INFO) {
+		return
+	}
 	event := newLog(INFO, format, v...)
 	logCh <- event
 	print(event)
 }
 
 func Warnln(format string, v ...any) {
+	if !shouldLog(WARNING) {
+		return
+	}
 	event := newLog(WARNING, format, v...)
 	logCh <- event
 	print(event)
 }
 
 func Errorln(format string, v ...any) {
+	if !shouldLog(ERROR) {
+		return
+	}
 	event := newLog(ERROR, format, v...)
 	logCh <- event
 	print(event)
 }
 
 func Debugln(format string, v ...any) {
+	if !shouldLog(DEBUG) {
+		return
+	}
 	event := newLog(DEBUG, format, v...)
 	logCh <- event
 	print(event)
@@ -72,27 +86,41 @@ func UnSubscribe(sub observable.Subscription[Event]) {
 }
 
 func Level() LogLevel {
-	return level
+	return LogLevel(level.Load())
+}
+
+// DebugEnabled lets hot paths skip building log arguments that would otherwise
+// be evaluated before the level gate inside Debugln runs.
+func DebugEnabled() bool {
+	return shouldLog(DEBUG)
+}
+
+func InfoEnabled() bool {
+	return shouldLog(INFO)
 }
 
 func SetLevel(newLevel LogLevel) {
-	level = newLevel
+	level.Store(int32(newLevel))
+}
+
+func shouldLog(logLevel LogLevel) bool {
+	return logLevel >= Level()
 }
 
 func print(data Event) {
-	if data.LogLevel < level {
+	if !shouldLog(data.LogLevel) {
 		return
 	}
 
 	switch data.LogLevel {
 	case INFO:
-		log.Infoln(data.Payload)
+		log.StandardLogger().Log(log.InfoLevel, data.Payload)
 	case WARNING:
-		log.Warnln(data.Payload)
+		log.StandardLogger().Log(log.WarnLevel, data.Payload)
 	case ERROR:
-		log.Errorln(data.Payload)
+		log.StandardLogger().Log(log.ErrorLevel, data.Payload)
 	case DEBUG:
-		log.Debugln(data.Payload)
+		log.StandardLogger().Log(log.DebugLevel, data.Payload)
 	}
 }
 

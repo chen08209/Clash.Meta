@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/exp/slices"
+	"slices"
 
 	"github.com/metacubex/mihomo/component/trie"
 	"github.com/stretchr/testify/assert"

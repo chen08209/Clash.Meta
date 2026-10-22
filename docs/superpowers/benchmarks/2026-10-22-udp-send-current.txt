@@ -1,0 +1,30 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/tunnel
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkPacketSenderSend/ready-16       	25695710	        47.27 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPacketSenderSend/ready-16       	25758700	        47.31 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPacketSenderSend/ready-16       	25884997	        46.63 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPacketSenderSend/ready-16       	25747094	        47.37 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPacketSenderSend/ready-16       	25484848	        52.85 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPacketSenderSend/ready-16       	25609942	        50.34 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPacketSenderSend/full-16        	89812964	        13.10 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPacketSenderSend/full-16        	93798363	        14.21 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPacketSenderSend/full-16        	93078092	        13.54 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPacketSenderSend/full-16        	93993060	        13.33 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPacketSenderSend/full-16        	91681436	        12.84 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPacketSenderSend/full-16        	94567863	        13.08 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPacketSenderSend/closed-16      	362007220	         2.876 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPacketSenderSend/closed-16      	429392026	         2.757 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPacketSenderSend/closed-16      	441532617	         2.812 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPacketSenderSend/closed-16      	440920509	         2.748 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPacketSenderSend/closed-16      	441016926	         2.747 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPacketSenderSend/closed-16      	412168731	         2.790 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHandleUDPConnExistingFlow-16    	31090257	        39.28 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHandleUDPConnExistingFlow-16    	31456350	        39.04 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHandleUDPConnExistingFlow-16    	31499038	        38.61 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHandleUDPConnExistingFlow-16    	31721275	        43.62 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHandleUDPConnExistingFlow-16    	31130019	        38.67 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHandleUDPConnExistingFlow-16    	31114844	        38.76 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/tunnel	32.632s

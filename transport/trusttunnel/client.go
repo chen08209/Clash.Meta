@@ -13,14 +13,14 @@ import (
 
 	atomic2 "github.com/metacubex/mihomo/common/atomic"
 	"github.com/metacubex/mihomo/common/httputils"
-	"github.com/metacubex/mihomo/common/once"
 	"github.com/metacubex/mihomo/component/dialer"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/transport/vmess"
 
+	"slices"
+
 	"github.com/metacubex/http"
 	"github.com/metacubex/http/httptrace"
-	"golang.org/x/exp/slices"
 )
 
 type DialOptionsFunc func() []dialer.Option
@@ -150,7 +150,7 @@ func (c *Client) roundTrip(ctx context.Context, request *http.Request, conn *htt
 		created: make(chan struct{}),
 	}
 	c.count.Add(1)
-	conn.closeFn = once.OnceFunc(func() {
+	conn.closeFn = sync.OnceFunc(func() {
 		c.count.Add(-1)
 	})
 	requestCtx, cancel := context.WithCancel(c.ctx) // requestCtx must alive during conn not closed

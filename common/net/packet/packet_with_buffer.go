@@ -2,6 +2,7 @@ package packet
 
 import (
 	"net"
+	"net/netip"
 
 	"github.com/metacubex/mihomo/common/pool"
 )
@@ -15,24 +16,27 @@ type enhanceWithBufferPacketConn struct {
 	withBufferPacketConn
 }
 
-func (c *enhanceWithBufferPacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
+func (c *enhanceWithBufferPacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
 	var readBuf []byte
 	getBuffer := func(sizeHint int) []byte {
 		readBuf = pool.Get(sizeHint)
-		put = func() {
-			_ = pool.Put(readBuf)
-		}
 		return readBuf
 	}
-	var readN int
-	readN, addr, err = c.ReadFromWithBuffer(getBuffer)
-	if readN > 0 && readBuf != nil {
-		data = readBuf[:readN]
-	} else if put != nil {
-		put()
-		put = nil
+	var (
+		readN   int
+		rawAddr net.Addr
+	)
+	readN, rawAddr, err = c.ReadFromWithBuffer(getBuffer)
+	addr = AddrPortFromNetAddr(rawAddr)
+	if err != nil && readBuf != nil {
+		_ = pool.Put(readBuf)
+		return nil, addr, err
 	}
-	return
+	if readN > 0 && readBuf != nil {
+		return readBuf[:readN], addr, nil
+	}
+	_ = pool.Put(readBuf)
+	return nil, addr, nil
 }
 
 func (c *enhanceWithBufferPacketConn) Upstream() any {

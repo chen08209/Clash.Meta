@@ -6,6 +6,7 @@ import (
 
 	"github.com/metacubex/mihomo/adapter"
 	"github.com/metacubex/mihomo/adapter/outbound"
+	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 
 	"github.com/stretchr/testify/require"
@@ -97,12 +98,23 @@ func TestLoadBalanceHashKeyInUserSeparatesJobsSharingASourceAddress(t *testing.T
 		"without a supplied key the two jobs are one session")
 }
 
+func TestStickySessionsFallsBackToAnAliveProxy(t *testing.T) {
+	proxies := balancedProxies(2)
+	proxies[0].(aliveStateSetter).SetAliveForTestUrl(testUrl, false)
+	strategy := strategyStickySessions(testUrl, getKeyWithSrcAndDst)
+	metadata := request("job-1", "a.example.com")
+
+	for i := 0; i < 100; i++ {
+		require.Same(t, proxies[1], strategy(proxies, metadata, true))
+	}
+}
+
 // An unauthenticated request keeps the strategy's own key. Returning a constant
 // instead would herd every anonymous request onto one member.
 func TestLoadBalanceHashKeyInUserFallsBackWhenUnauthenticated(t *testing.T) {
 	keyed := getKeyWithInUser(getKey)
-	require.Equal(t, "example.com", keyed(request("", "a.example.com")))
-	require.Equal(t, "job-1", keyed(request("job-1", "a.example.com")))
+	require.Equal(t, utils.MapHash("example.com"), keyed(request("", "a.example.com")))
+	require.Equal(t, utils.MapHash("job-1"), keyed(request("job-1", "a.example.com")))
 	require.Equal(t, getKey(nil), keyed(nil))
 }
 
@@ -112,12 +124,32 @@ func TestLoadBalanceHashKeyInUserFallsBackWhenUnauthenticated(t *testing.T) {
 func TestLoadBalanceHashKeyResolvesTheOptionName(t *testing.T) {
 	withInUser, err := hashKey("in-user")
 	require.NoError(t, err)
-	require.Equal(t, "job-1", withInUser(getKey)(request("job-1", "a.example.com")))
+	require.Equal(t, utils.MapHash("job-1"), withInUser(getKey)(request("job-1", "a.example.com")))
 
 	identity, err := hashKey("")
 	require.NoError(t, err)
 	require.Equal(t, getKey(request("job-1", "a.example.com")),
 		identity(getKey)(request("job-1", "a.example.com")))
+}
+
+func TestLoadBalanceKeyDoesNotAllocateForDomainHosts(t *testing.T) {
+	metadata := request("", "a.example.com")
+
+	allocations := testing.AllocsPerRun(100, func() {
+		if getKey(metadata) == 0 {
+			t.Fatal("domain key was zero")
+		}
+	})
+	require.EqualValues(t, 0, allocations)
+}
+
+func TestLoadBalanceKeyHashesIPHostsDirectly(t *testing.T) {
+	metadata := request("", "192.0.2.10")
+
+	require.Equal(t,
+		hashAddr(netip.MustParseAddr("192.0.2.10")),
+		getKey(metadata),
+	)
 }
 
 func TestLoadBalanceHashKeyRejectsUnusableConfigs(t *testing.T) {
@@ -137,4 +169,29 @@ func TestLoadBalanceHashKeyRejectsUnusableConfigs(t *testing.T) {
 	_, err = NewLoadBalance(GroupCommonOption{Name: "lb"},
 		LoadBalanceOption{Strategy: "consistent-hashing", HashKey: "nonsense"}, nil, nil)
 	require.ErrorIs(t, err, errHashKey)
+}
+
+func BenchmarkStickySessionsProxyPick(b *testing.B) {
+	b.ReportAllocs()
+
+	proxies := balancedProxies(64)
+	strategy := strategyStickySessions(testUrl, getKeyWithSrcAndDst)
+	srcIPs := []netip.Addr{
+		netip.MustParseAddr("192.0.2.1"),
+		netip.MustParseAddr("192.0.2.2"),
+		netip.MustParseAddr("192.0.2.3"),
+		netip.MustParseAddr("192.0.2.4"),
+	}
+	hosts := []string{
+		"a.example.com",
+		"b.example.org",
+		"c.example.net",
+		"d.example.io",
+	}
+
+	for i := 0; b.Loop(); i++ {
+		metadata := request("", hosts[i%len(hosts)])
+		metadata.SrcIP = srcIPs[(i/len(hosts))%len(srcIPs)]
+		_ = strategy(proxies, metadata, false)
+	}
 }

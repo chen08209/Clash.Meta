@@ -2,6 +2,7 @@ package v4
 
 import (
 	"net"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -106,7 +107,7 @@ func (q *quicStreamPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err err
 	return
 }
 
-func (q *quicStreamPacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
+func (q *quicStreamPacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
 	if q.inputConn != nil {
 		var packet Packet
 		packet, err = ReadPacket(q.inputConn)
@@ -114,7 +115,7 @@ func (q *quicStreamPacketConn) WaitReadFrom() (data []byte, put func(), addr net
 			return
 		}
 		data = packet.DATA
-		addr = packet.ADDR.UDPAddr()
+		addr = packet.ADDR.AddrPort()
 	} else {
 		err = net.ErrClosed
 	}

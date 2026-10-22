@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/metacubex/mihomo/common/callback"
@@ -20,13 +22,20 @@ type URLTestOption struct {
 
 type URLTest struct {
 	*GroupBase
-	selected       string
-	testUrl        string
-	expectedStatus string
-	tolerance      uint16
-	disableUDP     bool
-	fastNode       C.Proxy
-	fastSingle     *singledo.Single[C.Proxy]
+	selectedMu         sync.RWMutex
+	selected           string
+	testUrl            string
+	expectedStatus     string
+	tolerance          uint16
+	disableUDP         bool
+	fastMu             sync.Mutex
+	fastNode           C.Proxy
+	fastSingle         *singledo.Single[C.Proxy]
+	fastHasAlternative atomic.Bool
+	rotateProbe        atomic.Bool
+	probeCursor        atomic.Uint32
+	versionsMu         sync.Mutex
+	knownVersions      atomic.Pointer[[]uint32]
 }
 
 func (u *URLTest) Now() string {
@@ -48,18 +57,63 @@ func (u *URLTest) Set(name string) error {
 	return nil
 }
 
-func (u *URLTest) ForceSet(name string) {
+func (u *URLTest) selectedName() string {
+	u.selectedMu.RLock()
+	defer u.selectedMu.RUnlock()
+	return u.selected
+}
+
+func (u *URLTest) setSelected(name string) {
+	u.selectedMu.Lock()
 	u.selected = name
-	u.fastSingle.Reset()
+	u.selectedMu.Unlock()
+}
+
+func (u *URLTest) ForceSet(name string) {
+	u.setSelected(name)
+	u.resetFastNode()
+}
+
+// markProxyFailed stops selecting a proxy after a failed dial, then lets the
+// group re-check it soon so a transient failure does not park it until the
+// periodic health check.
+func (u *URLTest) markProxyFailed(proxy C.Proxy, err error) {
+	if !shouldMarkProxyFailed(proxy, err) || !markProxyUnavailable(proxy, u.testUrl) {
+		return
+	}
+	u.resetFastNode()
+	u.rotateProbe.Store(true)
+	notifyRouteChange()
+	u.scheduleRecoveryProbe(proxy)
+}
+
+func (u *URLTest) scheduleRecoveryProbe(proxy C.Proxy) {
+	expectedStatus, err := utils.NewUnsignedRanges[uint16](u.expectedStatus)
+	if err != nil {
+		return
+	}
+	scheduleFailedProxyProbe(
+		proxy,
+		u.testUrl,
+		expectedStatus,
+		time.Duration(u.testTimeout)*time.Millisecond,
+		func() {
+			u.resetFastNode()
+			notifyRouteChange()
+		},
+	)
 }
 
 // DialContext implements C.ProxyAdapter
 func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Conn, err error) {
 	proxy := u.fast(true)
+	ctx, cancel := failoverContext(ctx, u.fastHasAlternative.Load())
+	defer cancel()
 	c, err = proxy.DialContext(ctx, metadata)
 	if err == nil {
 		c.AppendToChains(u)
 	} else {
+		u.markProxyFailed(proxy, err)
 		u.onDialFailed(proxy.Type(), err, u.healthCheck)
 	}
 
@@ -68,6 +122,7 @@ func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Co
 			if err == nil {
 				u.onDialSuccess()
 			} else {
+				u.markProxyFailed(proxy, err)
 				u.onDialFailed(proxy.Type(), err, u.healthCheck)
 			}
 		})
@@ -79,10 +134,13 @@ func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Co
 // ListenPacketContext implements C.ProxyAdapter
 func (u *URLTest) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (C.PacketConn, error) {
 	proxy := u.fast(true)
+	ctx, cancel := failoverContext(ctx, u.fastHasAlternative.Load())
+	defer cancel()
 	pc, err := proxy.ListenPacketContext(ctx, metadata)
 	if err == nil {
 		pc.AppendToChains(u)
 	} else {
+		u.markProxyFailed(proxy, err)
 		u.onDialFailed(proxy.Type(), err, u.healthCheck)
 	}
 
@@ -95,48 +153,93 @@ func (u *URLTest) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 }
 
 func (u *URLTest) healthCheck() {
-	u.fastSingle.Reset()
 	u.GroupBase.healthCheck()
-	u.fastSingle.Reset()
+	u.resetFastNode()
+	notifyRouteChange()
+}
+
+func (u *URLTest) shouldReplaceFastNode(fast C.Proxy, fastNotExist bool) bool {
+	if u.fastNode == nil || fastNotExist || !u.fastNode.AliveForTestUrl(u.testUrl) {
+		return true
+	}
+	return improvesOnCachedDelay(
+		u.fastNode.LastDelayForTestUrl(u.testUrl),
+		fast.LastDelayForTestUrl(u.testUrl),
+		u.tolerance,
+	)
 }
 
 func (u *URLTest) fast(touch bool) C.Proxy {
+	u.dropCacheForProviderSwap()
+	if cached, _, ok := u.fastSingle.Cached(); ok {
+		if touch { // the same recency the cached Do result reports as shared
+			u.Touch()
+		}
+		return cached
+	}
 	elm, _, shared := u.fastSingle.Do(func() (C.Proxy, error) {
+		u.fastMu.Lock()
+		defer u.fastMu.Unlock()
 		proxies := u.GetProxies(touch)
-		if u.selected != "" {
-			for _, proxy := range proxies {
-				if !proxy.AliveForTestUrl(u.testUrl) {
-					continue
-				}
-				if proxy.Name() == u.selected {
-					u.fastNode = proxy
-					return proxy, nil
-				}
-			}
+		if len(proxies) == 0 {
+			u.fastHasAlternative.Store(false)
+			return u.EmptyFallback(), nil
 		}
 
-		fast := proxies[0]
-		minDelay := fast.LastDelayForTestUrl(u.testUrl)
+		selectedName := u.selectedName()
+		var selectedProxy C.Proxy
+		if selectedName != "" {
+			if proxy, ok := u.indexedProxyByName(selectedName); ok && proxy.AliveForTestUrl(u.testUrl) {
+				selectedProxy = proxy
+			}
+		}
+		var fast C.Proxy
+		var minDelay uint16
 		fastNotExist := true
+		aliveCount := int32(0)
 
-		for _, proxy := range proxies[1:] {
-			if u.fastNode != nil && proxy.Name() == u.fastNode.Name() {
+		for _, proxy := range proxies {
+			if u.fastNode != nil && proxy == u.fastNode {
 				fastNotExist = false
 			}
-
 			if !proxy.AliveForTestUrl(u.testUrl) {
 				continue
 			}
-
+			aliveCount++
+			if proxy.Name() == selectedName {
+				selectedProxy = proxy
+			}
+			if selectedProxy != nil && aliveCount >= 2 {
+				break
+			}
+			if selectedProxy != nil {
+				continue
+			}
 			delay := proxy.LastDelayForTestUrl(u.testUrl)
-			if delay < minDelay {
+			if fast == nil || delay < minDelay {
 				fast = proxy
 				minDelay = delay
 			}
-
 		}
-		// tolerance
-		if u.fastNode == nil || fastNotExist || !u.fastNode.AliveForTestUrl(u.testUrl) || u.fastNode.LastDelayForTestUrl(u.testUrl) > fast.LastDelayForTestUrl(u.testUrl)+u.tolerance {
+		u.fastHasAlternative.Store(aliveCount > 1)
+		if aliveCount > 0 {
+			u.rotateProbe.Store(false)
+		}
+
+		if selectedProxy != nil {
+			u.fastNode = selectedProxy
+			return selectedProxy, nil
+		}
+
+		if fast == nil {
+			index := 0
+			if u.rotateProbe.Swap(false) {
+				index = int(u.probeCursor.Load()) % len(proxies)
+			}
+			fast = proxies[index]
+			u.probeCursor.Store(uint32((index + 1) % len(proxies)))
+		}
+		if u.shouldReplaceFastNode(fast, fastNotExist) {
 			u.fastNode = fast
 		}
 		return u.fastNode, nil
@@ -146,6 +249,35 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 	}
 
 	return elm
+}
+
+// dropCacheForProviderSwap forgets the cached fast node when a provider has
+// replaced its list underneath it: the cached node may no longer be a member,
+// and its delay says nothing about the members that took its place.
+func (u *URLTest) dropCacheForProviderSwap() {
+	if u.providerVersionsUnchanged() {
+		return
+	}
+	u.versionsMu.Lock()
+	defer u.versionsMu.Unlock()
+	if u.providerVersionsUnchanged() {
+		return
+	}
+	versions := u.providerVersionsNow()
+	u.knownVersions.Store(&versions)
+	u.resetFastNode()
+}
+
+func (u *URLTest) providerVersionsUnchanged() bool {
+	known := u.knownVersions.Load()
+	return known != nil && u.providerVersionsEqual(*known)
+}
+
+func (u *URLTest) resetFastNode() {
+	u.fastMu.Lock()
+	defer u.fastMu.Unlock()
+	u.fastNode = nil
+	u.fastSingle.Reset()
 }
 
 // SupportUDP implements C.ProxyAdapter
@@ -163,17 +295,14 @@ func (u *URLTest) IsL3Protocol(metadata *C.Metadata) bool {
 
 // MarshalJSON implements C.ProxyAdapter
 func (u *URLTest) MarshalJSON() ([]byte, error) {
-	all := []string{}
-	for _, proxy := range u.GetProxies(false) {
-		all = append(all, proxy.Name())
-	}
+	all := memberNames(u.GetProxies(false))
 	return json.Marshal(map[string]any{
 		"type":           u.Type().String(),
 		"now":            u.Now(),
 		"all":            all,
 		"testUrl":        u.testUrl,
 		"expectedStatus": u.expectedStatus,
-		"fixed":          u.selected,
+		"fixed":          u.selectedName(),
 		"hidden":         u.Hidden(),
 		"icon":           u.Icon(),
 		"emptyFallback":  u.EmptyFallback().Name(),

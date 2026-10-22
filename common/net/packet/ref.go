@@ -2,6 +2,7 @@ package packet
 
 import (
 	"net"
+	"net/netip"
 	"runtime"
 	"time"
 )
@@ -11,7 +12,7 @@ type refPacketConn struct {
 	ref any
 }
 
-func (c *refPacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
+func (c *refPacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
 	defer runtime.KeepAlive(c.ref)
 	return c.pc.WaitReadFrom()
 }

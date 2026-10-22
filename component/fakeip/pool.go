@@ -41,11 +41,11 @@ type Pool struct {
 
 // Lookup return a fake ip with host
 func (p *Pool) Lookup(host string) netip.Addr {
+	// RFC4343: DNS Case Insensitive, we SHOULD return result with all cases.
+	host = strings.ToLower(host)
 	p.mux.Lock()
 	defer p.mux.Unlock()
 
-	// RFC4343: DNS Case Insensitive, we SHOULD return result with all cases.
-	host = strings.ToLower(host)
 	if ip, exist := p.store.GetByHost(host); exist {
 		return ip
 	}

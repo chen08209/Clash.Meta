@@ -24,7 +24,7 @@ func (is *IPSuffix) RuleType() C.RuleType {
 }
 
 func (is *IPSuffix) Match(metadata *C.Metadata, helper C.RuleMatchHelper) (bool, string) {
-	if !is.noResolveIP && !is.isSourceIP && helper.ResolveIP != nil {
+	if !is.noResolveIP && !is.isSourceIP {
 		helper.ResolveIP()
 	}
 
@@ -47,7 +47,7 @@ func (is *IPSuffix) Match(metadata *C.Metadata, helper C.RuleMatchHelper) (bool,
 		}
 	}
 
-	if bits%8 != 0 && (is.ipBytes[size-bits/8-1] << (8 - bits%8)) != (mIPBytes[size-bits/8-1] << (8 - bits%8)) {
+	if bits%8 != 0 && (is.ipBytes[size-bits/8-1]<<(8-bits%8)) != (mIPBytes[size-bits/8-1]<<(8-bits%8)) {
 		return false, ""
 	}
 

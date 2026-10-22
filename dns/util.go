@@ -14,9 +14,10 @@ import (
 	"github.com/metacubex/mihomo/component/resolver"
 	"github.com/metacubex/mihomo/log"
 
+	"slices"
+
 	D "github.com/miekg/dns"
 	"github.com/samber/lo"
-	"golang.org/x/exp/slices"
 )
 
 const (
@@ -48,7 +49,7 @@ func updateTTL(records []D.RR, ttl uint32) {
 // getMsgFromCache returns a cached dns message if it exists, otherwise returns nil.
 // the returned msg is a copy of the original msg, so it can be modified without affecting the original msg.
 func getMsgFromCache(c dnsCache, q D.Question) (*D.Msg, time.Time, bool) {
-	msg, expireTime, hit := c.GetWithExpire(q.String())
+	msg, expireTime, hit := c.GetWithExpire(questionKey(q))
 	if msg != nil {
 		msg = msg.Copy() // never modify the original msg
 	}
@@ -57,10 +58,10 @@ func getMsgFromCache(c dnsCache, q D.Question) (*D.Msg, time.Time, bool) {
 
 // putMsgToCache puts a dns message into the cache.
 // the msg is copied before being stored in the cache, so it can be modified without affecting the original msg.
-func putMsgToCache(c dnsCache, q D.Question, msg *D.Msg) {
+func putMsgToCache(c dnsCache, key dnsCacheKey, msg *D.Msg) {
 	// skip dns cache for acme challenge
-	if q.Qtype == D.TypeTXT && strings.HasPrefix(q.Name, "_acme-challenge.") {
-		log.Debugln("[DNS] dns cache ignored because of acme challenge for: %s", q.Name)
+	if key.qtype == D.TypeTXT && strings.HasPrefix(key.name, "_acme-challenge.") {
+		log.Debugln("[DNS] dns cache ignored because of acme challenge for: %s", key.name)
 		return
 	}
 
@@ -83,7 +84,7 @@ func putMsgToCache(c dnsCache, q D.Question, msg *D.Msg) {
 		return
 	}
 
-	c.SetWithExpire(q.String(), msg, time.Now().Add(time.Duration(ttl)*time.Second))
+	c.SetWithExpire(key, msg, time.Now().Add(time.Duration(ttl)*time.Second))
 }
 
 func setMsgTTL(msg *D.Msg, ttl uint32) {
@@ -416,8 +417,6 @@ func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.M
 	cache = true
 	fast, ctx := picker.WithTimeout[*D.Msg](ctx, resolver.DefaultDNSTimeout)
 	defer fast.Close()
-	domain := msgToDomain(m)
-	_, qTypeStr := msgToQtype(m)
 	for _, client := range clients {
 		if _, isRCodeClient := client.(rcodeClient); isRCodeClient {
 			msg, err = client.ExchangeContext(ctx, m)
@@ -426,16 +425,24 @@ func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.M
 		}
 		client := client // shadow define client to ensure the value captured by the closure will not be changed in the next loop
 		fast.Go(func() (*D.Msg, error) {
-			log.Debugln("[DNS] resolve %s %s from %s", domain, qTypeStr, client.Address())
+			if log.DebugEnabled() {
+				_, qTypeStr := msgToQtype(m)
+				log.Debugln("[DNS] resolve %s %s from %s", msgToDomain(m), qTypeStr, client.Address())
+			}
 			m, err := client.ExchangeContext(ctx, m)
 			if err != nil {
 				return nil, err
+			}
+			if m == nil {
+				return nil, errors.New("dns client returned a nil message")
 			} else if cache && (m.Rcode == D.RcodeServerFailure || m.Rcode == D.RcodeRefused) {
 				// currently, cache indicates whether this msg was from a RCode client,
 				// so we would ignore RCode errors from RCode clients.
 				return nil, errors.New("server failure: " + D.RcodeToString[m.Rcode])
 			}
-			log.Debugln("[DNS] %s --> %s from %s", domain, msgToLogString(m), client.Address())
+			if log.DebugEnabled() {
+				log.Debugln("[DNS] %s --> %s from %s", msgToDomain(m), msgToLogString(m), client.Address())
+			}
 			traceAnswer(ctx, m, client.Address())
 			return m, nil
 		})

@@ -8,6 +8,7 @@ import (
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	N "github.com/metacubex/mihomo/common/net"
+	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/transport/socks5"
 
@@ -58,11 +59,11 @@ func Handle(conn net.Conn, tunnel C.Tunnel, request *mierumodel.Request, additio
 		ep := N.NewEnhancePacketConn(pc)
 		defer ep.Close()
 		for {
-			data, put, addr, err := ep.WaitReadFrom()
+			data, addr, err := ep.WaitReadFrom()
 			if err != nil {
-				if put != nil {
+				if data != nil {
 					// Unresolved UDP packet, return buffer to the pool.
-					put()
+					_ = pool.Put(data)
 				}
 				// mieru returns EOF or ErrUnexpectedEOF when a session is closed.
 				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.ErrClosedPipe) {
@@ -70,26 +71,39 @@ func Handle(conn net.Conn, tunnel C.Tunnel, request *mierumodel.Request, additio
 				}
 				continue
 			}
-			target, payload, err := socks5.DecodeUDPPacket(data)
-			if err != nil {
-				return
-			}
-			packet := &packet{
-				pc:      ep,
-				addr:    addr,
-				payload: payload,
-				put:     put,
-			}
-			tunnel.HandleUDPPacket(inbound.NewPacket(target, packet, C.MIERU, additions...))
+			handleMieruUDPPacket(ep, tunnel, data, addr, additions...)
 		}
+	}
+}
+
+func handleMieruUDPPacket(pc net.PacketConn, tunnel C.Tunnel, data []byte, addr netip.AddrPort, additions ...inbound.Addition) {
+	target, payload, err := socks5.DecodeUDPPacket(data)
+	if err != nil {
+		_ = pool.Put(data)
+		return
+	}
+	packet := newMieruPacket(pc, net.UDPAddrFromAddrPort(addr), data, payload)
+	tunnel.HandleUDPPacket(inbound.NewPacket(target, packet, C.MIERU, additions...))
+}
+
+// The wrapper is allocated per datagram on purpose: a flow keeps the packet it
+// last handed the sender so replies can be written back through it, and Drop
+// runs long before that flow ends. Recycling the object here would let the next
+// datagram claim it and move those replies onto another client's socket.
+func newMieruPacket(pc net.PacketConn, udpAddr *net.UDPAddr, data, payload []byte) *packet {
+	return &packet{
+		pc:      pc,
+		udpAddr: udpAddr,
+		data:    data,
+		payload: payload,
 	}
 }
 
 type packet struct {
 	pc      net.PacketConn
-	addr    net.Addr // source (i.e. remote) IP & Port of the packet
+	udpAddr *net.UDPAddr // source (i.e. remote) IP & Port of the packet
+	data    []byte
 	payload []byte
-	put     func()
 }
 
 var _ C.UDPPacket = (*packet)(nil)
@@ -99,24 +113,27 @@ func (c *packet) Data() []byte {
 	return c.payload
 }
 
-func (c *packet) WriteBack(b []byte, addr net.Addr) (n int, err error) {
-	packet, err := socks5.EncodeUDPPacket(socks5.ParseAddrToSocksAddr(addr), b)
+func (c *packet) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
+	buf := pool.Get(socks5.UDPPacketHeadroom + len(b))
+	defer pool.Put(buf)
+	packet, err := socks5.EncodeUDPPacketInto(buf, addr, b)
 	if err != nil {
 		return
 	}
-	return c.pc.WriteTo(packet, c.addr)
+	return c.pc.WriteTo(packet, c.udpAddr)
 }
 
 func (c *packet) Drop() {
-	if c.put != nil {
-		c.put()
-		c.put = nil
+	if c.data == nil {
+		return
 	}
+	_ = pool.Put(c.data)
+	c.data = nil
 	c.payload = nil
 }
 
 func (c *packet) LocalAddr() net.Addr {
-	return c.addr
+	return c.udpAddr
 }
 
 func (c *packet) InAddr() net.Addr {

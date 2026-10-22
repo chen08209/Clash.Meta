@@ -329,3 +329,12 @@ func TestConvertsV2RayVmessBase64HTTPRemappedToH2Transport(t *testing.T) {
 	_, err = adapter.ParseProxy(proxies[0])
 	assert.NoError(t, err)
 }
+
+func TestConvertsV2RaySkipsShadowsocksWithoutAFallbackCredential(t *testing.T) {
+	// The URL-safe decode succeeds and VerifyMethod rejects it; the standard
+	// decode fails, so the old fallback path produced an empty credential.
+	proxies, err := ConvertsV2Ray([]byte("ss://aW52YWxpZDoAA-A@1.2.3.4:443#bad-fallback"))
+
+	assert.Empty(t, proxies)
+	assert.ErrorContains(t, err, "format invalid")
+}

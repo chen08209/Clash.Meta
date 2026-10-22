@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
+	"net/netip"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/metacubex/mihomo/common/callback"
@@ -19,6 +20,11 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
+const loadBalanceHashPrime = 1099511628211
+
+var etldHashCache = lru.New[string, uint64](
+	lru.WithSize[string, uint64](1024))
+
 type LoadBalanceOption struct {
 	Strategy string `group:"strategy,omitempty"`
 	HashKey  string `group:"hash-key,omitempty"`
@@ -30,6 +36,8 @@ type LoadBalance struct {
 	strategyFn     strategyFn
 	testUrl        string
 	expectedStatus string
+	probeCursor    atomic.Uint32
+	hasAlternative atomic.Bool
 }
 
 type strategyFn = func(proxies []C.Proxy, metadata *C.Metadata, touch bool) C.Proxy
@@ -37,40 +45,70 @@ type strategyFn = func(proxies []C.Proxy, metadata *C.Metadata, touch bool) C.Pr
 var errStrategy = errors.New("unsupported strategy")
 var errHashKey = errors.New("unsupported hash-key")
 
-// keyFn derives the value a hashing strategy pins a request on.
-type keyFn = func(metadata *C.Metadata) string
+// keyFn derives the pre-hashed value a hashing strategy pins a request on.
+type keyFn = func(metadata *C.Metadata) uint64
 
-func getKey(metadata *C.Metadata) string {
+func hashAddr(addr netip.Addr) uint64 {
+	return utils.MapHashAddrPort(netip.AddrPortFrom(addr.Unmap(), 0))
+}
+
+func mayBeAddr(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= '0' && c <= '9', c >= 'a' && c <= 'f', c >= 'A' && c <= 'F':
+		case c == '.', c == ':', c == '%':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func getKey(metadata *C.Metadata) uint64 {
 	if metadata == nil {
-		return ""
+		return 0
 	}
 
 	if metadata.Host != "" {
-		// ip host
-		if ip := net.ParseIP(metadata.Host); ip != nil {
-			return metadata.Host
+		// Parse IP hosts directly instead of formatting every netip.Addr.
+		if mayBeAddr(metadata.Host) {
+			ip, err := netip.ParseAddr(metadata.Host)
+			if err != nil {
+				return utils.MapHash(metadata.Host)
+			}
+			return hashAddr(ip.Unmap())
+		}
+
+		if hash, cached := etldHashCache.Get(metadata.Host); cached {
+			return hash
 		}
 
 		if etld, err := publicsuffix.EffectiveTLDPlusOne(metadata.Host); err == nil {
-			return etld
+			hash := utils.MapHash(etld)
+			etldHashCache.Set(metadata.Host, hash)
+			return hash
 		}
 	}
 
 	if !metadata.DstIP.IsValid() {
-		return ""
+		return 0
 	}
 
-	return metadata.DstIP.String()
+	return hashAddr(metadata.DstIP)
 }
 
-func getKeyWithSrcAndDst(metadata *C.Metadata) string {
+func getKeyWithSrcAndDst(metadata *C.Metadata) uint64 {
 	dst := getKey(metadata)
-	src := ""
-	if metadata != nil {
-		src = metadata.SrcIP.String()
+	if metadata == nil {
+		return dst
 	}
 
-	return fmt.Sprintf("%s%s", src, dst)
+	src := hashAddr(metadata.SrcIP)
+	return src ^ dst*loadBalanceHashPrime
 }
 
 // getKeyWithInUser pins on the authenticated inbound user instead of on an
@@ -84,9 +122,9 @@ func getKeyWithSrcAndDst(metadata *C.Metadata) string {
 // the strategy's own key rather than collapsing every such request onto one
 // node.
 func getKeyWithInUser(fallback keyFn) keyFn {
-	return func(metadata *C.Metadata) string {
+	return func(metadata *C.Metadata) uint64 {
 		if metadata != nil && metadata.InUser != "" {
-			return metadata.InUser
+			return utils.MapHash(metadata.InUser)
 		}
 
 		return fallback(metadata)
@@ -118,14 +156,38 @@ func jumpHash(key uint64, buckets int32) int32 {
 	return int32(b)
 }
 
+func (lb *LoadBalance) markProxyFailed(proxy C.Proxy, err error) {
+	if !shouldMarkProxyFailed(proxy, err) || !markProxyUnavailable(proxy, lb.testUrl) {
+		return
+	}
+	lb.scheduleRecoveryProbe(proxy)
+}
+
+func (lb *LoadBalance) scheduleRecoveryProbe(proxy C.Proxy) {
+	expectedStatus, err := utils.NewUnsignedRanges[uint16](lb.expectedStatus)
+	if err != nil {
+		return
+	}
+	scheduleFailedProxyProbe(
+		proxy,
+		lb.testUrl,
+		expectedStatus,
+		time.Duration(lb.testTimeout)*time.Millisecond,
+		nil,
+	)
+}
+
 // DialContext implements C.ProxyAdapter
 func (lb *LoadBalance) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Conn, err error) {
 	proxy := lb.Unwrap(metadata, true)
+	ctx, cancel := failoverContext(ctx, lb.hasAlternative.Load())
+	defer cancel()
 	c, err = proxy.DialContext(ctx, metadata)
 
 	if err == nil {
 		c.AppendToChains(lb)
 	} else {
+		lb.markProxyFailed(proxy, err)
 		lb.onDialFailed(proxy.Type(), err, lb.healthCheck)
 	}
 
@@ -134,6 +196,7 @@ func (lb *LoadBalance) DialContext(ctx context.Context, metadata *C.Metadata) (c
 			if err == nil {
 				lb.onDialSuccess()
 			} else {
+				lb.markProxyFailed(proxy, err)
 				lb.onDialFailed(proxy.Type(), err, lb.healthCheck)
 			}
 		})
@@ -144,14 +207,17 @@ func (lb *LoadBalance) DialContext(ctx context.Context, metadata *C.Metadata) (c
 
 // ListenPacketContext implements C.ProxyAdapter
 func (lb *LoadBalance) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (pc C.PacketConn, err error) {
-	defer func() {
-		if err == nil {
-			pc.AppendToChains(lb)
-		}
-	}()
-
 	proxy := lb.Unwrap(metadata, true)
-	return proxy.ListenPacketContext(ctx, metadata)
+	ctx, cancel := failoverContext(ctx, lb.hasAlternative.Load())
+	defer cancel()
+	pc, err = proxy.ListenPacketContext(ctx, metadata)
+	if err == nil {
+		pc.AppendToChains(lb)
+	} else {
+		lb.markProxyFailed(proxy, err)
+		lb.onDialFailed(proxy.Type(), err, lb.healthCheck)
+	}
+	return pc, err
 }
 
 // SupportUDP implements C.ProxyAdapter
@@ -196,7 +262,7 @@ func strategyRoundRobin(url string) strategyFn {
 func strategyConsistentHashing(url string, keyOf keyFn) strategyFn {
 	maxRetry := 5
 	return func(proxies []C.Proxy, metadata *C.Metadata, touch bool) C.Proxy {
-		key := utils.MapHash(keyOf(metadata))
+		key := keyOf(metadata)
 		buckets := int32(len(proxies))
 		for i := 0; i < maxRetry; i, key = i+1, key+1 {
 			idx := jumpHash(key, buckets)
@@ -224,7 +290,7 @@ func strategyStickySessions(url string, keyOf keyFn) strategyFn {
 		lru.WithAge[uint64, int](int64(ttl.Seconds())),
 		lru.WithSize[uint64, int](1000))
 	return func(proxies []C.Proxy, metadata *C.Metadata, touch bool) C.Proxy {
-		key := utils.MapHash(keyOf(metadata))
+		key := keyOf(metadata)
 		length := len(proxies)
 		idx, has := lruCache.Get(key)
 		if !has || idx >= length {
@@ -245,6 +311,13 @@ func strategyStickySessions(url string, keyOf keyFn) strategyFn {
 			}
 		}
 
+		for index, proxy := range proxies {
+			if proxy.AliveForTestUrl(url) {
+				lruCache.Set(key, index)
+				return proxy
+			}
+		}
+
 		lruCache.Set(key, 0)
 		return proxies[0]
 	}
@@ -253,7 +326,24 @@ func strategyStickySessions(url string, keyOf keyFn) strategyFn {
 // Unwrap implements C.ProxyAdapter
 func (lb *LoadBalance) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 	proxies := lb.GetProxies(touch)
-	return lb.strategyFn(proxies, metadata, touch)
+	aliveCount := 0
+	for _, proxy := range proxies {
+		if proxy.AliveForTestUrl(lb.testUrl) {
+			aliveCount++
+			if aliveCount > 1 {
+				break
+			}
+		}
+	}
+	lb.hasAlternative.Store(aliveCount > 1)
+	proxy := lb.strategyFn(proxies, metadata, touch)
+	if proxy == nil || proxy.AliveForTestUrl(lb.testUrl) || len(proxies) == 0 {
+		return proxy
+	}
+
+	index := int(lb.probeCursor.Load()) % len(proxies)
+	lb.probeCursor.Store(uint32((index + 1) % len(proxies)))
+	return proxies[index]
 }
 
 // MarshalJSON implements C.ProxyAdapter

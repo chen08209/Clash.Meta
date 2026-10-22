@@ -100,7 +100,7 @@ func (s *fakeUDPPacket) Data() []byte {
 	return s.data
 }
 
-func (s *fakeUDPPacket) WriteBack(b []byte, addr net.Addr) (n int, err error) {
+func (s *fakeUDPPacket) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
 	return 0, net.ErrClosed
 }
 

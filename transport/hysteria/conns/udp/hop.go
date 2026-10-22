@@ -19,6 +19,8 @@ const (
 	packetQueueSize = 1024
 )
 
+var udpPacketPool = sync.Pool{New: func() any { return new(udpPacket) }}
+
 // ObfsUDPHopClientPacketConn is the UDP port-hopping packet connection for client side.
 // It hops to a different local & server port every once in a while.
 type ObfsUDPHopClientPacketConn struct {
@@ -54,9 +56,25 @@ func (a *udpHopAddr) String() string {
 }
 
 type udpPacket struct {
-	buf  []byte
+	buf  *[udpBufferSize]byte
 	n    int
 	addr net.Addr
+}
+
+func newUDPPacket(buf *[udpBufferSize]byte, n int, addr net.Addr) *udpPacket {
+	packet := udpPacketPool.Get().(*udpPacket)
+	*packet = udpPacket{buf: buf, n: n, addr: addr}
+	return packet
+}
+
+func releaseUDPPacket(packet *udpPacket, bufPool *sync.Pool) {
+	if packet.buf != nil {
+		bufPool.Put(packet.buf)
+	}
+	packet.buf = nil
+	packet.n = 0
+	packet.addr = nil
+	udpPacketPool.Put(packet)
 }
 
 func NewObfsUDPHopClientPacketConn(server string, serverPorts string, hopInterval time.Duration, obfs obfs.Obfuscator, dialer utils.PacketDialer) (net.PacketConn, error) {
@@ -91,7 +109,7 @@ func NewObfsUDPHopClientPacketConn(server string, serverPorts string, hopInterva
 		closeChan:   make(chan struct{}),
 		bufPool: sync.Pool{
 			New: func() interface{} {
-				return make([]byte, udpBufferSize)
+				return new([udpBufferSize]byte)
 			},
 		},
 	}
@@ -114,16 +132,17 @@ func NewObfsUDPHopClientPacketConn(server string, serverPorts string, hopInterva
 
 func (c *ObfsUDPHopClientPacketConn) recvRoutine(conn net.PacketConn) {
 	for {
-		buf := c.bufPool.Get().([]byte)
-		n, addr, err := conn.ReadFrom(buf)
+		buf := c.bufPool.Get().(*[udpBufferSize]byte)
+		n, addr, err := conn.ReadFrom(buf[:])
 		if err != nil {
 			return
 		}
+		packet := newUDPPacket(buf, n, addr)
 		select {
-		case c.recvQueue <- &udpPacket{buf, n, addr}:
+		case c.recvQueue <- packet:
 		default:
 			// Drop the packet if the queue is full
-			c.bufPool.Put(buf)
+			releaseUDPPacket(packet, &c.bufPool)
 		}
 	}
 }
@@ -201,7 +220,7 @@ func (c *ObfsUDPHopClientPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 			// so we skip the check for now. Should probably still check by using a map
 			// or something in the future.
 			n := copy(b, p.buf[:p.n])
-			c.bufPool.Put(p.buf)
+			releaseUDPPacket(p, &c.bufPool)
 			return n, c.serverAddr, nil
 		case <-c.closeChan:
 			return 0, nil, net.ErrClosed

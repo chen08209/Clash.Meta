@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
@@ -16,6 +17,7 @@ type SelectorOption struct {
 type Selector struct {
 	*GroupBase
 	disableUDP bool
+	selectedMu sync.RWMutex
 	selected   string
 	testUrl    string
 }
@@ -54,10 +56,7 @@ func (s *Selector) IsL3Protocol(metadata *C.Metadata) bool {
 
 // MarshalJSON implements C.ProxyAdapter
 func (s *Selector) MarshalJSON() ([]byte, error) {
-	all := []string{}
-	for _, proxy := range s.GetProxies(false) {
-		all = append(all, proxy.Name())
-	}
+	all := memberNames(s.GetProxies(false))
 	// When testurl is the default value
 	// do not append a value to ensure that the web dashboard follows the settings of the dashboard
 	var url string
@@ -83,7 +82,9 @@ func (s *Selector) Now() string {
 func (s *Selector) Set(name string) error {
 	for _, proxy := range s.GetProxies(false) {
 		if proxy.Name() == name {
+			s.selectedMu.Lock()
 			s.selected = name
+			s.selectedMu.Unlock()
 			return nil
 		}
 	}
@@ -92,7 +93,9 @@ func (s *Selector) Set(name string) error {
 }
 
 func (s *Selector) ForceSet(name string) {
+	s.selectedMu.Lock()
 	s.selected = name
+	s.selectedMu.Unlock()
 }
 
 // Unwrap implements C.ProxyAdapter
@@ -101,9 +104,37 @@ func (s *Selector) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 }
 
 func (s *Selector) selectedProxy(touch bool) C.Proxy {
+	if touch {
+		s.Touch()
+		touch = false
+	}
+
+	s.selectedMu.RLock()
+	selected := s.selected
+	s.selectedMu.RUnlock()
+
+	if selected != "" {
+		if cache := s.providerCache.Load(); cache != nil && s.providerVersionsEqual(cache.versions) {
+			if cache.byName == nil {
+				return s.selectedFromProxies(cache.proxies, selected)
+			}
+			if proxy, ok := cache.byName[selected]; ok {
+				return proxy
+			}
+			if len(cache.proxies) != 0 {
+				return cache.proxies[0]
+			}
+			return s.EmptyFallback()
+		}
+	}
+
 	proxies := s.GetProxies(touch)
+	return s.selectedFromProxies(proxies, selected)
+}
+
+func (s *Selector) selectedFromProxies(proxies []C.Proxy, selected string) C.Proxy {
 	for _, proxy := range proxies {
-		if proxy.Name() == s.selected {
+		if proxy.Name() == selected {
 			return proxy
 		}
 	}

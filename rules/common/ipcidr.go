@@ -36,7 +36,7 @@ func (i *IPCIDR) RuleType() C.RuleType {
 }
 
 func (i *IPCIDR) Match(metadata *C.Metadata, helper C.RuleMatchHelper) (bool, string) {
-	if !i.noResolveIP && !i.isSourceIP && helper.ResolveIP != nil {
+	if !i.noResolveIP && !i.isSourceIP {
 		helper.ResolveIP()
 	}
 
@@ -53,6 +53,16 @@ func (i *IPCIDR) Adapter() string {
 
 func (i *IPCIDR) Payload() string {
 	return i.ipnet.String()
+}
+
+// IPPrefix returns the CIDR prefix the rule matches.
+func (i *IPCIDR) IPPrefix() netip.Prefix {
+	return i.ipnet
+}
+
+// IsSourceIPRule reports whether the rule matches the source address.
+func (i *IPCIDR) IsSourceIPRule() bool {
+	return i.isSourceIP
 }
 
 func NewIPCIDR(s string, adapter string, opts ...IPCIDROption) (*IPCIDR, error) {

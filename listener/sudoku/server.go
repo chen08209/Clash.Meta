@@ -6,12 +6,12 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/netip"
 	"strings"
 	"time"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	N "github.com/metacubex/mihomo/common/net"
-	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	LC "github.com/metacubex/mihomo/listener/config"
 	"github.com/metacubex/mihomo/listener/inner"
@@ -168,10 +168,9 @@ func wrapSessionConn(conn net.Conn) net.Conn {
 func (l *Listener) handleUoTSession(conn net.Conn, tunnel C.Tunnel, additions ...inbound.Addition) {
 	writer := sudoku.NewUoTPacketConn(conn)
 	remoteAddr := conn.RemoteAddr()
-	connID := utils.NewUUIDV4().String() // make a new SNAT key
 
 	for {
-		addrStr, payload, err := sudoku.ReadDatagram(conn)
+		addr, payload, err := sudoku.ReadDatagram(conn)
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
 				log.Debugln("[Sudoku][UoT] session closed: %v", err)
@@ -180,42 +179,47 @@ func (l *Listener) handleUoTSession(conn net.Conn, tunnel C.Tunnel, additions ..
 			return
 		}
 
-		target := socks5.ParseAddr(addrStr)
-		if target == nil {
-			log.Debugln("[Sudoku][UoT] drop invalid target: %s", addrStr)
-			continue
-		}
-
 		cPacket := &uotPacket{
+			addr:    addr,
 			payload: payload,
 			writer:  writer,
-			rAddr:   remoteAddr,
+			source:  N.AddrPortFromNetAddr(remoteAddr),
 		}
-		cPacket.rAddr = N.NewCustomAddr(C.SUDOKU.String(), connID, cPacket.rAddr) // for tunnel's handleUDPConn
-		tunnel.HandleUDPPacket(inbound.NewPacket(target, cPacket, C.SUDOKU, additions...))
+		tunnel.HandleUDPPacket(inbound.NewPacket(addr, cPacket, C.SUDOKU, additions...))
 	}
 }
 
 type uotPacket struct {
+	addr    socks5.Addr
 	payload []byte
 	writer  *sudoku.UoTPacketConn
-	rAddr   net.Addr
+	source  netip.AddrPort
 }
 
 func (p *uotPacket) Data() []byte {
 	return p.payload
 }
 
-func (p *uotPacket) WriteBack(b []byte, addr net.Addr) (int, error) {
-	return p.writer.WriteTo(b, addr)
+// FlowKey returns the source address the tunnel keys this packet's flow by.
+func (p *uotPacket) FlowKey() netip.AddrPort {
+	return p.source
+}
+
+func (p *uotPacket) WriteBack(b []byte, addr netip.AddrPort) (int, error) {
+	return p.writer.WriteTo(b, net.UDPAddrFromAddrPort(addr))
 }
 
 func (p *uotPacket) Drop() {
+	if p.addr == nil && p.payload == nil {
+		return
+	}
+	sudoku.ReleaseDatagram(p.addr, p.payload)
+	p.addr = nil
 	p.payload = nil
 }
 
 func (p *uotPacket) LocalAddr() net.Addr {
-	return p.rAddr
+	return net.UDPAddrFromAddrPort(p.source)
 }
 
 func relayToFallback(wrapper net.Conn, rawConn net.Conn, fallback net.Conn) {

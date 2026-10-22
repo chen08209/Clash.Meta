@@ -153,9 +153,30 @@ type RuleWrapper interface {
 }
 
 type RuleMatchHelper struct {
-	ResolveIP     func()
-	FindProcess   func()
-	CheckPassRule func(adapterName string) bool
+	Context   RuleMatchContext
+	NoResolve bool
+}
+
+type RuleMatchContext interface {
+	ResolveIP()
+	FindProcess()
+	CheckPassRule(adapterName string) bool
+}
+
+func (h RuleMatchHelper) ResolveIP() {
+	if h.Context != nil && !h.NoResolve {
+		h.Context.ResolveIP()
+	}
+}
+
+func (h RuleMatchHelper) FindProcess() {
+	if h.Context != nil {
+		h.Context.FindProcess()
+	}
+}
+
+func (h RuleMatchHelper) CheckPassRule(adapterName string) bool {
+	return h.Context != nil && h.Context.CheckPassRule(adapterName)
 }
 
 type RuleGroup interface {

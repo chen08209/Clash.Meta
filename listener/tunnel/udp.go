@@ -76,11 +76,7 @@ func NewUDP(addr, target, proxy string, lc C.InboundListenConfig, tunnel C.Tunne
 }
 
 func (l *PacketConn) handleUDP(pc net.PacketConn, tunnel C.Tunnel, buf []byte, addr net.Addr, additions ...inbound.Addition) {
-	cPacket := &packet{
-		pc:      pc,
-		rAddr:   addr,
-		payload: buf,
-	}
+	cPacket := newTunnelPacket(pc, addr, buf)
 
 	tunnel.HandleUDPPacket(inbound.NewPacket(l.target, cPacket, C.TUNNEL, additions...))
 }

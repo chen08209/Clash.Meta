@@ -6,17 +6,18 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	stdatomic "sync/atomic"
 	"time"
 
 	"github.com/metacubex/mihomo/adapter/outbound"
 	"github.com/metacubex/mihomo/common/atomic"
 	"github.com/metacubex/mihomo/common/utils"
+	"github.com/metacubex/mihomo/component/dialer"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
 	"github.com/metacubex/mihomo/log"
 
 	"github.com/dlclark/regexp2"
-	"golang.org/x/exp/slices"
 )
 
 type GroupBase struct {
@@ -37,10 +38,17 @@ type GroupBase struct {
 	usePosition       map[string]int
 
 	// for GetProxies
-	getProxiesMutex  sync.Mutex
-	providerVersions []uint32
-	providerProxies  []C.Proxy
+	getProxiesMutex sync.Mutex
+	providerCache   stdatomic.Pointer[providerProxyCache]
 }
+
+type providerProxyCache struct {
+	versions []uint32
+	proxies  []C.Proxy
+	byName   map[string]C.Proxy
+}
+
+const proxyNameIndexMinSize = 8
 
 type GroupBaseOption struct {
 	Name           string
@@ -123,23 +131,23 @@ func (gb *GroupBase) Touch() {
 }
 
 func (gb *GroupBase) GetProxies(touch bool) []C.Proxy {
-	providerVersions := make([]uint32, len(gb.providers))
-	for i, pd := range gb.providers {
-		if touch { // touch first
-			pd.Touch()
+	if touch { // touch first
+		for _, provider := range gb.providers {
+			provider.Touch()
 		}
-		providerVersions[i] = pd.Version()
 	}
 
-	// thread safe
+	if cache := gb.providerCache.Load(); cache != nil &&
+		gb.providerVersionsEqual(cache.versions) {
+		return cache.proxies
+	}
+
 	gb.getProxiesMutex.Lock()
 	defer gb.getProxiesMutex.Unlock()
-
-	// return the cached proxies if version not changed
-	if slices.Equal(providerVersions, gb.providerVersions) {
-		return gb.providerProxies
+	if cache := gb.providerCache.Load(); cache != nil &&
+		gb.providerVersionsEqual(cache.versions) {
+		return cache.proxies
 	}
-
 	parts := make([][]C.Proxy, len(gb.providers))
 	if len(gb.filterRegs) == 0 {
 		for i, pd := range gb.providers {
@@ -231,11 +239,75 @@ func (gb *GroupBase) GetProxies(touch bool) []C.Proxy {
 		return []C.Proxy{gb.EmptyFallback()}
 	}
 
-	// only cache when proxies not empty
-	gb.providerVersions = providerVersions
-	gb.providerProxies = proxies
+	// Version is read after the lists: a provider that swaps during this call
+	// bumps the stamped version, so the next call rebuilds rather than caching
+	// the mixed result under the old generation.
+	providerVersions := gb.providerVersionsNow()
+	gb.providerCache.Store(&providerProxyCache{
+		versions: providerVersions,
+		proxies:  proxies,
+		byName:   proxyNameIndex(proxies),
+	})
 
 	return proxies
+}
+
+func proxyNameIndex(proxies []C.Proxy) map[string]C.Proxy {
+	if len(proxies) < proxyNameIndexMinSize {
+		return nil
+	}
+
+	byName := make(map[string]C.Proxy, len(proxies))
+	for _, proxy := range proxies {
+		name := proxy.Name()
+		if _, exists := byName[name]; !exists {
+			byName[name] = proxy
+		}
+	}
+	return byName
+}
+
+func memberNames(proxies []C.Proxy) []string {
+	names := make([]string, 0, len(proxies))
+	for _, proxy := range proxies {
+		names = append(names, proxy.Name())
+	}
+	return names
+}
+
+func (gb *GroupBase) indexedProxyByName(name string) (C.Proxy, bool) {
+	cache := gb.providerCache.Load()
+	if cache == nil || cache.byName == nil || !gb.providerVersionsEqual(cache.versions) {
+		return nil, false
+	}
+	proxy, ok := cache.byName[name]
+	return proxy, ok
+}
+
+// providerVersionsNow reads the versions a pick is about to be resolved from,
+// so a group that caches the pick can tell whether its providers have since
+// replaced the list underneath it.
+func (gb *GroupBase) providerVersionsNow() []uint32 {
+	versions := make([]uint32, len(gb.providers))
+	for i, pd := range gb.providers {
+		versions[i] = pd.Version()
+	}
+	return versions
+}
+
+// providerVersionsEqual reports whether the providers still carry [versions].
+// A provider that swapped its list bumps its version, which is how a cached
+// answer learns that the proxy it names may no longer be a member.
+func (gb *GroupBase) providerVersionsEqual(versions []uint32) bool {
+	if len(versions) != len(gb.providers) {
+		return false
+	}
+	for i, pd := range gb.providers {
+		if pd.Version() != versions[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (gb *GroupBase) URLTest(ctx context.Context, url string, expectedStatus utils.IntRanges[uint16]) (map[string]uint16, error) {
@@ -267,7 +339,7 @@ func (gb *GroupBase) URLTest(ctx context.Context, url string, expectedStatus uti
 }
 
 func (gb *GroupBase) onDialFailed(adapterType C.AdapterType, err error, fn func()) {
-	if adapterType == C.Direct || adapterType == C.Compatible || adapterType == C.Reject || adapterType == C.Pass || adapterType == C.RejectDrop {
+	if !dialFailureMarksNode(adapterType) {
 		return
 	}
 
@@ -276,39 +348,53 @@ func (gb *GroupBase) onDialFailed(adapterType C.AdapterType, err error, fn func(
 	}
 
 	go func() {
-		if strings.Contains(err.Error(), "connection refused") {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				log.Errorln("ProxyGroup: %s failure handler panic: %v", gb.Name(), recovered)
+			}
+		}()
+
+		if dialer.IsConnectionRefused(err) {
 			fn()
 			return
 		}
 
+		shouldHealthCheck := false
 		gb.failedTestMux.Lock()
-		defer gb.failedTestMux.Unlock()
-
 		gb.failedTimes++
 		if gb.failedTimes == 1 {
 			log.Debugln("ProxyGroup: %s first failed", gb.Name())
 			gb.failedTime = time.Now()
-		} else {
-			if time.Since(gb.failedTime) > time.Duration(gb.testTimeout)*time.Millisecond {
-				gb.failedTimes = 0
-				return
-			}
+		}
+		if time.Since(gb.failedTime) > time.Duration(gb.testTimeout)*time.Millisecond {
+			gb.failedTimes = 0
+			gb.failedTestMux.Unlock()
+			return
+		}
 
-			log.Debugln("ProxyGroup: %s failed count: %d", gb.Name(), gb.failedTimes)
-			if gb.failedTimes >= gb.maxFailedTimes {
-				log.Warnln("because %s failed multiple times, activate health check", gb.Name())
-				fn()
-			}
+		log.Debugln("ProxyGroup: %s failed count: %d", gb.Name(), gb.failedTimes)
+		shouldHealthCheck = gb.failedTimes >= gb.maxFailedTimes &&
+			!gb.failedTesting.Load()
+		gb.failedTestMux.Unlock()
+
+		if shouldHealthCheck {
+			log.Warnln("because %s failed multiple times, activate health check", gb.Name())
+			fn()
 		}
 	}()
 }
 
 func (gb *GroupBase) healthCheck() {
-	if gb.failedTesting.Load() {
+	if !gb.failedTesting.CompareAndSwap(false, true) {
 		return
 	}
+	defer func() {
+		gb.failedTestMux.Lock()
+		gb.failedTimes = 0
+		gb.failedTestMux.Unlock()
+		gb.failedTesting.Store(false)
+	}()
 
-	gb.failedTesting.Store(true)
 	wg := sync.WaitGroup{}
 	for _, proxyProvider := range gb.providers {
 		wg.Add(1)
@@ -320,12 +406,13 @@ func (gb *GroupBase) healthCheck() {
 	}
 
 	wg.Wait()
-	gb.failedTesting.Store(false)
-	gb.failedTimes = 0
 }
 
 func (gb *GroupBase) onDialSuccess() {
-	if !gb.failedTesting.Load() {
-		gb.failedTimes = 0
+	if gb.failedTesting.Load() {
+		return
 	}
+	gb.failedTestMux.Lock()
+	gb.failedTimes = 0
+	gb.failedTestMux.Unlock()
 }

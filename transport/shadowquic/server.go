@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	N "github.com/metacubex/mihomo/common/net"
@@ -226,8 +227,8 @@ func (p *serverUDPPacket) Data() []byte {
 	return p.data
 }
 
-func (p *serverUDPPacket) WriteBack(b []byte, addr net.Addr) (int, error) {
-	return p.assoc.WriteTo(b, addr)
+func (p *serverUDPPacket) WriteBack(b []byte, addr netip.AddrPort) (int, error) {
+	return p.assoc.WriteTo(b, net.UDPAddrFromAddrPort(addr))
 }
 
 func (p *serverUDPPacket) Drop() {

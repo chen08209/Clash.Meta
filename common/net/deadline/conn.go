@@ -3,6 +3,7 @@ package deadline
 import (
 	"net"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/metacubex/mihomo/common/atomic"
@@ -16,6 +17,8 @@ type connReadResult struct {
 	buffer []byte
 	err    error
 }
+
+var connReadResultPool = sync.Pool{New: func() any { return new(connReadResult) }}
 
 type Conn struct {
 	network.ExtendedConn
@@ -48,6 +51,9 @@ func (c *Conn) Read(p []byte) (n int, err error) {
 			n = copy(p, result.buffer)
 			err = result.err
 			if n >= len(result.buffer) {
+				result.buffer = nil
+				result.err = nil
+				connReadResultPool.Put(result)
 				c.resultCh <- nil // finish cache read
 			} else {
 				result.buffer = result.buffer[n:]
@@ -71,19 +77,19 @@ func (c *Conn) Read(p []byte) (n int, err error) {
 	}
 
 	<-c.resultCh
-	go c.pipeRead(len(p))
+	go pipeRead(c, len(p))
 
 	return c.Read(p)
 }
 
-func (c *Conn) pipeRead(size int) {
+func pipeRead(c *Conn, size int) {
 	buffer := make([]byte, size)
 	n, err := c.ExtendedConn.Read(buffer)
 	buffer = buffer[:n]
-	c.resultCh <- &connReadResult{
-		buffer: buffer,
-		err:    err,
-	}
+	result := connReadResultPool.Get().(*connReadResult)
+	result.buffer = buffer
+	result.err = err
+	c.resultCh <- result
 }
 
 func (c *Conn) ReadBuffer(buffer *buf.Buffer) (err error) {
@@ -94,6 +100,9 @@ func (c *Conn) ReadBuffer(buffer *buf.Buffer) (err error) {
 			err = result.err
 
 			if n >= len(result.buffer) {
+				result.buffer = nil
+				result.err = nil
+				connReadResultPool.Put(result)
 				c.resultCh <- nil // finish cache read
 			} else {
 				result.buffer = result.buffer[n:]
@@ -117,7 +126,7 @@ func (c *Conn) ReadBuffer(buffer *buf.Buffer) (err error) {
 	}
 
 	<-c.resultCh
-	go c.pipeRead(buffer.FreeLen())
+	go pipeRead(c, buffer.FreeLen())
 
 	return c.ReadBuffer(buffer)
 }

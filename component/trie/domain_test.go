@@ -198,6 +198,46 @@ func TestTrie_ValidAndSplitDomain(t *testing.T) {
 	})
 }
 
+func TestDomainTrieSearchLowercaseQueryDoesNotAllocate(t *testing.T) {
+	tree := trie.New[int]()
+	assert.NoError(t, tree.Insert("benchmark.example.com", 1))
+
+	allocations := testing.AllocsPerRun(
+		100,
+		func() {
+			assert.NotNil(t, tree.Search("benchmark.example.com"))
+		},
+	)
+	assert.EqualValues(t, 0, allocations)
+}
+
+func TestDomainTrieSearchCanonicalFastPathKeepsSemantics(t *testing.T) {
+	tree := trie.New[int]()
+	assert.NoError(t, tree.Insert("example.com", 1))
+	assert.NoError(t, tree.Insert("+.example.net", 2))
+
+	assert.Equal(t, 1, tree.Search("example.com").Data())
+	assert.Equal(t, 2, tree.Search("www.example.net").Data())
+	assert.Nil(t, tree.Search("example.org"))
+
+	// Inputs outside the fast path must keep the normalized-search semantics.
+	assert.Equal(t, 1, tree.Search("EXAMPLE.COM").Data())
+	for _, domain := range []string{
+		"",
+		"bücher.example",
+		"mijia cloud",
+		"*.example.com",
+		"+.example.com",
+		"example.com.",
+		".example.com",
+		"example..com",
+		" example.com",
+		"example.com ",
+	} {
+		assert.Nil(t, tree.Search(domain), domain)
+	}
+}
+
 func TestTrie_Foreach(t *testing.T) {
 	tree := trie.New[int]()
 	domainList := []string{

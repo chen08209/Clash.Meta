@@ -16,7 +16,6 @@ import (
 type ipcidrStrategy struct {
 	count   int
 	cidrSet *cidr.IpCidrSet
-	//trie    *trie.IpCidrTrie
 }
 
 func (i *ipcidrStrategy) Behavior() P.RuleBehavior {
@@ -24,10 +23,7 @@ func (i *ipcidrStrategy) Behavior() P.RuleBehavior {
 }
 
 func (i *ipcidrStrategy) Match(metadata *C.Metadata, helper C.RuleMatchHelper) bool {
-	if helper.ResolveIP != nil {
-		helper.ResolveIP()
-	}
-	// return i.trie != nil && i.trie.IsContain(metadata.DstIP.AsSlice())
+	helper.ResolveIP()
 	return i.cidrSet != nil && i.cidrSet.IsContain(metadata.DstIP)
 }
 
@@ -36,13 +32,11 @@ func (i *ipcidrStrategy) Count() int {
 }
 
 func (i *ipcidrStrategy) Reset() {
-	// i.trie = trie.NewIpCidrTrie()
 	i.cidrSet = cidr.NewIpCidrSet()
 	i.count = 0
 }
 
 func (i *ipcidrStrategy) Insert(rule string) {
-	//err := i.trie.AddIpCidrForString(rule)
 	err := i.cidrSet.AddIpCidrForString(rule)
 	if err != nil {
 		log.Warnln("invalid Ipcidr:[%s]", rule)
@@ -85,5 +79,5 @@ func (i *ipcidrStrategy) ToIpCidr() *netipx.IPSet {
 }
 
 func NewIPCidrStrategy() *ipcidrStrategy {
-	return &ipcidrStrategy{}
+	return &ipcidrStrategy{cidrSet: cidr.NewIpCidrSet()}
 }

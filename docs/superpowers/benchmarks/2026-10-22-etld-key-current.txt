@@ -1,0 +1,12 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/adapter/outboundgroup
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkStickySessionsProxyPick-16    	 4459593	       266.0 ns/op	     416 B/op	       1 allocs/op
+BenchmarkStickySessionsProxyPick-16    	 4664092	       259.8 ns/op	     416 B/op	       1 allocs/op
+BenchmarkStickySessionsProxyPick-16    	 4556971	       264.8 ns/op	     416 B/op	       1 allocs/op
+BenchmarkStickySessionsProxyPick-16    	 4590986	       256.7 ns/op	     416 B/op	       1 allocs/op
+BenchmarkStickySessionsProxyPick-16    	 4802290	       256.2 ns/op	     416 B/op	       1 allocs/op
+BenchmarkStickySessionsProxyPick-16    	 4623628	       255.8 ns/op	     416 B/op	       1 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/adapter/outboundgroup	8.902s

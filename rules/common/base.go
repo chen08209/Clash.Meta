@@ -6,7 +6,7 @@ import (
 
 	C "github.com/metacubex/mihomo/constant"
 
-	"golang.org/x/exp/slices"
+	"slices"
 )
 
 var (

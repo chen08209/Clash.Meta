@@ -1,0 +1,12 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/component/nat
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkWriteBackProxyUpdate-16    	55428531	        20.26 ns/op	      16 B/op	       1 allocs/op
+BenchmarkWriteBackProxyUpdate-16    	62463562	        19.97 ns/op	      16 B/op	       1 allocs/op
+BenchmarkWriteBackProxyUpdate-16    	62148150	        21.32 ns/op	      16 B/op	       1 allocs/op
+BenchmarkWriteBackProxyUpdate-16    	58603765	        22.06 ns/op	      16 B/op	       1 allocs/op
+BenchmarkWriteBackProxyUpdate-16    	62065540	        21.11 ns/op	      16 B/op	       1 allocs/op
+BenchmarkWriteBackProxyUpdate-16    	57477708	        27.33 ns/op	      16 B/op	       1 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/component/nat	9.557s

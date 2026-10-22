@@ -8,6 +8,8 @@ import (
 	"io"
 	"net"
 
+	"github.com/metacubex/mihomo/common/atomic"
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/common/utils"
 	"github.com/metacubex/mihomo/transport/vless"
 	"github.com/metacubex/mihomo/transport/vless/vision"
@@ -154,11 +156,11 @@ func flowName(value string) string {
 
 type serverConn struct {
 	N.ExtendedConn
-	responseWritten bool
+	responseWritten atomic.Bool
 }
 
 func (c *serverConn) Write(b []byte) (n int, err error) {
-	if !c.responseWritten {
+	if c.responseWritten.CompareAndSwap(false, true) {
 		buffer := buf.NewSize(2 + len(b))
 		buffer.WriteByte(vless.Version)
 		buffer.WriteByte(0)
@@ -168,24 +170,22 @@ func (c *serverConn) Write(b []byte) (n int, err error) {
 		if err == nil {
 			n = len(b)
 		}
-		c.responseWritten = true
 		return
 	}
 	return c.ExtendedConn.Write(b)
 }
 
 func (c *serverConn) WriteBuffer(buffer *buf.Buffer) error {
-	if !c.responseWritten {
+	if c.responseWritten.CompareAndSwap(false, true) {
 		header := buffer.ExtendHeader(2)
 		header[0] = vless.Version
 		header[1] = 0
-		c.responseWritten = true
 	}
 	return c.ExtendedConn.WriteBuffer(buffer)
 }
 
 func (c *serverConn) FrontHeadroom() int {
-	if c.responseWritten {
+	if c.responseWritten.Load() {
 		return 0
 	}
 	return 2
@@ -196,7 +196,7 @@ func (c *serverConn) ReaderReplaceable() bool {
 }
 
 func (c *serverConn) WriterReplaceable() bool {
-	return c.responseWritten
+	return c.responseWritten.Load()
 }
 
 func (c *serverConn) NeedAdditionalReadDeadline() bool {
@@ -259,12 +259,19 @@ func (c *serverPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) 
 	return
 }
 
+// WriteTo sends the length and the payload as one frame: writing the two-byte
+// header on its own cost a second write on the stream and an allocation.
 func (c *serverPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
-	err = binary.Write(c.ExtendedConn, binary.BigEndian, uint16(len(p)))
-	if err != nil {
+	buf := pool.Get(2 + len(p))
+	defer pool.Put(buf)
+
+	binary.BigEndian.PutUint16(buf, uint16(len(p)))
+	copy(buf[2:], p)
+	if _, err = c.ExtendedConn.Write(buf[:2+len(p)]); err != nil {
 		return
 	}
-	return c.ExtendedConn.Write(p)
+	n = len(p)
+	return
 }
 
 func (c *serverPacketConn) ReadPacket(buffer *buf.Buffer) (destination M.Socksaddr, err error) {

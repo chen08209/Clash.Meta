@@ -46,21 +46,32 @@ func WithDstAddr(addr net.Addr) Addition {
 
 func WithSrcAddr(addr net.Addr) Addition {
 	return func(metadata *C.Metadata) {
-		m := C.Metadata{}
-		if err := m.SetRemoteAddr(addr); err == nil {
-			metadata.SrcIP = m.DstIP
-			metadata.SrcPort = m.DstPort
-		}
+		SetSrcAddr(metadata, addr)
+	}
+}
+
+// SetSrcAddr applies the same fields as WithSrcAddr without allocating a
+// closure per packet.
+func SetSrcAddr(metadata *C.Metadata, addr net.Addr) {
+	m := C.Metadata{}
+	if err := m.SetRemoteAddr(addr); err == nil {
+		metadata.SrcIP = m.DstIP
+		metadata.SrcPort = m.DstPort
 	}
 }
 
 func WithInAddr(addr net.Addr) Addition {
 	return func(metadata *C.Metadata) {
-		m := C.Metadata{}
-		if err := m.SetRemoteAddr(addr); err == nil {
-			metadata.InIP = m.DstIP
-			metadata.InPort = m.DstPort
-		}
+		SetInAddr(metadata, addr)
+	}
+}
+
+// SetInAddr applies the same fields as WithInAddr without allocating a closure.
+func SetInAddr(metadata *C.Metadata, addr net.Addr) {
+	m := C.Metadata{}
+	if err := m.SetRemoteAddr(addr); err == nil {
+		metadata.InIP = m.DstIP
+		metadata.InPort = m.DstPort
 	}
 }
 

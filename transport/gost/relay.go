@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	N "github.com/metacubex/mihomo/common/net"
+	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
 	mihomoVMess "github.com/metacubex/mihomo/transport/vmess"
 
@@ -313,22 +315,33 @@ func (c *relayPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	if len(p) > math.MaxUint16 {
 		return 0, fmt.Errorf("gost relay udp packet too large: %d", len(p))
 	}
-	if addr != nil && c.raddr != nil && addr.String() != c.raddr.String() {
+	if addr != nil && c.raddr != nil && !sameRelayAddr(addr, c.raddr) {
 		return 0, fmt.Errorf("gost relay udp association is bound to %s, got %s", c.raddr, addr)
 	}
 
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
 
-	var header [2]byte
-	binary.BigEndian.PutUint16(header[:], uint16(len(p)))
-	if _, err := c.conn.Write(header[:]); err != nil {
-		return 0, err
-	}
-	if _, err := c.conn.Write(p); err != nil {
+	buf := pool.Get(2 + len(p))
+	defer pool.Put(buf)
+
+	binary.BigEndian.PutUint16(buf, uint16(len(p)))
+	copy(buf[2:], p)
+	if _, err := c.conn.Write(buf[:2+len(p)]); err != nil {
 		return 0, err
 	}
 	return len(p), nil
+}
+
+// sameRelayAddr compares two association destinations as netip values so the
+// per-packet guard does not format both of them; the string form stays as the
+// fallback for addresses AddrPort cannot express.
+func sameRelayAddr(a, b net.Addr) bool {
+	aPort, bPort := N.AddrPortFromNetAddr(a), N.AddrPortFromNetAddr(b)
+	if aPort.IsValid() && bPort.IsValid() && aPort == bPort {
+		return true
+	}
+	return a.String() == b.String()
 }
 
 func (c *relayPacketConn) Close() error {

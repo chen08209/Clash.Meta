@@ -1,0 +1,30 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/component/trie
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkDomainMapLookup/int/trie/exact-16         	 7808935	       175.3 ns/op	      12 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/exact-16         	 8455992	       136.5 ns/op	      12 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/exact-16         	 9348306	       127.9 ns/op	      12 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/exact-16         	 8939772	       126.9 ns/op	      12 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/exact-16         	 9490929	       125.2 ns/op	      12 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/exact-16         	 9411830	       129.4 ns/op	      12 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/suffix-16        	15244443	        76.14 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/suffix-16        	16047522	        76.62 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/suffix-16        	15957255	        78.22 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/suffix-16        	15838134	        74.63 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/suffix-16        	15488926	        75.20 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/suffix-16        	14895396	        78.05 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/wildcard-16      	14064466	        83.68 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/wildcard-16      	13692345	        83.72 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/wildcard-16      	14683694	        83.28 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/wildcard-16      	14671755	        83.50 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/wildcard-16      	14080920	        81.38 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/wildcard-16      	13189000	        83.85 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/unicode-16       	 7238539	       188.1 ns/op	      11 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/unicode-16       	 5701075	       187.3 ns/op	      11 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/unicode-16       	 7135687	       193.0 ns/op	      11 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/unicode-16       	 7346440	       178.3 ns/op	      12 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/unicode-16       	 5903602	       199.8 ns/op	      12 B/op	       0 allocs/op
+BenchmarkDomainMapLookup/int/trie/unicode-16       	 6017637	       194.7 ns/op	      11 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/component/trie	32.717s

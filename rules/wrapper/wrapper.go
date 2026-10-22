@@ -46,12 +46,18 @@ func (r *RuleWrapper) Unwrap() C.Rule {
 
 func (r *RuleWrapper) Hit() {
 	r.hitCount.Add(1)
-	r.hitAt.Store(time.Now())
+	// Counting stays exact; the timestamp refresh is folded to one store per
+	// sixteen events so the per-rule hot path skips the clock read.
+	if n := r.hitCount.Load(); n&15 == 1 {
+		r.hitAt.Store(time.Now())
+	}
 }
 
 func (r *RuleWrapper) Miss() {
 	r.missCount.Add(1)
-	r.missAt.Store(time.Now())
+	if n := r.missCount.Load(); n&15 == 1 {
+		r.missAt.Store(time.Now())
+	}
 }
 
 func (r *RuleWrapper) Match(metadata *C.Metadata, helper C.RuleMatchHelper) (bool, string) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/netip"
 
 	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/common/pool"
@@ -95,18 +96,15 @@ func (c *PacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	return len(bb), addr, err
 }
 
-func (c *PacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
-	data, put, addr, err = c.EnhancePacketConn.WaitReadFrom()
+func (c *PacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
+	data, addr, err = c.EnhancePacketConn.WaitReadFrom()
 	if err != nil {
 		return
 	}
 	data, err = Unpack(data[c.Cipher.SaltSize():], data, c)
 	if err != nil {
-		if put != nil {
-			put()
-		}
+		_ = pool.Put(data)
 		data = nil
-		put = nil
 		return
 	}
 	return

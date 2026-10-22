@@ -1,18 +1,21 @@
 package nat
 
 import (
-	"net"
+	"net/netip"
+	"sync/atomic"
 
-	"github.com/metacubex/mihomo/common/atomic"
 	C "github.com/metacubex/mihomo/constant"
 )
 
 type writeBackProxy struct {
-	wb atomic.TypedValue[C.WriteBack]
+	// Every packet of a flow carries a *constant.PacketAdapter, so the concrete
+	// type stored here never changes and the per-packet update writes the
+	// interface directly instead of boxing a fresh pointer.
+	wb atomic.Value
 }
 
-func (w *writeBackProxy) WriteBack(b []byte, addr net.Addr) (n int, err error) {
-	return w.wb.Load().WriteBack(b, addr)
+func (w *writeBackProxy) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
+	return w.wb.Load().(C.WriteBack).WriteBack(b, addr)
 }
 
 func (w *writeBackProxy) UpdateWriteBack(wb C.WriteBack) {

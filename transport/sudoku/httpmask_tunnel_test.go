@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/metacubex/mihomo/transport/socks5"
 )
 
 func startTunnelServer(t *testing.T, cfg *ProtocolConfig, handle func(*ServerSession) error) (addr string, stop func(), errCh <-chan error) {
@@ -211,7 +213,7 @@ func TestHTTPMaskTunnel_Poll_UoTRoundTrip(t *testing.T) {
 		if err != nil {
 			return fmt.Errorf("server read datagram: %w", err)
 		}
-		if gotAddr != target {
+		if gotAddr.String() != target {
 			return fmt.Errorf("uot target mismatch: %s", gotAddr)
 		}
 		if !bytes.Equal(gotPayload, payload) {
@@ -247,14 +249,14 @@ func TestHTTPMaskTunnel_Poll_UoTRoundTrip(t *testing.T) {
 	if err := WriteKIPMessage(cConn, KIPTypeStartUoT, nil); err != nil {
 		t.Fatalf("start uot: %v", err)
 	}
-	if err := WriteDatagram(cConn, target, payload); err != nil {
+	if err := WriteDatagram(cConn, socks5.ParseAddr(target), payload); err != nil {
 		t.Fatalf("write datagram: %v", err)
 	}
 	gotAddr, gotPayload, err := ReadDatagram(cConn)
 	if err != nil {
 		t.Fatalf("read datagram: %v", err)
 	}
-	if gotAddr != target {
+	if gotAddr.String() != target {
 		t.Fatalf("uot target mismatch: %s", gotAddr)
 	}
 	if !bytes.Equal(gotPayload, payload) {

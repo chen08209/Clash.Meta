@@ -40,10 +40,7 @@ func (c *CachedConn) Upstream() any {
 }
 
 func (c *CachedConn) ReaderReplaceable() bool {
-	if len(c.data) > 0 {
-		return false
-	}
-	return true
+	return len(c.data) == 0
 }
 
 func (c *CachedConn) WriterReplaceable() bool {

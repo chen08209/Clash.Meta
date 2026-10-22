@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/metacubex/mihomo/common/callback"
@@ -15,12 +17,27 @@ import (
 
 type FallbackOption struct{}
 
+type fallbackSelection struct {
+	proxy          C.Proxy
+	hasAlternative bool
+	at             time.Time
+	versions       []uint32
+}
+
+// A resolved pick is reused briefly like URLTest fast node, so a large
+// fallback group does not walk its members on every connection.
+const fallbackSelectionTTL = 10 * time.Second
+
 type Fallback struct {
 	*GroupBase
 	disableUDP     bool
 	testUrl        string
+	selectedMu     sync.RWMutex
 	selected       string
 	expectedStatus string
+	rotateProbe    atomic.Bool
+	probeCursor    atomic.Uint32
+	selection      atomic.Pointer[fallbackSelection]
 }
 
 func (f *Fallback) Now() string {
@@ -28,13 +45,69 @@ func (f *Fallback) Now() string {
 	return proxy.Name()
 }
 
+func (f *Fallback) healthCheck() {
+	f.clearSelection()
+	f.GroupBase.healthCheck()
+	f.clearSelection()
+	notifyRouteChange()
+}
+
+func (f *Fallback) selectedName() string {
+	f.selectedMu.RLock()
+	defer f.selectedMu.RUnlock()
+	return f.selected
+}
+
+func (f *Fallback) setSelected(name string) {
+	f.selectedMu.Lock()
+	f.selected = name
+	f.selectedMu.Unlock()
+	f.clearSelection()
+}
+
+func (f *Fallback) clearSelected(name string) {
+	f.selectedMu.Lock()
+	if f.selected == name {
+		f.selected = ""
+	}
+	f.selectedMu.Unlock()
+	f.clearSelection()
+}
+
+func (f *Fallback) markProxyFailed(proxy C.Proxy, err error) {
+	if !shouldMarkProxyFailed(proxy, err) || !markProxyUnavailable(proxy, f.testUrl) {
+		return
+	}
+	f.clearSelected(proxy.Name())
+	f.rotateProbe.Store(true)
+	notifyRouteChange()
+	f.scheduleRecoveryProbe(proxy)
+}
+
+func (f *Fallback) scheduleRecoveryProbe(proxy C.Proxy) {
+	expectedStatus, err := utils.NewUnsignedRanges[uint16](f.expectedStatus)
+	if err != nil {
+		return
+	}
+	scheduleFailedProxyProbe(
+		proxy,
+		f.testUrl,
+		expectedStatus,
+		time.Duration(f.testTimeout)*time.Millisecond,
+		notifyRouteChange,
+	)
+}
+
 // DialContext implements C.ProxyAdapter
 func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, error) {
-	proxy := f.findAliveProxy(true)
+	proxy, hasAlternative := f.findAliveProxyState(true)
+	ctx, cancel := failoverContext(ctx, hasAlternative)
+	defer cancel()
 	c, err := proxy.DialContext(ctx, metadata)
 	if err == nil {
 		c.AppendToChains(f)
 	} else {
+		f.markProxyFailed(proxy, err)
 		f.onDialFailed(proxy.Type(), err, f.healthCheck)
 	}
 
@@ -43,6 +116,7 @@ func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Con
 			if err == nil {
 				f.onDialSuccess()
 			} else {
+				f.markProxyFailed(proxy, err)
 				f.onDialFailed(proxy.Type(), err, f.healthCheck)
 			}
 		})
@@ -53,10 +127,15 @@ func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Con
 
 // ListenPacketContext implements C.ProxyAdapter
 func (f *Fallback) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (C.PacketConn, error) {
-	proxy := f.findAliveProxy(true)
+	proxy, hasAlternative := f.findAliveProxyState(true)
+	ctx, cancel := failoverContext(ctx, hasAlternative)
+	defer cancel()
 	pc, err := proxy.ListenPacketContext(ctx, metadata)
 	if err == nil {
 		pc.AppendToChains(f)
+	} else {
+		f.markProxyFailed(proxy, err)
+		f.onDialFailed(proxy.Type(), err, f.healthCheck)
 	}
 
 	return pc, err
@@ -74,22 +153,20 @@ func (f *Fallback) SupportUDP() bool {
 
 // IsL3Protocol implements C.ProxyAdapter
 func (f *Fallback) IsL3Protocol(metadata *C.Metadata) bool {
-	return f.findAliveProxy(false).IsL3Protocol(metadata)
+	proxy := f.findAliveProxy(false)
+	return proxy.IsL3Protocol(metadata)
 }
 
 // MarshalJSON implements C.ProxyAdapter
 func (f *Fallback) MarshalJSON() ([]byte, error) {
-	all := []string{}
-	for _, proxy := range f.GetProxies(false) {
-		all = append(all, proxy.Name())
-	}
+	all := memberNames(f.GetProxies(false))
 	return json.Marshal(map[string]any{
 		"type":           f.Type().String(),
 		"now":            f.Now(),
 		"all":            all,
 		"testUrl":        f.testUrl,
 		"expectedStatus": f.expectedStatus,
-		"fixed":          f.selected,
+		"fixed":          f.selectedName(),
 		"hidden":         f.Hidden(),
 		"icon":           f.Icon(),
 		"emptyFallback":  f.EmptyFallback().Name(),
@@ -98,29 +175,109 @@ func (f *Fallback) MarshalJSON() ([]byte, error) {
 
 // Unwrap implements C.ProxyAdapter
 func (f *Fallback) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
-	proxy := f.findAliveProxy(touch)
-	return proxy
+	return f.findAliveProxy(touch)
+}
+
+func (f *Fallback) clearSelection() {
+	f.selection.Store(nil)
+}
+
+func (f *Fallback) cachedSelection() (fallbackSelection, bool) {
+	selection := f.selection.Load()
+	if selection == nil || time.Since(selection.at) >= fallbackSelectionTTL {
+		return fallbackSelection{}, false
+	}
+	if !f.providerVersionsEqual(selection.versions) {
+		return fallbackSelection{}, false
+	}
+	return *selection, true
+}
+
+func (f *Fallback) storeSelection(
+	proxy C.Proxy,
+	hasAlternative bool,
+	versions []uint32,
+) {
+	f.selection.Store(&fallbackSelection{
+		proxy:          proxy,
+		hasAlternative: hasAlternative,
+		at:             time.Now(),
+		versions:       versions,
+	})
 }
 
 func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
-	proxies := f.GetProxies(touch)
-	for _, proxy := range proxies {
-		if len(f.selected) == 0 {
-			if proxy.AliveForTestUrl(f.testUrl) {
-				return proxy
-			}
-		} else {
-			if proxy.Name() == f.selected {
-				if proxy.AliveForTestUrl(f.testUrl) {
-					return proxy
-				} else {
-					f.selected = ""
-				}
-			}
+	proxy, _ := f.findAliveProxyState(touch)
+	return proxy
+}
+
+func (f *Fallback) findAliveProxyState(touch bool) (C.Proxy, bool) {
+	if selection, ok := f.cachedSelection(); ok {
+		if touch {
+			f.Touch()
 		}
+		return selection.proxy, selection.hasAlternative
+	}
+	// Read the versions before resolving: a swap that lands mid-resolve leaves
+	// versions a later check will not match, which only drops the cache again.
+	versions := f.providerVersionsNow()
+	proxy, hasAlternative := f.resolveAliveProxyState(touch)
+	if proxy != f.EmptyFallback() && proxy.AliveForTestUrl(f.testUrl) {
+		f.storeSelection(proxy, hasAlternative, versions)
+	}
+	return proxy, hasAlternative
+}
+
+func (f *Fallback) resolveAliveProxyState(touch bool) (C.Proxy, bool) {
+	proxies := f.GetProxies(touch)
+	if len(proxies) == 0 {
+		return f.EmptyFallback(), false
 	}
 
-	return proxies[0]
+	selectedName := f.selectedName()
+	var selectedProxy C.Proxy
+	if selectedName != "" {
+		if proxy, ok := f.indexedProxyByName(selectedName); ok && proxy.AliveForTestUrl(f.testUrl) {
+			selectedProxy = proxy
+		}
+	}
+	var firstAlive C.Proxy
+	aliveCount := int32(0)
+	for _, proxy := range proxies {
+		if !proxy.AliveForTestUrl(f.testUrl) {
+			continue
+		}
+		aliveCount++
+		if firstAlive == nil {
+			firstAlive = proxy
+		}
+		if selectedProxy == nil && selectedName != "" && proxy.Name() == selectedName {
+			selectedProxy = proxy
+		}
+		if aliveCount >= 2 && (selectedName == "" || selectedProxy != nil) {
+			break
+		}
+	}
+	hasAlternative := aliveCount > 1
+	if aliveCount > 0 {
+		f.rotateProbe.Store(false)
+	}
+	if selectedProxy != nil {
+		return selectedProxy, hasAlternative
+	}
+	if selectedName != "" {
+		f.clearSelected(selectedName)
+	}
+	if firstAlive != nil {
+		return firstAlive, hasAlternative
+	}
+
+	index := 0
+	if f.rotateProbe.Swap(false) {
+		index = int(f.probeCursor.Load()) % len(proxies)
+	}
+	f.probeCursor.Store(uint32((index + 1) % len(proxies)))
+	return proxies[index], false
 }
 
 func (f *Fallback) Set(name string) error {
@@ -136,9 +293,13 @@ func (f *Fallback) Set(name string) error {
 		return errors.New("proxy not exist")
 	}
 
-	f.selected = name
+	f.setSelected(name)
 	if !p.AliveForTestUrl(f.testUrl) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(5000))
+		timeout := time.Duration(f.testTimeout) * time.Millisecond
+		if timeout <= 0 {
+			timeout = 5 * time.Second
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		expectedStatus, _ := utils.NewUnsignedRanges[uint16](f.expectedStatus)
 		_, _ = p.URLTest(ctx, f.testUrl, expectedStatus)
@@ -148,7 +309,7 @@ func (f *Fallback) Set(name string) error {
 }
 
 func (f *Fallback) ForceSet(name string) {
-	f.selected = name
+	f.setSelected(name)
 }
 
 func (f *Fallback) Providers() []P.ProxyProvider {

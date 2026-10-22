@@ -1,11 +1,15 @@
 package socks
 
 import (
+	"bytes"
 	"context"
 	"net"
+	"net/netip"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
+	"github.com/metacubex/mihomo/common/lru"
 	N "github.com/metacubex/mihomo/common/net"
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/common/sockopt"
 	C "github.com/metacubex/mihomo/constant"
 	LC "github.com/metacubex/mihomo/listener/config"
@@ -17,6 +21,21 @@ type UDPListener struct {
 	packetConn net.PacketConn
 	addr       string
 	closed     bool
+	flowCache  *lru.LruCache[netip.AddrPort, *socksUDPFlow]
+}
+
+// A client flow repeats its destination, so the metadata parsed from the
+// datagram header is cached per source address and reused while the target
+// bytes match; only the read loop touches the cache.
+const (
+	socksUDPFlowCacheSize = 1024
+	socksUDPFlowCacheAge  = 300
+)
+
+type socksUDPFlow struct {
+	metadata *C.Metadata
+	target   []byte
+	rAddr    net.Addr
 }
 
 // RawAddress implements C.Listener
@@ -58,41 +77,50 @@ func NewUDPWithConfig(config LC.AuthServer, lc C.InboundListenConfig, tunnel C.T
 	sl := &UDPListener{
 		packetConn: l,
 		addr:       config.Listen,
+		flowCache: lru.New(
+			lru.WithSize[netip.AddrPort, *socksUDPFlow](socksUDPFlowCacheSize),
+			lru.WithAge[netip.AddrPort, *socksUDPFlow](socksUDPFlowCacheAge),
+		),
 	}
 	conn := N.NewEnhancePacketConn(l)
 	go func() {
 		for {
-			data, put, remoteAddr, err := conn.WaitReadFrom()
+			data, remoteAddr, err := conn.WaitReadFrom()
 			if err != nil {
-				if put != nil {
-					put()
+				if data != nil {
+					_ = pool.Put(data)
 				}
 				if sl.closed {
 					break
 				}
 				continue
 			}
-			handleSocksUDP(l, tunnel, data, put, remoteAddr, additions...)
+			sl.handleSocksUDP(tunnel, data, remoteAddr, additions...)
 		}
 	}()
 
 	return sl, nil
 }
 
-func handleSocksUDP(pc net.PacketConn, tunnel C.Tunnel, buf []byte, put func(), addr net.Addr, additions ...inbound.Addition) {
+func (l *UDPListener) handleSocksUDP(tunnel C.Tunnel, buf []byte, addr netip.AddrPort, additions ...inbound.Addition) {
 	target, payload, err := socks5.DecodeUDPPacket(buf)
 	if err != nil {
 		// Unresolved UDP packet, return buffer to the pool
-		if put != nil {
-			put()
-		}
+		_ = pool.Put(buf)
 		return
 	}
-	packet := &packet{
-		pc:      pc,
-		rAddr:   addr,
-		payload: payload,
-		put:     put,
+	flow, hit := l.flowCache.Get(addr)
+	if !hit || !bytes.Equal(target, flow.target) {
+		packet := newSocksPacket(l.packetConn, net.UDPAddrFromAddrPort(addr), buf, payload)
+		_, metadata := inbound.NewPacket(target, packet, C.SOCKS5, additions...)
+		flow = &socksUDPFlow{
+			metadata: metadata,
+			target:   bytes.Clone(target),
+			rAddr:    packet.rAddr,
+		}
+		l.flowCache.Set(addr, flow)
 	}
-	tunnel.HandleUDPPacket(inbound.NewPacket(target, packet, C.SOCKS5, additions...))
+
+	packet := newSocksPacket(l.packetConn, flow.rAddr, buf, payload)
+	tunnel.HandleUDPPacket(packet, flow.metadata)
 }

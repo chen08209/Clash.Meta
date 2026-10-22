@@ -9,7 +9,8 @@ import (
 	"syscall"
 	"unsafe"
 
-	"golang.org/x/exp/slices"
+	"slices"
+
 	"golang.org/x/sys/windows"
 )
 

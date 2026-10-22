@@ -3,7 +3,6 @@ package sing
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"net/netip"
 	"sync"
@@ -31,6 +30,8 @@ import (
 
 const UDPTimeout = 5 * time.Minute
 const ICMPTimeout = 10 * time.Second
+
+var singBufferPool sync.Pool
 
 type ListenerConfig struct {
 	Tunnel     C.Tunnel
@@ -136,13 +137,9 @@ func (h *ListenerHandler) NewConnection(ctx context.Context, conn net.Conn, meta
 		NetWork: C.TCP,
 		Type:    h.Type,
 	}
-	if metadata.Source.IsIP() && metadata.Source.Fqdn == "" {
-		cMetadata.RawSrcAddr = metadata.Source.Unwrap().TCPAddr()
-	}
-	if metadata.Destination.IsIP() && metadata.Destination.Fqdn == "" {
-		cMetadata.RawDstAddr = metadata.Destination.Unwrap().TCPAddr()
-	}
-	inbound.ApplyAdditions(cMetadata, inbound.WithDstAddr(metadata.Destination), inbound.WithSrcAddr(metadata.Source), inbound.WithInAddr(conn.LocalAddr()))
+	_ = cMetadata.SetRemoteAddr(metadata.Destination)
+	inbound.SetSrcAddr(cMetadata, metadata.Source)
+	inbound.SetInAddr(cMetadata, conn.LocalAddr())
 	inbound.ApplyAdditions(cMetadata, h.Additions...)
 	inbound.ApplyAdditions(cMetadata, getAdditions(ctx)...)
 
@@ -155,21 +152,27 @@ func (h *ListenerHandler) NewPacketConnection(ctx context.Context, conn network.
 		conn = packetaddr.NewConn(bufio.NewNetPacketConn(conn), M.Socksaddr{})
 	}
 
-	connID := utils.NewUUIDV4().String() // make a new SNAT key
-
 	defer func() { _ = conn.Close() }()
-	mutex := sync.Mutex{}
-	writer := bufio.NewNetPacketWriter(conn) // a new interface to set nil in defer
-	defer func() {
-		mutex.Lock() // this goroutine must exit after all conn.WritePacket() is not running
-		defer mutex.Unlock()
-		writer = nil
-	}()
+	state := newSingPacketState(bufio.NewNetPacketWriter(conn))
+	defer state.close()
 	rwOptions := network.ReadWaitOptions{}
 	readWaiter, isReadWaiter := bufio.CreatePacketReadWaiter(conn)
 	if isReadWaiter {
 		readWaiter.InitializeReadWaiter(rwOptions)
 	}
+	inAddr := conn.LocalAddr()
+	if lAddr := getInAddr(ctx); lAddr != nil {
+		inAddr = lAddr
+	}
+	// A UDP flow repeats its destination, so the metadata built from the first
+	// datagram is reused until the destination changes. Only the tunnel's
+	// worker goroutine touches the shared metadata after handoff, and its
+	// in-place fixes are idempotent; datagrams that carry a different
+	// destination still get their own metadata.
+	var (
+		metadataTemplate *C.Metadata
+		templateDest     M.Socksaddr
+	)
 	for {
 		var (
 			buff *buf.Buffer
@@ -179,7 +182,7 @@ func (h *ListenerHandler) NewPacketConnection(ctx context.Context, conn network.
 		if isReadWaiter {
 			buff, dest, err = readWaiter.WaitReadPacket()
 		} else {
-			buff = rwOptions.NewPacketBuffer()
+			buff = newSingBuffer(rwOptions)
 			dest, err = conn.ReadPacket(buff)
 			if buff != nil {
 				rwOptions.PostReturn(buff)
@@ -192,18 +195,14 @@ func (h *ListenerHandler) NewPacketConnection(ctx context.Context, conn network.
 			}
 			return err
 		}
-		cPacket := &packet{
-			writer: &writer,
-			mutex:  &mutex,
-			rAddr:  metadata.Source.UDPAddr(),
-			lAddr:  conn.LocalAddr(),
-			buff:   buff,
+		cPacket := newSingPacket(state, metadata.Source.AddrPort(), inAddr, buff)
+		if metadataTemplate != nil && dest == templateDest {
+			h.Tunnel.HandleUDPPacket(cPacket, metadataTemplate)
+			continue
 		}
-		cPacket.rAddr = N.NewCustomAddr(h.Type.String(), connID, cPacket.rAddr) // for tunnel's handleUDPConn
-		if lAddr := getInAddr(ctx); lAddr != nil {
-			cPacket.lAddr = lAddr
-		}
-		h.handlePacket(ctx, cPacket, metadata.Source, dest)
+		metadataTemplate = h.buildPacketMetadata(ctx, cPacket, metadata.Source, dest)
+		templateDest = dest
+		h.Tunnel.HandleUDPPacket(cPacket, metadataTemplate)
 	}
 	return nil
 }
@@ -213,40 +212,29 @@ type localAddr interface {
 }
 
 func (h *ListenerHandler) NewPacket(ctx context.Context, key netip.AddrPort, buffer *buf.Buffer, metadata M.Metadata, init func(natConn network.PacketConn) network.PacketWriter) {
-	writer := bufio.NewNetPacketWriter(init(nil))
-	mutex := sync.Mutex{}
-	cPacket := &packet{
-		writer: &writer,
-		mutex:  &mutex,
-		rAddr:  metadata.Source.UDPAddr(),
-		buff:   buffer,
-	}
-	if h.Type != C.TUN { // make the handler-related SNAT key for not TUN listener
-		connID := fmt.Sprintf("%s:%s", h.handlerId, key)
-		cPacket.rAddr = N.NewCustomAddr(h.Type.String(), connID, cPacket.rAddr) // for tunnel's handleUDPConn
-	}
-	if conn, ok := common.Cast[localAddr](writer); ok { // tun does not have real inAddr
+	state := newSingPacketState(bufio.NewNetPacketWriter(init(nil)))
+	cPacket := newSingPacket(state, metadata.Source.AddrPort(), nil, buffer)
+	if conn, ok := common.Cast[localAddr](state.writer); ok { // tun does not have real inAddr
 		cPacket.lAddr = conn.LocalAddr()
 	}
 	h.handlePacket(ctx, cPacket, metadata.Source, metadata.Destination)
 }
 
 func (h *ListenerHandler) handlePacket(ctx context.Context, cPacket *packet, source M.Socksaddr, destination M.Socksaddr) {
+	h.Tunnel.HandleUDPPacket(cPacket, h.buildPacketMetadata(ctx, cPacket, source, destination))
+}
+
+func (h *ListenerHandler) buildPacketMetadata(ctx context.Context, cPacket *packet, source M.Socksaddr, destination M.Socksaddr) *C.Metadata {
 	cMetadata := &C.Metadata{
 		NetWork: C.UDP,
 		Type:    h.Type,
 	}
-	if source.IsIP() && source.Fqdn == "" {
-		cMetadata.RawSrcAddr = source.Unwrap().UDPAddr()
-	}
-	if destination.IsIP() && destination.Fqdn == "" {
-		cMetadata.RawDstAddr = destination.Unwrap().UDPAddr()
-	}
-	inbound.ApplyAdditions(cMetadata, inbound.WithDstAddr(destination), inbound.WithSrcAddr(source), inbound.WithInAddr(cPacket.InAddr()))
+	_ = cMetadata.SetRemoteAddr(destination)
+	inbound.SetSrcAddr(cMetadata, source)
+	inbound.SetInAddr(cMetadata, cPacket.InAddr())
 	inbound.ApplyAdditions(cMetadata, h.Additions...)
 	inbound.ApplyAdditions(cMetadata, getAdditions(ctx)...)
-
-	h.Tunnel.HandleUDPPacket(cPacket, cMetadata)
+	return cMetadata
 }
 
 func (h *ListenerHandler) NewError(ctx context.Context, err error) {
@@ -267,10 +255,87 @@ func ShouldIgnorePacketError(err error) bool {
 	return false
 }
 
+type packetWriterState struct {
+	writer    network.NetPacketWriter
+	mutex     sync.Mutex
+	writeAddr net.UDPAddr
+	writeIP   [net.IPv6len]byte
+}
+
+func newSingPacketState(writer network.NetPacketWriter) *packetWriterState {
+	return &packetWriterState{writer: writer}
+}
+
+func (s *packetWriterState) close() {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	s.writer = nil
+}
+
+func (s *packetWriterState) writeBack(b []byte, addr netip.AddrPort) (n int, err error) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if s.writer == nil {
+		err = errors.New("writeBack to closed connection")
+		return
+	}
+
+	ipAddr := addr.Addr().Unmap()
+	if ipAddr.Is4() {
+		a4 := ipAddr.As4()
+		copy(s.writeIP[:net.IPv4len], a4[:])
+		s.writeAddr.IP = s.writeIP[:net.IPv4len]
+	} else {
+		a16 := ipAddr.As16()
+		copy(s.writeIP[:], a16[:])
+		s.writeAddr.IP = s.writeIP[:]
+	}
+	s.writeAddr.Port = int(addr.Port())
+	s.writeAddr.Zone = ipAddr.Zone()
+
+	// sing's writer speaks net.Addr, so the address crosses that one boundary.
+	return s.writer.WriteTo(b, &s.writeAddr)
+}
+
+// The wrapper is allocated per datagram on purpose: a flow keeps the packet it
+// last handed the sender so replies can be written back through it, and Drop
+// runs long before that flow ends. Recycling the object here would let the next
+// datagram claim it and move those replies onto another client's socket.
+func newSingPacket(state *packetWriterState, source netip.AddrPort, lAddr net.Addr, buff *buf.Buffer) *packet {
+	return &packet{
+		state:  state,
+		source: source,
+		lAddr:  lAddr,
+		buff:   buff,
+	}
+}
+
+func newSingBuffer(rwOptions network.ReadWaitOptions) *buf.Buffer {
+	// Drop returns buffers here; reuse only when the pooled capacity fits the requested MTU/headroom.
+	bufferSize := buf.UDPBufferSize
+	if rwOptions.MTU > 0 {
+		bufferSize = rwOptions.MTU + rwOptions.FrontHeadroom + rwOptions.RearHeadroom
+	}
+	if value := singBufferPool.Get(); value != nil {
+		buffer := value.(*buf.Buffer)
+		if buffer.Cap() >= bufferSize {
+			buffer.Reset()
+			if rwOptions.FrontHeadroom > 0 {
+				buffer.Resize(rwOptions.FrontHeadroom, 0)
+			}
+			if rwOptions.RearHeadroom > 0 {
+				buffer.Reserve(rwOptions.RearHeadroom)
+			}
+			return buffer
+		}
+		buffer.Release()
+	}
+	return rwOptions.NewPacketBuffer()
+}
+
 type packet struct {
-	writer *network.NetPacketWriter
-	mutex  *sync.Mutex
-	rAddr  net.Addr
+	state  *packetWriterState
+	source netip.AddrPort
 	lAddr  net.Addr
 	buff   *buf.Buffer
 }
@@ -279,31 +344,29 @@ func (c *packet) Data() []byte {
 	return c.buff.Bytes()
 }
 
+// FlowKey returns the source address the tunnel keys this packet's flow by.
+func (c *packet) FlowKey() netip.AddrPort {
+	return c.source
+}
+
 // WriteBack wirtes UDP packet with source(ip, port) = `addr`
-func (c *packet) WriteBack(b []byte, addr net.Addr) (n int, err error) {
-	if addr == nil {
-		err = errors.New("address is invalid")
-		return
-	}
-
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	conn := *c.writer
-	if conn == nil {
-		err = errors.New("writeBack to closed connection")
-		return
-	}
-
-	return conn.WriteTo(b, addr)
+func (c *packet) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
+	return c.state.writeBack(b, addr)
 }
 
 // LocalAddr returns the source IP/Port of UDP Packet
 func (c *packet) LocalAddr() net.Addr {
-	return c.rAddr
+	return net.UDPAddrFromAddrPort(c.source)
 }
 
 func (c *packet) Drop() {
-	c.buff.Release()
+	if c.buff == nil {
+		return
+	}
+	buff := c.buff
+	c.buff = nil
+	buff.Reset()
+	singBufferPool.Put(buff)
 }
 
 func (c *packet) InAddr() net.Addr {

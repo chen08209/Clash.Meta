@@ -662,14 +662,23 @@ type vmessPacketConn struct {
 // WriteTo implments C.PacketConn.WriteTo
 // Since VMess doesn't support full cone NAT by design, we verify if addr matches uc.rAddr, and drop the packet if not.
 func (uc *vmessPacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
-	allowedAddr := uc.rAddr
-	destAddr := addr
-	if allowedAddr.String() != destAddr.String() {
+	if !samePacketAddr(uc.rAddr, addr) {
 		return 0, ErrUDPRemoteAddrMismatch
 	}
 	uc.access.Lock()
 	defer uc.access.Unlock()
 	return uc.Conn.Write(b)
+}
+
+// samePacketAddr compares two packet destinations as netip values; the string
+// form stays as the fallback for addresses AddrPort cannot express, such as the
+// same v4 host given once as 4 and once as 16 raw bytes.
+func samePacketAddr(a, b net.Addr) bool {
+	aPort, bPort := N.AddrPortFromNetAddr(a), N.AddrPortFromNetAddr(b)
+	if aPort.IsValid() && bPort.IsValid() && aPort == bPort {
+		return true
+	}
+	return a.String() == b.String()
 }
 
 func (uc *vmessPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {

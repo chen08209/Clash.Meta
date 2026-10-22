@@ -33,21 +33,17 @@ var (
 // invalidate it: an apply replacing the maps, which calls invalidateAllProxies,
 // and a provider swapping its list, which bumps its own Version.
 func AllProxies() map[string]C.Proxy {
-	// configMux before allProxiesMu, never the other way round: UpdateProxies
-	// takes them in that order.
-	configMux.RLock()
-	defer configMux.RUnlock()
-
 	allProxiesMu.Lock()
 	defer allProxiesMu.Unlock()
 
-	currentProviders := providers
+	runtimeState := loadRuntime()
+	currentProviders := runtimeState.providers
 	if allProxies != nil && allProxiesUpToDate(currentProviders) {
 		return allProxies
 	}
 
 	rebuilt := make(map[string]C.Proxy)
-	for name, proxy := range proxies {
+	for name, proxy := range runtimeState.proxies {
 		rebuilt[name] = proxy
 	}
 	versions := make(map[string]uint32, len(currentProviders))
@@ -96,17 +92,13 @@ func invalidateAllProxies() {
 }
 
 // ProvidersSnapshot returns the proxy providers the tunnel holds, read under
-// the lock an apply installs them with — Providers() takes none. The maps are
-// never written in place, so the result stays valid after the lock is dropped.
+// the immutable runtime snapshot. The maps are never written in place, so the
+// result stays valid after the snapshot is replaced.
 func ProvidersSnapshot() map[string]P.ProxyProvider {
-	configMux.RLock()
-	defer configMux.RUnlock()
-	return providers
+	return loadRuntime().providers
 }
 
 // RuleProvidersSnapshot is ProvidersSnapshot for rule providers.
 func RuleProvidersSnapshot() map[string]P.RuleProvider {
-	configMux.RLock()
-	defer configMux.RUnlock()
-	return ruleProviders
+	return loadRuntime().ruleProviders
 }

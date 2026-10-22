@@ -54,8 +54,7 @@ func (d *Dns) ResolveUDP(ctx context.Context, metadata *C.Metadata) error {
 
 type dnsPacket struct {
 	data []byte
-	put  func()
-	addr net.Addr
+	addr netip.AddrPort
 }
 
 // dnsPacketConn implements net.PacketConn
@@ -65,12 +64,12 @@ type dnsPacketConn struct {
 	cancel   context.CancelFunc
 }
 
-func (d *dnsPacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
+func (d *dnsPacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
 	select {
 	case packet := <-d.response:
-		return packet.data, packet.put, packet.addr, nil
+		return packet.data, packet.addr, nil
 	case <-d.ctx.Done():
-		return nil, nil, nil, net.ErrClosed
+		return nil, netip.AddrPort{}, net.ErrClosed
 	}
 }
 
@@ -78,10 +77,8 @@ func (d *dnsPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	select {
 	case packet := <-d.response:
 		n = copy(p, packet.data)
-		if packet.put != nil {
-			packet.put()
-		}
-		return n, packet.addr, nil
+		_ = pool.Put(packet.data)
+		return n, net.UDPAddrFromAddrPort(packet.addr), nil
 	case <-d.ctx.Done():
 		return 0, nil, net.ErrClosed
 	}
@@ -100,7 +97,6 @@ func (d *dnsPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	}
 
 	buf := pool.Get(resolver.SafeDnsPacketSize)
-	put := func() { _ = pool.Put(buf) }
 	copy(buf, p) // avoid p be changed after WriteTo returned
 
 	go func() { // don't block the WriteTo function
@@ -109,20 +105,19 @@ func (d *dnsPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 
 		buf, err := resolver.RelayDnsPacket(ctx, buf[:len(p)], buf)
 		if err != nil {
-			put()
+			_ = pool.Put(buf)
 			return
 		}
 
 		packet := dnsPacket{
 			data: buf,
-			put:  put,
-			addr: addr,
+			addr: N.AddrPortFromNetAddr(addr),
 		}
 		select {
 		case d.response <- packet:
 			break
 		case <-d.ctx.Done():
-			put()
+			_ = pool.Put(buf)
 		}
 	}()
 	return len(p), nil

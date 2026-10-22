@@ -10,7 +10,7 @@ import (
 	P "github.com/metacubex/mihomo/constant/provider"
 	"github.com/metacubex/mihomo/log"
 
-	"golang.org/x/exp/slices"
+	"slices"
 )
 
 type domainStrategy struct {

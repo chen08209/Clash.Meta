@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"golang.org/x/exp/constraints"
+	"github.com/metacubex/sing/common/x/constraints"
 )
 
 type IntRanges[T constraints.Integer] []Range[T]
@@ -53,14 +53,6 @@ func NewUnsignedRanges[T constraints.Unsigned](expected string) (IntRanges[T], e
 
 func NewUnsignedRangesFromList[T constraints.Unsigned](list []string) (IntRanges[T], error) {
 	return newIntRangesFromList(list, parseUnsigned[T])
-}
-
-func NewSignedRanges[T constraints.Signed](expected string) (IntRanges[T], error) {
-	return newIntRanges(expected, parseSigned[T])
-}
-
-func NewSignedRangesFromList[T constraints.Signed](list []string) (IntRanges[T], error) {
-	return newIntRangesFromList(list, parseSigned[T])
 }
 
 func (ranges IntRanges[T]) Check(status T) bool {

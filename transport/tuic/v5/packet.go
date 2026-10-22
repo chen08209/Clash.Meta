@@ -3,6 +3,7 @@ package v5
 import (
 	"errors"
 	"net"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -115,7 +116,7 @@ func (q *quicStreamPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err err
 	return
 }
 
-func (q *quicStreamPacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
+func (q *quicStreamPacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
 	if inputConn := q.inputConn; inputConn != nil { // copy inputConn avoid be nil in for loop
 		for {
 			var packet Packet
@@ -125,7 +126,7 @@ func (q *quicStreamPacketConn) WaitReadFrom() (data []byte, put func(), addr net
 			}
 			if packetPtr := q.deFragger.Feed(&packet); packetPtr != nil {
 				data = packetPtr.DATA
-				addr = packetPtr.ADDR.UDPAddr()
+				addr = packetPtr.ADDR.AddrPort()
 				return
 			}
 		}

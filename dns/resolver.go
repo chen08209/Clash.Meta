@@ -14,9 +14,10 @@ import (
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/log"
 
+	"maps"
+
 	D "github.com/miekg/dns"
 	"github.com/samber/lo"
-	"golang.org/x/exp/maps"
 )
 
 type dnsClient interface {
@@ -26,9 +27,32 @@ type dnsClient interface {
 }
 
 type dnsCache interface {
-	GetWithExpire(key string) (*D.Msg, time.Time, bool)
-	SetWithExpire(key string, value *D.Msg, expire time.Time)
+	GetWithExpire(key dnsCacheKey) (*D.Msg, time.Time, bool)
+	SetWithExpire(key dnsCacheKey, value *D.Msg, expire time.Time)
 	Clear()
+}
+
+type parsedIPCache interface {
+	GetWithExpire(key ipCacheKey) ([]netip.Addr, time.Time, bool)
+	SetWithExpire(key ipCacheKey, value []netip.Addr, expire time.Time)
+	Clear()
+}
+
+// dnsCacheKey identifies a cached answer by question name and type, the same
+// identity Question.String builds, without formatting a fresh string per lookup.
+type dnsCacheKey struct {
+	name   string
+	qtype  uint16
+	qclass uint16
+}
+
+type ipCacheKey struct {
+	host  string
+	qtype uint16
+}
+
+func questionKey(q D.Question) dnsCacheKey {
+	return dnsCacheKey{name: q.Name, qtype: q.Qtype, qclass: q.Qclass}
 }
 
 type result struct {
@@ -44,8 +68,9 @@ type Resolver struct {
 	fallbackDomainFilters []C.DomainMatcher
 	fallbackIPFilters     []C.IpMatcher
 	fallbackLazyQuery     bool
-	group                 singleflight.Group[*D.Msg]
+	group                 singleflight.Group[dnsCacheKey, *D.Msg]
 	cache                 dnsCache
+	ipCache               parsedIPCache
 	policy                []dnsPolicy
 	defaultResolver       *Resolver
 }
@@ -75,6 +100,10 @@ func (r *Resolver) LookupIPPrimaryIPv4(ctx context.Context, host string) (ips []
 }
 
 func (r *Resolver) LookupIP(ctx context.Context, host string) (ips []netip.Addr, err error) {
+	if combined, hit := r.lookupIPFromCachePair(host); hit {
+		return combined, nil
+	}
+
 	ch := make(chan []netip.Addr, 1)
 	go func() {
 		defer close(ch)
@@ -153,39 +182,47 @@ func (r *Resolver) ExchangeContext(ctx context.Context, m *D.Msg) (msg *D.Msg, e
 	if len(m.Question) == 0 {
 		return nil, errors.New("should have one question at least")
 	}
-	continueFetch := false
-	defer func() {
-		if continueFetch || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			go func() {
-				ctx, cancel := context.WithTimeout(context.Background(), resolver.DefaultDNSTimeout)
-				defer cancel()
-				_, _ = r.exchangeWithoutCache(ctx, m) // ignore result, just for putMsgToCache
-			}()
-		}
-	}()
 
 	q := m.Question[0]
 	domain := msgToDomain(m)
 	msg, expireTime, hit := getMsgFromCache(r.cache, q)
 	if hit {
-		log.Debugln("[DNS] cache hit %s --> %s, expire at %s", domain, msgToLogString(msg), expireTime.Format("2006-01-02 15:04:05"))
+		if log.DebugEnabled() {
+			log.Debugln("[DNS] cache hit %s --> %s, expire at %s", domain, msgToLogString(msg), expireTime.Format("2006-01-02 15:04:05"))
+		}
 		r.traceCacheHit(ctx, q, msg)
 		now := time.Now()
 		if expireTime.Before(now) {
 			setMsgTTL(msg, uint32(1)) // Continue fetch
-			continueFetch = true
+			r.refreshAsync(m)
 		} else {
 			// updating TTL by subtracting common delta time from each DNS record
 			updateMsgTTL(msg, uint32(time.Until(expireTime).Seconds()))
 		}
 		return
 	}
-	return r.exchangeWithoutCache(ctx, m)
+	msg, err = r.exchangeWithoutCache(ctx, m)
+	if err != nil && (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)) {
+		r.refreshAsync(m)
+	}
+	return
+}
+
+// refreshAsync re-queries a question served from an expiring cache entry or cut
+// off by its caller, so the cache gets a fresh answer; the result only matters
+// for putMsgToCache.
+func (r *Resolver) refreshAsync(m *D.Msg) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), resolver.DefaultDNSTimeout)
+		defer cancel()
+		_, _ = r.exchangeWithoutCache(ctx, m) // ignore result, just for putMsgToCache
+	}()
 }
 
 // ExchangeWithoutCache a batch of dns request, and it do NOT GET from cache
 func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.Msg, err error) {
 	q := m.Question[0]
+	key := questionKey(q)
 
 	retryNum := 0
 	retryMax := 3
@@ -205,7 +242,7 @@ func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.M
 			}
 
 			if cache {
-				putMsgToCache(r.cache, q, result)
+				putMsgToCache(r.cache, key, result)
 			}
 		}()
 		defer func() { trace.finish(result, err) }()
@@ -224,7 +261,7 @@ func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.M
 		return
 	}
 
-	ch := r.group.DoChan(q.String(), fn)
+	ch := r.group.DoChan(key, fn)
 
 	var result singleflight.Result[*D.Msg]
 
@@ -240,7 +277,7 @@ func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.M
 				result := <-ch
 				ret, err, shared := result.Val, result.Err, result.Shared
 				if err != nil && !shared && ret.Opcode < retryMax { // retry
-					r.group.DoChan(q.String(), fn)
+					r.group.DoChan(key, fn)
 				}
 			}()
 			return nil, ctx.Err()
@@ -249,7 +286,7 @@ func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.M
 
 	ret, err, shared := result.Val, result.Err, result.Shared
 	if err != nil && !shared && ret.Opcode < retryMax { // retry
-		r.group.DoChan(q.String(), fn)
+		r.group.DoChan(key, fn)
 	}
 
 	if err == nil {
@@ -363,18 +400,7 @@ func (r *Resolver) lookupIP(ctx context.Context, host string, dnsType uint16) (i
 	query := &D.Msg{}
 	query.SetQuestion(D.Fqdn(host), dnsType)
 
-	msg, err := r.ExchangeContext(ctx, query)
-	if err != nil {
-		return []netip.Addr{}, err
-	}
-
-	ips = msgToIP(msg)
-	ipLength := len(ips)
-	if ipLength == 0 {
-		return []netip.Addr{}, resolver.ErrIPNotFound
-	}
-
-	return
+	return r.lookupIPCached(ctx, host, dnsType)
 }
 
 func (r *Resolver) asyncExchange(ctx context.Context, client []dnsClient, msg *D.Msg) <-chan *result {
@@ -397,6 +423,9 @@ func (r *Resolver) Invalid() bool {
 func (r *Resolver) ClearCache() {
 	if r != nil && r.cache != nil {
 		r.cache.Clear()
+	}
+	if r != nil && r.ipCache != nil {
+		r.ipCache.Clear()
 	}
 }
 
@@ -495,9 +524,22 @@ func (config Config) newCache() dnsCache {
 	}
 	switch config.CacheAlgorithm {
 	case "arc":
-		return arc.New(arc.WithSize[string, *D.Msg](config.CacheMaxSize))
+		return arc.New(arc.WithSize[dnsCacheKey, *D.Msg](config.CacheMaxSize))
 	default:
-		return lru.New(lru.WithSize[string, *D.Msg](config.CacheMaxSize), lru.WithStale[string, *D.Msg](true))
+		return lru.New(lru.WithSize[dnsCacheKey, *D.Msg](config.CacheMaxSize), lru.WithStale[dnsCacheKey, *D.Msg](true))
+	}
+}
+
+func (config Config) newIPCache() parsedIPCache {
+	maxSize := config.CacheMaxSize
+	if maxSize == 0 {
+		maxSize = 4096
+	}
+	switch config.CacheAlgorithm {
+	case "arc":
+		return arc.New(arc.WithSize[ipCacheKey, []netip.Addr](maxSize))
+	default:
+		return lru.New(lru.WithSize[ipCacheKey, []netip.Addr](maxSize))
 	}
 }
 
@@ -521,9 +563,10 @@ func (rs Resolvers) ResetConnection() {
 
 func NewResolverFromClient(client dnsClient) *Resolver {
 	return &Resolver{
-		ipv6:  true,
-		main:  []dnsClient{client},
-		cache: Config{}.newCache(),
+		ipv6:    true,
+		main:    []dnsClient{client},
+		cache:   Config{}.newCache(),
+		ipCache: Config{}.newIPCache(),
 	}
 }
 
@@ -531,6 +574,7 @@ func NewResolver(config Config) (rs Resolvers) {
 	defaultResolver := &Resolver{
 		main:        transform(config.Default, nil),
 		cache:       config.newCache(),
+		ipCache:     config.newIPCache(),
 		ipv6Timeout: time.Duration(config.IPv6Timeout) * time.Millisecond,
 	}
 
@@ -602,6 +646,7 @@ func NewResolver(config Config) (rs Resolvers) {
 		ipv6:        config.IPv6,
 		main:        cacheTransform(config.Main),
 		cache:       config.newCache(),
+		ipCache:     config.newIPCache(),
 		ipv6Timeout: time.Duration(config.IPv6Timeout) * time.Millisecond,
 		policy:      makePolicy(config.Policy),
 	}
@@ -613,6 +658,7 @@ func NewResolver(config Config) (rs Resolvers) {
 			ipv6:        config.IPv6,
 			main:        cacheTransform(config.ProxyServer),
 			cache:       config.newCache(),
+			ipCache:     config.newIPCache(),
 			ipv6Timeout: time.Duration(config.IPv6Timeout) * time.Millisecond,
 			policy:      makePolicy(config.ProxyServerPolicy),
 		}
@@ -623,6 +669,7 @@ func NewResolver(config Config) (rs Resolvers) {
 			ipv6:        config.IPv6,
 			main:        cacheTransform(config.DirectServer),
 			cache:       config.newCache(),
+			ipCache:     config.newIPCache(),
 			ipv6Timeout: time.Duration(config.IPv6Timeout) * time.Millisecond,
 		}
 		if config.DirectFollowPolicy {

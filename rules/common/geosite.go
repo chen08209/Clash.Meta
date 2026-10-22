@@ -3,6 +3,7 @@ package common
 import (
 	"fmt"
 
+	commonatomic "github.com/metacubex/mihomo/common/atomic"
 	"github.com/metacubex/mihomo/component/geodata"
 	_ "github.com/metacubex/mihomo/component/geodata/memconservative"
 	"github.com/metacubex/mihomo/component/geodata/router"
@@ -13,9 +14,14 @@ import (
 
 type GEOSITE struct {
 	Base
-	country    string
-	adapter    string
-	recodeSize int
+	country string
+	adapter string
+	matcher commonatomic.TypedValue[cachedGeoSiteMatcher]
+}
+
+type cachedGeoSiteMatcher struct {
+	generation uint64
+	matcher    router.DomainMatcher
 }
 
 func (gs *GEOSITE) RuleType() C.RuleType {
@@ -47,10 +53,17 @@ func (gs *GEOSITE) Payload() string {
 }
 
 func (gs *GEOSITE) GetDomainMatcher() (router.DomainMatcher, error) {
+	if cached, ok := gs.matcher.LoadOk(); ok && cached.generation == geodata.GeoSiteMatcherGeneration() {
+		return cached.matcher, nil
+	}
 	matcher, err := geodata.LoadGeoSiteMatcher(gs.country)
 	if err != nil {
 		return nil, fmt.Errorf("load GeoSite data error, %w", err)
 	}
+	gs.matcher.Store(cachedGeoSiteMatcher{
+		generation: geodata.GeoSiteMatcherGeneration(),
+		matcher:    matcher,
+	})
 	return matcher, nil
 }
 

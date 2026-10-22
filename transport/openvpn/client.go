@@ -15,7 +15,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/metacubex/mihomo/common/contextutils"
 	"github.com/metacubex/tls"
 	"golang.org/x/sync/semaphore"
 )
@@ -1102,7 +1101,7 @@ func operationContextError(ctx context.Context, fallback error) error {
 // later epoch through the reused ControlConn.
 func interruptControlConnOnDone(ctx context.Context, conn io.Closer) func() {
 	done := make(chan struct{})
-	stop := contextutils.AfterFunc(ctx, func() {
+	stop := context.AfterFunc(ctx, func() {
 		defer close(done)
 		_ = conn.Close()
 	})

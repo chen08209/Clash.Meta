@@ -1,20 +1,33 @@
 package shadowsocks
 
 import (
-	"bytes"
-	"errors"
 	"net"
+	"net/netip"
 
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/transport/socks5"
 
 	"github.com/metacubex/mhurl"
 )
 
+// The wrapper is allocated per datagram on purpose: a flow keeps the packet it
+// last handed the sender so replies can be written back through it, and Drop
+// runs long before that flow ends. Recycling the object here would let the next
+// datagram claim it and move those replies onto another client's socket.
+func newSSPacket(pc net.PacketConn, rAddr net.Addr, data, payload []byte) *packet {
+	return &packet{
+		pc:      pc,
+		rAddr:   rAddr,
+		data:    data,
+		payload: payload,
+	}
+}
+
 type packet struct {
 	pc      net.PacketConn
 	rAddr   net.Addr
+	data    []byte
 	payload []byte
-	put     func()
 }
 
 func (c *packet) Data() []byte {
@@ -22,12 +35,13 @@ func (c *packet) Data() []byte {
 }
 
 // WriteBack wirtes UDP packet with source(ip, port) = `addr`
-func (c *packet) WriteBack(b []byte, addr net.Addr) (n int, err error) {
-	if addr == nil {
-		err = errors.New("address is invalid")
+func (c *packet) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
+	buf := pool.Get(socks5.UDPPacketHeadroom + len(b))
+	defer pool.Put(buf)
+	packet, err := socks5.EncodeUDPPacketInto(buf, addr, b)
+	if err != nil {
 		return
 	}
-	packet := bytes.Join([][]byte{socks5.ParseAddrToSocksAddr(addr), b}, []byte{})
 	return c.pc.WriteTo(packet, c.rAddr)
 }
 
@@ -37,10 +51,11 @@ func (c *packet) LocalAddr() net.Addr {
 }
 
 func (c *packet) Drop() {
-	if c.put != nil {
-		c.put()
-		c.put = nil
+	if c.data == nil {
+		return
 	}
+	_ = pool.Put(c.data)
+	c.data = nil
 	c.payload = nil
 }
 

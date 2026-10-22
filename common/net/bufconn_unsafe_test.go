@@ -77,6 +77,17 @@ func TestBufferedConnGrow(t *testing.T) {
 	assert.Equal(t, initialSize, conn.Reader().Size())
 }
 
+func TestBufferedConnReadsWithoutBufferedReader(t *testing.T) {
+	conn := NewBufferedConn(&testReaderConn{Reader: bytes.NewReader([]byte("direct"))})
+	require.Nil(t, conn.r)
+
+	data := make([]byte, 6)
+	_, err := io.ReadFull(conn, data)
+	require.NoError(t, err)
+	require.Equal(t, "direct", string(data))
+	require.Nil(t, conn.r)
+}
+
 func TestBufferedConnAppendData(t *testing.T) {
 	t.Run("prepends to unread underlying data", func(t *testing.T) {
 		conn := NewBufferedConn(&testReaderConn{Reader: bytes.NewReader([]byte("underlying"))})
@@ -89,6 +100,7 @@ func TestBufferedConnAppendData(t *testing.T) {
 
 	t.Run("slides buffered data to make room", func(t *testing.T) {
 		conn := NewBufferedConn(&testReaderConn{Reader: bytes.NewReader(bytes.Repeat([]byte("a"), 4096))})
+		conn.Grow(4096)
 		_, err := conn.Peek(4096)
 		require.NoError(t, err)
 		_, err = conn.Discard(2048)
@@ -104,6 +116,7 @@ func TestBufferedConnAppendData(t *testing.T) {
 		original := bytes.Repeat([]byte("a"), 4096)
 		appended := bytes.Repeat([]byte("b"), 2048)
 		conn := NewBufferedConn(&testReaderConn{Reader: bytes.NewReader(original)})
+		conn.Grow(4096)
 		_, err := conn.Peek(4096)
 		require.NoError(t, err)
 		_, err = conn.Discard(1024)
@@ -162,6 +175,7 @@ func TestBufferedConnPrependData(t *testing.T) {
 		original := bytes.Repeat([]byte("a"), 4096)
 		prepended := bytes.Repeat([]byte("b"), 1024)
 		conn := NewBufferedConn(&testReaderConn{Reader: bytes.NewReader(original)})
+		conn.Grow(len(original))
 		_, err := conn.Peek(len(original))
 		require.NoError(t, err)
 		_, err = conn.Discard(2048)
@@ -178,6 +192,7 @@ func TestBufferedConnPrependData(t *testing.T) {
 		original := bytes.Repeat([]byte("a"), 2048)
 		prepended := bytes.Repeat([]byte("b"), 1024)
 		conn := NewBufferedConn(&testReaderConn{Reader: bytes.NewReader(original)})
+		conn.Grow(len(original))
 		_, err := conn.Peek(len(original))
 		require.NoError(t, err)
 		conn.PrependData(prepended)
@@ -192,6 +207,7 @@ func TestBufferedConnPrependData(t *testing.T) {
 		original := bytes.Repeat([]byte("a"), 4096)
 		prepended := bytes.Repeat([]byte("b"), 2048)
 		conn := NewBufferedConn(&testReaderConn{Reader: bytes.NewReader(original)})
+		conn.Grow(len(original))
 		_, err := conn.Peek(len(original))
 		require.NoError(t, err)
 		conn.PrependData(prepended)

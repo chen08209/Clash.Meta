@@ -20,7 +20,6 @@ jobs:
         os:
           - 'ubuntu-latest' # amd64 linux
           - 'windows-latest' # amd64 windows
-          - 'macos-latest' # arm64 macos
           - 'ubuntu-24.04-arm' # arm64 linux
           - 'windows-11-arm' # arm64 windows
           - 'macos-26-intel' # amd64 macos
@@ -28,10 +27,7 @@ jobs:
           - '1.26'
           - '1.25'
           - '1.24'
-          - '1.23'
-          - '1.22'
-          - '1.21'
-          - '1.20'
+          - '1.27.1'
       fail-fast: false
     runs-on: ${{ matrix.os }}
     defaults:
@@ -50,7 +46,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
-          go-download-base-url: 'https://github.com/MetaCubeX/go/releases/download/build'
+          go-download-base-url: ${{ matrix.go-version == '1.27.1' && 'https://go.dev/dl' || 'https://github.com/MetaCubeX/go/releases/download/build' }}
           go-version: ${{ matrix.go-version }}
 
       - name: Verify Go installation

@@ -7,9 +7,6 @@ import (
 	"github.com/metacubex/mihomo/adapter/inbound"
 	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
-	"github.com/metacubex/mihomo/transport/socks5"
-
-	"golang.org/x/exp/slices"
 )
 
 type UDPListener struct {
@@ -83,27 +80,21 @@ func NewUDP(addr string, tunnel C.Tunnel, additions ...inbound.Addition) (*UDPLi
 			}
 
 			dscp, _ := getDSCP(oob[:oobn])
-			additions := append(slices.Clip(additions), inbound.WithDSCP(dscp)) // don't change outside additions
 
 			if rAddr.Addr().Is4() {
 				// try to unmap 4in6 address
 				lAddr = netip.AddrPortFrom(lAddr.Addr().Unmap(), lAddr.Port())
 			}
-			handlePacketConn(l, tunnel, buf[:n], lAddr, rAddr, additions...)
+			handlePacketConn(l, tunnel, buf[:n], lAddr, rAddr, dscp, additions...)
 		}
 	}()
 
 	return rl, nil
 }
 
-func handlePacketConn(pc net.PacketConn, tunnel C.Tunnel, buf []byte, lAddr, rAddr netip.AddrPort, additions ...inbound.Addition) {
-	target := socks5.AddrFromStdAddrPort(rAddr)
-	pkt := &packet{
-		pc:        pc,
-		lAddr:     lAddr,
-		buf:       buf,
-		tunnel:    tunnel,
-		additions: additions,
-	}
-	tunnel.HandleUDPPacket(inbound.NewPacket(target, pkt, C.TPROXY, additions...))
+func handlePacketConn(pc net.PacketConn, tunnel C.Tunnel, buf []byte, lAddr, rAddr netip.AddrPort, dscp uint8, additions ...inbound.Addition) {
+	pkt := newTproxyPacket(pc, lAddr, buf, tunnel, additions)
+	_, metadata := inbound.NewPacketFromAddrPort(rAddr, pkt, C.TPROXY, additions...)
+	metadata.DSCP = dscp
+	tunnel.HandleUDPPacket(pkt, metadata)
 }

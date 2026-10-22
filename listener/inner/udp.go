@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -31,12 +32,14 @@ func (a innerUDPAddr) String() string  { return a.address }
 
 type innerUDPDatagram struct {
 	data []byte
-	addr net.Addr
+	addr netip.AddrPort
 }
 
 type innerUDPPacketConn struct {
 	tunnel    C.Tunnel
 	proxy     string
+	target    socks5.Addr
+	metadata  *C.Metadata
 	localAddr net.Addr
 	readChan  chan innerUDPDatagram
 	done      chan struct{}
@@ -60,17 +63,28 @@ func HandleUdp(tunnel C.Tunnel, network, address, proxy string) (net.PacketConn,
 	if socks5.ParseAddr(address) == nil {
 		return nil, nil, fmt.Errorf("invalid target address %s", address)
 	}
+	target := socks5.ParseAddr(address)
 
 	id := innerUDPConnID.Add(1)
 	conn := &innerUDPPacketConn{
 		tunnel:        tunnel,
 		proxy:         proxy,
+		target:        target,
 		localAddr:     innerUDPAddr{network: network, address: fmt.Sprintf("inner-udp-%d", id)},
 		readChan:      make(chan innerUDPDatagram, innerUDPQueueSize),
 		done:          make(chan struct{}),
 		readDeadline:  deadline.MakePipeDeadline(),
 		writeDeadline: deadline.MakePipeDeadline(),
 	}
+	// The target is fixed per conn, so the metadata is parsed once and shared
+	// by every datagram; only the tunnel's worker goroutine touches it after
+	// handoff and its in-place fixes are idempotent.
+	probe := &innerUDPPacket{conn: conn}
+	_, metadata := inbound.NewPacket(target, probe, C.INNER)
+	metadata.DNSMode = C.DNSNormal
+	metadata.Process = C.MihomoName
+	metadata.SpecialProxy = proxy
+	conn.metadata = metadata
 	return conn, innerUDPAddr{network: network, address: address}, nil
 }
 
@@ -84,9 +98,9 @@ func (c *innerUDPPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 		n := copy(p, datagram.data)
 		_ = pool.Put(datagram.data)
 		if n < len(datagram.data) {
-			return n, datagram.addr, io.ErrShortBuffer
+			return n, net.UDPAddrFromAddrPort(datagram.addr), io.ErrShortBuffer
 		}
-		return n, datagram.addr, nil
+		return n, net.UDPAddrFromAddrPort(datagram.addr), nil
 	}
 }
 
@@ -102,18 +116,10 @@ func (c *innerUDPPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	default:
 	}
 
-	target := socks5.ParseAddr(addr.String())
-	if target == nil {
-		return 0, fmt.Errorf("invalid target address %s", addr)
-	}
 	data := pool.Get(len(p))
 	copy(data, p)
 	udpPacket := &innerUDPPacket{conn: c, data: data}
-	packet, metadata := inbound.NewPacket(target, udpPacket, C.INNER)
-	metadata.DNSMode = C.DNSNormal
-	metadata.Process = C.MihomoName
-	metadata.SpecialProxy = c.proxy
-	c.tunnel.HandleUDPPacket(packet, metadata)
+	c.tunnel.HandleUDPPacket(udpPacket, c.metadata)
 	return len(p), nil
 }
 
@@ -153,7 +159,7 @@ func (c *innerUDPPacketConn) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
-func (c *innerUDPPacketConn) writeBack(data []byte, addr net.Addr) (int, error) {
+func (c *innerUDPPacketConn) writeBack(data []byte, addr netip.AddrPort) (int, error) {
 	payload := pool.Get(len(data))
 	copy(payload, data)
 
@@ -178,7 +184,7 @@ type innerUDPPacket struct {
 
 func (p *innerUDPPacket) Data() []byte { return p.data }
 
-func (p *innerUDPPacket) WriteBack(data []byte, addr net.Addr) (int, error) {
+func (p *innerUDPPacket) WriteBack(data []byte, addr netip.AddrPort) (int, error) {
 	return p.conn.writeBack(data, addr)
 }
 
@@ -186,6 +192,9 @@ func (p *innerUDPPacket) LocalAddr() net.Addr { return p.conn.localAddr }
 func (p *innerUDPPacket) InAddr() net.Addr    { return p.conn.localAddr }
 
 func (p *innerUDPPacket) Drop() {
+	if p.data == nil {
+		return
+	}
 	_ = pool.Put(p.data)
 	p.data = nil
 }

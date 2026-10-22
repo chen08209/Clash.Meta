@@ -586,6 +586,20 @@ func (c Address) UDPAddr() *net.UDPAddr {
 	}
 }
 
+func (c Address) AddrPort() netip.AddrPort {
+	switch c.TYPE {
+	case AtypIPv4:
+		var ip [net.IPv4len]byte
+		_ = copy(ip[:], c.ADDR)
+		return netip.AddrPortFrom(netip.AddrFrom4(ip), c.PORT)
+	case AtypIPv6:
+		var ip [net.IPv6len]byte
+		_ = copy(ip[:], c.ADDR)
+		return netip.AddrPortFrom(netip.AddrFrom16(ip), c.PORT)
+	}
+	return netip.AddrPort{}
+}
+
 func (c Address) BytesLen() int {
 	return 1 + len(c.ADDR) + 2
 }
