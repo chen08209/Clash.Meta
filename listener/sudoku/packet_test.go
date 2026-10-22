@@ -6,6 +6,7 @@ import (
 
 	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
+	"github.com/metacubex/mihomo/transport/socks5"
 	tsudoku "github.com/metacubex/mihomo/transport/sudoku"
 	"github.com/stretchr/testify/require"
 )
@@ -36,11 +37,12 @@ func TestNewPacketAdapterOnUoTPacketSkipsTheUDPAddr(t *testing.T) {
 
 func BenchmarkUoTPacketDrop(b *testing.B) {
 	source := netip.MustParseAddrPort("192.168.1.2:54321")
+	addr := socks5.ParseAddr("8.8.8.8:53")
 	writer := new(tsudoku.UoTPacketConn)
 
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		pkt := newUoTPacket(pool.Get(64), writer, source)
+		pkt := newUoTPacket(addr, pool.Get(64), writer, source)
 		pkt.Drop()
 	}
 }

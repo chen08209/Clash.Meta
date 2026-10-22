@@ -13,7 +13,6 @@ import (
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	N "github.com/metacubex/mihomo/common/net"
-	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
 	LC "github.com/metacubex/mihomo/listener/config"
 	"github.com/metacubex/mihomo/listener/inner"
@@ -172,7 +171,7 @@ func (l *Listener) handleUoTSession(conn net.Conn, tunnel C.Tunnel, additions ..
 	remoteAddr := conn.RemoteAddr()
 
 	for {
-		addrStr, payload, err := sudoku.ReadDatagram(conn)
+		addr, payload, err := sudoku.ReadDatagram(conn)
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
 				log.Debugln("[Sudoku][UoT] session closed: %v", err)
@@ -181,23 +180,18 @@ func (l *Listener) handleUoTSession(conn net.Conn, tunnel C.Tunnel, additions ..
 			return
 		}
 
-		target := socks5.ParseAddr(addrStr)
-		if target == nil {
-			log.Debugln("[Sudoku][UoT] drop invalid target: %s", addrStr)
-			continue
-		}
-
-		cPacket := newUoTPacket(payload, writer, N.AddrPortFromNetAddr(remoteAddr))
-		tunnel.HandleUDPPacket(inbound.NewPacket(target, cPacket, C.SUDOKU, additions...))
+		cPacket := newUoTPacket(addr, payload, writer, N.AddrPortFromNetAddr(remoteAddr))
+		tunnel.HandleUDPPacket(inbound.NewPacket(addr, cPacket, C.SUDOKU, additions...))
 	}
 }
 
 // A wrapper is returned only by Drop, the tunnel contract's single release point.
 var uotPacketPool = sync.Pool{New: func() any { return new(uotPacket) }}
 
-func newUoTPacket(payload []byte, writer *sudoku.UoTPacketConn, source netip.AddrPort) *uotPacket {
+func newUoTPacket(addr socks5.Addr, payload []byte, writer *sudoku.UoTPacketConn, source netip.AddrPort) *uotPacket {
 	packet := uotPacketPool.Get().(*uotPacket)
 	*packet = uotPacket{
+		addr:    addr,
 		payload: payload,
 		writer:  writer,
 		source:  source,
@@ -206,6 +200,7 @@ func newUoTPacket(payload []byte, writer *sudoku.UoTPacketConn, source netip.Add
 }
 
 type uotPacket struct {
+	addr    socks5.Addr
 	payload []byte
 	writer  *sudoku.UoTPacketConn
 	source  netip.AddrPort
@@ -225,10 +220,11 @@ func (p *uotPacket) WriteBack(b []byte, addr netip.AddrPort) (int, error) {
 }
 
 func (p *uotPacket) Drop() {
-	if p.payload == nil {
+	if p.addr == nil && p.payload == nil {
 		return
 	}
-	_ = pool.Put(p.payload)
+	sudoku.ReleaseDatagram(p.addr, p.payload)
+	p.addr = nil
 	p.payload = nil
 	p.writer = nil
 	uotPacketPool.Put(p)

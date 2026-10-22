@@ -769,3 +769,23 @@ direct path against 12.39-17.65us / 96-97 B / 2 allocs on the pipe path.
 - [x] Benchmark both packet lifecycles before and after with `benchstat`.
 - [x] Run Sudoku, inner, transport, and tunnel tests with `-race`.
 - [x] Run the full main-module suite.
+
+### Task 47: Keep Sudoku UoT Addresses As SOCKS Bytes
+
+**Files:**
+- Modify: `transport/sudoku/uot.go`
+- Modify: `listener/sudoku/server.go`
+- Test: `transport/sudoku/uot_bench_test.go`, `transport/sudoku/*_test.go`
+
+**Interfaces:**
+- Produces: a UoT datagram API using `socks5.Addr` directly and pooled
+  address/payload buffers.
+- Preserves: UoT framing, IP/domain target handling, write-back ordering, and
+  the `Drop` release point.
+
+- [x] Remove the address-to-string-to-address round trip.
+- [x] Parse and return SOCKS address bytes directly.
+- [x] Return address and payload buffers through `ReleaseDatagram`.
+- [x] Benchmark datagram reads before and after with `benchstat`.
+- [x] Run Sudoku transport/listener and tunnel tests with `-race`.
+- [x] Run the full main-module suite.

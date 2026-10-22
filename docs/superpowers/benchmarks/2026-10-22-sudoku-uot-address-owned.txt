@@ -1,0 +1,14 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/transport/sudoku
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkReadDatagram-16    	 3770103	       322.2 ns/op	     193 B/op	      10 allocs/op
+BenchmarkReadDatagram-16    	 2324517	       951.6 ns/op	     195 B/op	      10 allocs/op
+BenchmarkReadDatagram-16    	 1000000	      1048 ns/op	     194 B/op	      10 allocs/op
+BenchmarkReadDatagram-16    	 2805898	       392.7 ns/op	     193 B/op	      10 allocs/op
+BenchmarkReadDatagram-16    	 2890910	       558.0 ns/op	     194 B/op	      10 allocs/op
+BenchmarkReadDatagram-16    	 2111824	       971.0 ns/op	     193 B/op	      10 allocs/op
+BenchmarkReadDatagram-16    	 2694460	       449.2 ns/op	     193 B/op	      10 allocs/op
+BenchmarkReadDatagram-16    	 2342068	       464.1 ns/op	     193 B/op	      10 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/transport/sudoku	17.034s

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/metacubex/mihomo/transport/socks5"
 	sudokuobfs "github.com/metacubex/mihomo/transport/sudoku/obfs/sudoku"
 )
 
@@ -205,7 +206,7 @@ func runPackedUoTSession(id int, cfg *ProtocolConfig, errCh chan<- error) {
 			serverErr <- fmt.Errorf("unexpected session type: %v", session.Type)
 			return
 		}
-		if err := WriteDatagram(session.Conn, target, payload); err != nil {
+		if err := WriteDatagram(session.Conn, socks5.ParseAddr(target), payload); err != nil {
 			serverErr <- fmt.Errorf("server write datagram: %w", err)
 			return
 		}
@@ -231,7 +232,7 @@ func runPackedUoTSession(id int, cfg *ProtocolConfig, errCh chan<- error) {
 		errCh <- fmt.Errorf("client read datagram: %w", err)
 		return
 	}
-	if addr != target {
+	if addr.String() != target {
 		errCh <- fmt.Errorf("uot target mismatch want %s got %s", target, addr)
 		return
 	}
