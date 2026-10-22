@@ -69,11 +69,12 @@ papered over with getter-only tests.
 | `1a927214` | precompute the udp dns client transport | udp exchange 23 -> 22 allocs (p=0.000, n=12); the localhost round trip swamped the time delta, so the allocation count is the gate |
 | `e1652693` | read udp through the conn poller | read gate 137 B / 6 allocs -> 0 B / 0 allocs per datagram (p=0.000, n=12); the 1500-byte read 12.93us -> 9.36us and 110.6 -> 153.1 MiB/s (p=0.005, n=12) |
 | `eb5e6bcaa` | recycle generic packet adapters, Snell UDP flow state and Hysteria hop wrappers | adapter warm path 1 -> 0 allocs; Snell warm datagram 0 B / 0 allocs; Hysteria queue wrapper 32 B / 1 alloc -> 0 B / 0 allocs and 21.04-23.29 ns vs 32.46-35.47 ns |
-| `5fce390e9` | allocate the UDP packet wrappers, the packet adapter and the Snell wrapper per datagram again | the pooling above did not survive being the flow's write-back target: the flow answers through the last packet the sender handed it, the sender drops that object as soon as it processed it, and the next datagram then claimed it. The generic adapter was the worst case - clearing its wrapped packet on Drop made the reply path panic on a nil UDPPacket. `listener/socks/writeback_target_test.go` covers the adapter path and fails on the pooled tree; the read buffers and the Snell flow-metadata cache stay |
+| `5fce390e9` + `1c277c6f8` | allocate the UDP packet wrappers, the packet adapter and the Snell wrapper per datagram again | the pooling above did not survive being the flow's write-back target: the flow answers through the last packet the sender handed it, the sender drops that object as soon as it processed it, and the next datagram then claimed it. The generic adapter was the worst case - clearing its wrapped packet on Drop made the reply path panic on a nil UDPPacket, which `1c277c6f8` fixes. `listener/socks/writeback_target_test.go` covers the adapter path and fails on the pooled tree; the read buffers and the Snell flow-metadata cache stay |
 
 The wrapper-pooling rows `4940fbb70`, `e99565b3f`, `b02ab5bbf`, `53f04488c`,
 `b975184df` and `99c4773b`, plus the wrapper half of `72a7590e5` and the adapter
-and Snell-wrapper halves of `eb5e6bcaa`, are superseded by `5fce390e9`. Their
+and Snell-wrapper halves of `eb5e6bcaa`, are superseded by `5fce390e9` and
+`1c277c6f8`. Their
 allocation numbers stand as measurements, but the object
 recycling they introduced cannot stay: the packet outlives `Drop` as its flow's
 write-back target, which is what `Drop`'s contract in `constant/adapters.go`
