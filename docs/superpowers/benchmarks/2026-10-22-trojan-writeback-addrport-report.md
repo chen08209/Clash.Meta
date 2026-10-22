@@ -8,7 +8,7 @@ Environment:
 - CPU: Intel Core i9-9900 CPU @ 3.10GHz
 - Go: `go1.27.1`
 - Baseline: `999a6f0ec`
-- Change: `1acea74e3`
+- Change: `a18015a0c`
 
 ## Change
 
