@@ -20,8 +20,9 @@ focused test, a benchmark or both.
 | `tunnel` | 59.2% | rule index, packet flow key, deadlines, sender mapping, metadata template, the mode and status text round trips, and the all-proxies cache: the up-to-date check against missing, extra and bumped providers, the rebuild that follows a version, the explicit drop, and both provider snapshots |
 | `component/nat` | 98.4% | binary flow keys, allocation-free local-conn lookup, the string-keyed flow lifecycle with its invalid-key no-ops, the typed load, and the local-conn lock lifecycle from creation through reuse to the fresh lock after a drop |
 | `tunnel/statistic` | 78.0% | stripes, tracker lifecycle, snapshot, the tcp tracker's read/write accounting in both directions with and without a manager push, the udp tracker's packet accounting over a live socket pair, the join/leave lifecycle through the snapshot, and the now/total traffic readers |
-| `listener/socks` | 20.3% | per-flow metadata cache identity, split targets, warm-path benchmark, and the packet adapter's payload passthrough with the return-once drop of its pooled buffer |
+| `listener/socks` | 33.8% | the listener's full round trip over a real udp socket (socks5 framing in, flow handling, the write-back answer out), the flow write-back surviving Drop, per-flow metadata cache identity, split targets, the warm-path benchmark, and the packet adapter's payload passthrough with the return-once drop of its buffer |
 | `listener/shadowsocks` | 26.0% | per-flow metadata cache identity, split targets, the unresolved-header drop, the warm-path 0-alloc benchmark, and the packet adapter's write-back encoding with the return-once drop of its pooled buffer |
+| `listener/tunnel` | 51.6% | the listener's udp round trip over a real socket (a datagram carried to the target it was opened with and answered back to its client), the wrapper's buffer release, and the flow key it hands the tunnel |
 | `dns` | 31.0% | cache keys, parsed-ip cache, conn pool, exchange errors, the rcode transport codes, the disable-types and edns0-subnet client wrappers including their param tables, the log-string shapes, and the resolver enhancer: mode gating, the fake-ip range against the reserved addresses, the mapping round trip, the ipv6 pool, flush and the reload patch |
 | `hub/route` | 15.6% | real-listener auth matrix, hello/version, read endpoints, provider and group reads with their render keys, and the not-found paths of the proxy and provider lookups plus the unknown-connection close |
 | `component/process` | 32.3% | cache hits, expiry, failure handling, 53ns hit benchmark, the find-process-mode text round trips, the invalid-network rejection through the public entry, and the package-name resolver delegation |
@@ -68,8 +69,16 @@ papered over with getter-only tests.
 | `1a927214` | precompute the udp dns client transport | udp exchange 23 -> 22 allocs (p=0.000, n=12); the localhost round trip swamped the time delta, so the allocation count is the gate |
 | `e1652693` | read udp through the conn poller | read gate 137 B / 6 allocs -> 0 B / 0 allocs per datagram (p=0.000, n=12); the 1500-byte read 12.93us -> 9.36us and 110.6 -> 153.1 MiB/s (p=0.005, n=12) |
 | `eb5e6bcaa` | recycle generic packet adapters, Snell UDP flow state and Hysteria hop wrappers | adapter warm path 1 -> 0 allocs; Snell warm datagram 0 B / 0 allocs; Hysteria queue wrapper 32 B / 1 alloc -> 0 B / 0 allocs and 21.04-23.29 ns vs 32.46-35.47 ns |
-| `078e94db` | pool Sudoku UoT and inner UDP payload/wrapper objects through Drop | Sudoku 128 B / 2 allocs -> 0 B / 0 allocs; inner 32 B / 1 alloc -> 0 B / 0 allocs (p=0.000, n=8) |
-| `d0a8e536` | keep Sudoku UoT addresses as SOCKS bytes and pool address/payload buffers | datagram read 193 B / 10 allocs -> 4 B / 1 alloc, -66.12% seconds (p=0.000, n=8) |
+| `5fce390e9` + `1c277c6f8` | allocate the UDP packet wrappers, the packet adapter and the Snell wrapper per datagram again | the pooling above did not survive being the flow's write-back target: the flow answers through the last packet the sender handed it, the sender drops that object as soon as it processed it, and the next datagram then claimed it. The generic adapter was the worst case - clearing its wrapped packet on Drop made the reply path panic on a nil UDPPacket, which `1c277c6f8` fixes. `listener/socks/writeback_target_test.go` covers the adapter path and fails on the pooled tree; the read buffers and the Snell flow-metadata cache stay |
+
+The wrapper-pooling rows `4940fbb70`, `e99565b3f`, `b02ab5bbf`, `53f04488c`,
+`b975184df` and `99c4773b`, plus the wrapper half of `72a7590e5` and the adapter
+and Snell-wrapper halves of `eb5e6bcaa`, are superseded by `5fce390e9` and
+`1c277c6f8`. Their
+allocation numbers stand as measurements, but the object
+recycling they introduced cannot stay: the packet outlives `Drop` as its flow's
+write-back target, which is what `Drop`'s contract in `constant/adapters.go`
+now spells out.
 
 ## Dead-code ledger
 

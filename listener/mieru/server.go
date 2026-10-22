@@ -5,7 +5,6 @@ import (
 	"io"
 	"net"
 	"net/netip"
-	"sync"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	N "github.com/metacubex/mihomo/common/net"
@@ -87,18 +86,17 @@ func handleMieruUDPPacket(pc net.PacketConn, tunnel C.Tunnel, data []byte, addr 
 	tunnel.HandleUDPPacket(inbound.NewPacket(target, packet, C.MIERU, additions...))
 }
 
-// A wrapper is returned only by Drop, the tunnel contract's single release point.
-var mieruPacketPool = sync.Pool{New: func() interface{} { return new(packet) }}
-
+// The wrapper is allocated per datagram on purpose: a flow keeps the packet it
+// last handed the sender so replies can be written back through it, and Drop
+// runs long before that flow ends. Recycling the object here would let the next
+// datagram claim it and move those replies onto another client's socket.
 func newMieruPacket(pc net.PacketConn, udpAddr *net.UDPAddr, data, payload []byte) *packet {
-	mieruPacket := mieruPacketPool.Get().(*packet)
-	*mieruPacket = packet{
+	return &packet{
 		pc:      pc,
 		udpAddr: udpAddr,
 		data:    data,
 		payload: payload,
 	}
-	return mieruPacket
 }
 
 type packet struct {
@@ -132,7 +130,6 @@ func (c *packet) Drop() {
 	_ = pool.Put(c.data)
 	c.data = nil
 	c.payload = nil
-	mieruPacketPool.Put(c)
 }
 
 func (c *packet) LocalAddr() net.Addr {

@@ -61,7 +61,7 @@ func newSnellTestSession(tb testing.TB, tunnel C.Tunnel) *snellUDPSession {
 	}
 }
 
-func TestSnellUDPFlowCacheReusesMetadataAndWrappers(t *testing.T) {
+func TestSnellUDPFlowCacheReusesMetadata(t *testing.T) {
 	tunnel := &snellCaptureTunnel{}
 	session := newSnellTestSession(t, tunnel)
 	session.clientID = "udp-client"
@@ -85,8 +85,10 @@ func TestSnellUDPFlowCacheReusesMetadataAndWrappers(t *testing.T) {
 
 	for _, wrapper := range tunnel.wrappers {
 		require.Nil(t, wrapper.data)
-		require.Nil(t, wrapper.conn)
-		require.Nil(t, wrapper.writeMu)
+		// The flow answers its replies through the last wrapper the sender saw,
+		// so Drop may release the payload but has to leave these in place.
+		require.NotNil(t, wrapper.conn)
+		require.NotNil(t, wrapper.writeMu)
 	}
 }
 
@@ -124,7 +126,7 @@ func TestSnellPacketDropIsAllocationFree(t *testing.T) {
 	require.Zero(t, allocations)
 }
 
-func TestSnellUDPHandleIsAllocationFree(t *testing.T) {
+func TestSnellUDPHandleAllocatesOnlyTheWrapper(t *testing.T) {
 	session := newSnellTestSession(t, snellDropTunnel{})
 	request := snell.UDPRequest{
 		Ip:      netip.MustParseAddr("1.2.3.4"),
@@ -136,7 +138,7 @@ func TestSnellUDPHandleIsAllocationFree(t *testing.T) {
 	allocations := testing.AllocsPerRun(100, func() {
 		session.handle(request.Payload, request)
 	})
-	require.Zero(t, allocations)
+	require.EqualValues(t, 1, allocations)
 }
 
 func BenchmarkSnellUDPHandle(b *testing.B) {

@@ -121,7 +121,7 @@ func TestShadowSocksUDPFlowCacheSplitsTargets(t *testing.T) {
 	require.EqualValues(t, 8443, tunnel.metadatas[1].DstPort)
 }
 
-func TestShadowSocksUDPPacketWrappersAreRecycled(t *testing.T) {
+func TestShadowSocksUDPPacketWrappersReleaseTheirBuffers(t *testing.T) {
 	tunnel := &ssRecycleTunnel{}
 	listener := newShadowSocksTestListener()
 	conn := ssFakePacketConn{}

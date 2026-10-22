@@ -3,7 +3,6 @@ package shadowsocks
 import (
 	"net"
 	"net/netip"
-	"sync"
 
 	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/transport/socks5"
@@ -11,18 +10,17 @@ import (
 	"github.com/metacubex/mhurl"
 )
 
-// A wrapper is returned only by Drop, the tunnel contract's single release point.
-var ssPacketPool = sync.Pool{New: func() interface{} { return new(packet) }}
-
+// The wrapper is allocated per datagram on purpose: a flow keeps the packet it
+// last handed the sender so replies can be written back through it, and Drop
+// runs long before that flow ends. Recycling the object here would let the next
+// datagram claim it and move those replies onto another client's socket.
 func newSSPacket(pc net.PacketConn, rAddr net.Addr, data, payload []byte) *packet {
-	ssPacket := ssPacketPool.Get().(*packet)
-	*ssPacket = packet{
+	return &packet{
 		pc:      pc,
 		rAddr:   rAddr,
 		data:    data,
 		payload: payload,
 	}
-	return ssPacket
 }
 
 type packet struct {
@@ -59,7 +57,6 @@ func (c *packet) Drop() {
 	_ = pool.Put(c.data)
 	c.data = nil
 	c.payload = nil
-	ssPacketPool.Put(c)
 }
 
 func (c *packet) InAddr() net.Addr {

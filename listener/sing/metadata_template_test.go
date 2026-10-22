@@ -146,7 +146,7 @@ func BenchmarkNewPacketConnectionDatagramBatch(b *testing.B) {
 	}
 }
 
-func TestNewPacketConnectionRecyclesPacketWrappers(t *testing.T) {
+func TestNewPacketConnectionReleasesPacketBuffersAndKeepsWrappersApart(t *testing.T) {
 	dest := M.SocksaddrFrom(netip.MustParseAddr("1.2.3.4"), 443)
 	source := M.SocksaddrFrom(netip.MustParseAddr("192.168.1.2"), 54321)
 	tunnel := &recycleTunnel{}
@@ -161,11 +161,15 @@ func TestNewPacketConnectionRecyclesPacketWrappers(t *testing.T) {
 	require.True(t, err == nil || errors.Is(err, io.EOF), "unexpected error: %v", err)
 
 	require.Len(t, tunnel.wrappers, 3)
-	if !raceEnabled {
-		require.Same(t, tunnel.wrappers[0], tunnel.wrappers[1])
-		require.Same(t, tunnel.wrappers[0], tunnel.wrappers[2])
-	}
 	require.Equal(t, []byte("first"), tunnel.data[0])
 	require.Equal(t, []byte("second"), tunnel.data[1])
 	require.Equal(t, []byte("third"), tunnel.data[2])
+	// Each datagram gets its own wrapper: a flow keeps the packet it last sent
+	// so it can answer replies through it, and a recycled wrapper would move
+	// those replies onto whichever datagram claimed it.
+	require.NotSame(t, tunnel.wrappers[0], tunnel.wrappers[1])
+	require.NotSame(t, tunnel.wrappers[0], tunnel.wrappers[2])
+	for _, wrapper := range tunnel.wrappers {
+		require.Nil(t, wrapper.buff)
+	}
 }

@@ -31,8 +31,6 @@ import (
 const UDPTimeout = 5 * time.Minute
 const ICMPTimeout = 10 * time.Second
 
-// A wrapper is returned only by Drop, the tunnel contract's single release point.
-var singPacketPool = sync.Pool{New: func() interface{} { return new(packet) }}
 var singBufferPool sync.Pool
 
 type ListenerConfig struct {
@@ -284,15 +282,17 @@ func (s *packetWriterState) writeBack(b []byte, addr netip.AddrPort) (n int, err
 	return s.writer.WriteTo(b, net.UDPAddrFromAddrPort(addr))
 }
 
+// The wrapper is allocated per datagram on purpose: a flow keeps the packet it
+// last handed the sender so replies can be written back through it, and Drop
+// runs long before that flow ends. Recycling the object here would let the next
+// datagram claim it and move those replies onto another client's socket.
 func newSingPacket(state *packetWriterState, source netip.AddrPort, lAddr net.Addr, buff *buf.Buffer) *packet {
-	singPacket := singPacketPool.Get().(*packet)
-	*singPacket = packet{
+	return &packet{
 		state:  state,
 		source: source,
 		lAddr:  lAddr,
 		buff:   buff,
 	}
-	return singPacket
 }
 
 func newSingBuffer(rwOptions network.ReadWaitOptions) *buf.Buffer {
@@ -352,7 +352,6 @@ func (c *packet) Drop() {
 	c.buff = nil
 	buff.Reset()
 	singBufferPool.Put(buff)
-	singPacketPool.Put(c)
 }
 
 func (c *packet) InAddr() net.Addr {

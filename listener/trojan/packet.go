@@ -3,25 +3,23 @@ package trojan
 import (
 	"net"
 	"net/netip"
-	"sync"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
 )
 
-// A wrapper is returned only by Drop, the tunnel contract's single release point.
-var trojanPacketPool = sync.Pool{New: func() any { return new(packet) }}
-
+// The wrapper is allocated per datagram on purpose: a flow keeps the packet it
+// last handed the sender so replies can be written back through it, and Drop
+// runs long before that flow ends. Recycling the object here would let the next
+// datagram claim it and move those replies onto another client's socket.
 func newTrojanPacket(pc net.PacketConn, source netip.AddrPort, data []byte) *packet {
-	pkt := trojanPacketPool.Get().(*packet)
-	*pkt = packet{
+	return &packet{
 		pc:      pc,
 		source:  source,
 		data:    data,
 		payload: data,
 	}
-	return pkt
 }
 
 type packet struct {
@@ -96,7 +94,6 @@ func (c *packet) Drop() {
 	_ = pool.Put(c.data)
 	c.data = nil
 	c.payload = nil
-	trojanPacketPool.Put(c)
 }
 
 func (c *packet) InAddr() net.Addr {

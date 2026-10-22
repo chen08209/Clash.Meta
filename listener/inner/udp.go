@@ -118,7 +118,7 @@ func (c *innerUDPPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 
 	data := pool.Get(len(p))
 	copy(data, p)
-	udpPacket := newInnerUDPPacket(c, data)
+	udpPacket := &innerUDPPacket{conn: c, data: data}
 	c.tunnel.HandleUDPPacket(udpPacket, c.metadata)
 	return len(p), nil
 }
@@ -177,17 +177,6 @@ func (c *innerUDPPacketConn) writeBack(data []byte, addr netip.AddrPort) (int, e
 	return len(data), nil
 }
 
-var innerUDPPacketPool = sync.Pool{New: func() any { return new(innerUDPPacket) }}
-
-func newInnerUDPPacket(conn *innerUDPPacketConn, data []byte) *innerUDPPacket {
-	packet := innerUDPPacketPool.Get().(*innerUDPPacket)
-	*packet = innerUDPPacket{
-		conn: conn,
-		data: data,
-	}
-	return packet
-}
-
 type innerUDPPacket struct {
 	conn *innerUDPPacketConn
 	data []byte
@@ -208,8 +197,6 @@ func (p *innerUDPPacket) Drop() {
 	}
 	_ = pool.Put(p.data)
 	p.data = nil
-	p.conn = nil
-	innerUDPPacketPool.Put(p)
 }
 
 var _ net.PacketConn = (*innerUDPPacketConn)(nil)

@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/netip"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
@@ -180,23 +179,14 @@ func (l *Listener) handleUoTSession(conn net.Conn, tunnel C.Tunnel, additions ..
 			return
 		}
 
-		cPacket := newUoTPacket(addr, payload, writer, N.AddrPortFromNetAddr(remoteAddr))
+		cPacket := &uotPacket{
+			addr:    addr,
+			payload: payload,
+			writer:  writer,
+			source:  N.AddrPortFromNetAddr(remoteAddr),
+		}
 		tunnel.HandleUDPPacket(inbound.NewPacket(addr, cPacket, C.SUDOKU, additions...))
 	}
-}
-
-// A wrapper is returned only by Drop, the tunnel contract's single release point.
-var uotPacketPool = sync.Pool{New: func() any { return new(uotPacket) }}
-
-func newUoTPacket(addr socks5.Addr, payload []byte, writer *sudoku.UoTPacketConn, source netip.AddrPort) *uotPacket {
-	packet := uotPacketPool.Get().(*uotPacket)
-	*packet = uotPacket{
-		addr:    addr,
-		payload: payload,
-		writer:  writer,
-		source:  source,
-	}
-	return packet
 }
 
 type uotPacket struct {
@@ -226,8 +216,6 @@ func (p *uotPacket) Drop() {
 	sudoku.ReleaseDatagram(p.addr, p.payload)
 	p.addr = nil
 	p.payload = nil
-	p.writer = nil
-	uotPacketPool.Put(p)
 }
 
 func (p *uotPacket) LocalAddr() net.Addr {

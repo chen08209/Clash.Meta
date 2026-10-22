@@ -42,7 +42,12 @@ func BenchmarkUoTPacketDrop(b *testing.B) {
 
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		pkt := newUoTPacket(addr, pool.Get(64), writer, source)
+		pkt := &uotPacket{
+			addr:    addr,
+			payload: pool.Get(64),
+			writer:  writer,
+			source:  source,
+		}
 		pkt.Drop()
 	}
 }
