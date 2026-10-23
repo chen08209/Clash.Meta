@@ -110,3 +110,14 @@ func RuleProvidersSnapshot() map[string]P.RuleProvider {
 	defer configMux.RUnlock()
 	return ruleProviders
 }
+
+// ResolveRoute picks the adapter a connection for metadata would be handed
+// to, by the same steps an incoming connection takes, without dialing it.
+func ResolveRoute(metadata *C.Metadata) (C.Proxy, error) {
+	fixMetadata(metadata)
+	if err := preHandleMetadata(metadata); err != nil {
+		return nil, err
+	}
+	proxy, _, err := resolveMetadata(metadata)
+	return proxy, err
+}
