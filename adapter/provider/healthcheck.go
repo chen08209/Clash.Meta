@@ -178,7 +178,7 @@ func (hc *HealthCheck) execute(b *errgroup.Group, url, uid string, option *extra
 
 		p := proxy
 		b.Go(func() error {
-			ctx, cancel := context.WithTimeout(hc.ctx, hc.timeout)
+			ctx, cancel := context.WithTimeout(hc.ctx, hc.testTimeout())
 			defer cancel()
 			log.Debugln("Health Checking, proxy: %s, url: %s, id: {%s}", p.Name(), url, uid)
 			_, _ = p.URLTest(ctx, url, expectedStatus)
@@ -196,9 +196,6 @@ func NewHealthCheck(proxies []C.Proxy, url string, timeout uint, interval uint, 
 	if url == "" {
 		expectedStatus = nil
 		interval = 0
-	}
-	if timeout == 0 {
-		timeout = 5000
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 
