@@ -33,11 +33,12 @@ type HealthCheck struct {
 	extra          map[string]*extraOption
 	mu             sync.Mutex
 	proxies        []C.Proxy
+	version        atomic.Uint32
 	interval       time.Duration
 	lazy           bool
 	expectedStatus utils.IntRanges[uint16]
 	lastTouch      atomic.TypedValue[time.Time]
-	singleDo       *singledo.Single[struct{}]
+	singleDo       *singledo.Single[uint32]
 	timeout        time.Duration
 }
 
@@ -63,6 +64,7 @@ func (hc *HealthCheck) process() {
 
 func (hc *HealthCheck) setProxies(proxies []C.Proxy) {
 	hc.proxies = proxies
+	hc.version.Add(1)
 }
 
 func (hc *HealthCheck) registerHealthCheckTask(url string, expectedStatus utils.IntRanges[uint16], filter string, interval uint) {
@@ -121,33 +123,41 @@ func (hc *HealthCheck) touch() {
 }
 
 func (hc *HealthCheck) check() {
-	if len(hc.proxies) == 0 {
-		return
-	}
-
-	_, _, _ = hc.singleDo.Do(func() (struct{}, error) {
-		id := utils.NewUUIDV4().String()
-		log.Debugln("Start New Health Checking {%s}", id)
-		b := new(errgroup.Group)
-		b.SetLimit(10)
-
-		// execute default health check
-		option := &extraOption{filters: nil, expectedStatus: hc.expectedStatus}
-		hc.execute(b, hc.url, id, option)
-
-		// execute extra health check
-		if len(hc.extra) != 0 {
-			for url, option := range hc.extra {
-				hc.execute(b, url, id, option)
-			}
+	for len(hc.proxies) != 0 {
+		// A round joined or cached from before the proxies were replaced tested
+		// proxies no group holds any more.
+		checked, _, _ := hc.singleDo.Do(hc.round)
+		if checked == hc.version.Load() {
+			return
 		}
-		_ = b.Wait()
-		log.Debugln("Finish A Health Checking {%s}", id)
-		return struct{}{}, nil
-	})
+		hc.singleDo.Forget(func(checked uint32) bool { return checked != hc.version.Load() })
+	}
 }
 
-func (hc *HealthCheck) execute(b *errgroup.Group, url, uid string, option *extraOption) {
+func (hc *HealthCheck) round() (uint32, error) {
+	version := hc.version.Load()
+	proxies := hc.proxies
+	id := utils.NewUUIDV4().String()
+	log.Debugln("Start New Health Checking {%s}", id)
+	b := new(errgroup.Group)
+	b.SetLimit(10)
+
+	// execute default health check
+	option := &extraOption{filters: nil, expectedStatus: hc.expectedStatus}
+	hc.execute(b, proxies, version, hc.url, id, option)
+
+	// execute extra health check
+	if len(hc.extra) != 0 {
+		for url, option := range hc.extra {
+			hc.execute(b, proxies, version, url, id, option)
+		}
+	}
+	_ = b.Wait()
+	log.Debugln("Finish A Health Checking {%s}", id)
+	return version, nil
+}
+
+func (hc *HealthCheck) execute(b *errgroup.Group, proxies []C.Proxy, version uint32, url, uid string, option *extraOption) {
 	url = strings.TrimSpace(url)
 	if len(url) == 0 {
 		log.Debugln("Health Check has been skipped due to testUrl is empty, {%s}", uid)
@@ -168,7 +178,10 @@ func (hc *HealthCheck) execute(b *errgroup.Group, url, uid string, option *extra
 		}
 	}
 
-	for _, proxy := range hc.proxies {
+	for _, proxy := range proxies {
+		if hc.version.Load() != version {
+			break
+		}
 		// skip proxies that do not require health check
 		if filterReg != nil {
 			if match, _ := filterReg.MatchString(proxy.Name()); !match {
@@ -209,6 +222,6 @@ func NewHealthCheck(proxies []C.Proxy, url string, timeout uint, interval uint, 
 		interval:       time.Duration(interval) * time.Second,
 		lazy:           lazy,
 		expectedStatus: expectedStatus,
-		singleDo:       singledo.NewSingle[struct{}](time.Second),
+		singleDo:       singledo.NewSingle[uint32](time.Second),
 	}
 }
