@@ -15,6 +15,8 @@ import (
 	P "github.com/metacubex/mihomo/constant/provider"
 )
 
+const unmeasuredPickHold = time.Second
+
 type URLTestOption struct {
 	Tolerance uint16 `group:"tolerance,omitempty"`
 }
@@ -104,8 +106,9 @@ func (u *URLTest) healthCheck() {
 func (u *URLTest) fast(touch bool) C.Proxy {
 	// A rebuilt group starts on its first member, which subscriptions often fill
 	// with a traffic notice; held for the whole cache window, that pick outlasts
-	// the first health check and fails every connection meanwhile.
-	u.fastSingle.Forget(func(pick C.Proxy) bool {
+	// the first health check and fails every connection meanwhile. The hold keeps
+	// a group with no usable member from walking them all on every connection.
+	u.fastSingle.ForgetAfter(unmeasuredPickHold, func(pick C.Proxy) bool {
 		return pick.LastDelayForTestUrl(u.testUrl) == math.MaxUint16
 	})
 	elm, _, shared := u.fastSingle.Do(func() (C.Proxy, error) {

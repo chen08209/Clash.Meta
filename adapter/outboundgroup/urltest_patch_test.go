@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
@@ -31,5 +32,8 @@ func TestURLTestLeavesAnUnmeasuredPickOnceAMemberIsMeasured(t *testing.T) {
 	_, err = measured.URLTest(context.Background(), server.URL, nil)
 	require.NoError(t, err)
 
+	require.Equal(t, "first", group.Now())
+
+	time.Sleep(unmeasuredPickHold)
 	require.Equal(t, "measured", group.Now())
 }
