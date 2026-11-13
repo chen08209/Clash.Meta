@@ -119,6 +119,23 @@ func (t *PoolClient) getClient(udp bool) Client {
 	}
 }
 
+// ResetNetwork retires every pooled client, whose QUIC connection stays on the
+// network it was opened on; each closes once its open streams end.
+func (t *PoolClient) ResetNetwork() {
+	retire := func(clients *list.List[Client], mutex *sync.Mutex) {
+		mutex.Lock()
+		defer mutex.Unlock()
+		for it := clients.Front(); it != nil; it = it.Next() {
+			if it.Value != nil {
+				it.Value.Close()
+			}
+		}
+		clients.Init()
+	}
+	retire(&t.tcpClients, &t.tcpClientsMutex)
+	retire(&t.udpClients, &t.udpClientsMutex)
+}
+
 func NewPoolClientV4(clientOption *ClientOptionV4, dialFn DialFunc) *PoolClient {
 	p := &PoolClient{
 		dialFn: dialFn,

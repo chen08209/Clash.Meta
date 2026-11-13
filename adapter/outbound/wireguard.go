@@ -45,6 +45,7 @@ const (
 type wireguardGoDevice interface {
 	Close()
 	IpcSet(uapiConf string) error
+	BindUpdate() error
 }
 
 type WireGuard struct {
@@ -812,6 +813,20 @@ func (w *WireGuard) Close() error {
 		wgDevice.Close()
 	}
 	return nil
+}
+
+// ResetNetwork reopens the device's UDP socket, which otherwise keeps sending
+// over the network it was opened on after the host has moved to another one.
+func (w *WireGuard) ResetNetwork() {
+	w.deviceMutex.Lock()
+	wgDevice := w.device
+	w.deviceMutex.Unlock()
+	if wgDevice == nil {
+		return
+	}
+	if err := wgDevice.BindUpdate(); err != nil {
+		log.Warnln("[WG](%s) reopen socket: %v", w.option.Name, err)
+	}
 }
 
 func (w *WireGuard) DialContext(ctx context.Context, metadata *C.Metadata) (_ C.Conn, err error) {

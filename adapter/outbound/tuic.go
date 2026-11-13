@@ -69,6 +69,10 @@ type TuicOption struct {
 	UDPOverStreamVersion int  `proxy:"udp-over-stream-version,omitempty"`
 }
 
+func (t *Tuic) ResetNetwork() {
+	t.client.ResetNetwork()
+}
+
 // DialContext implements C.ProxyAdapter
 func (t *Tuic) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, error) {
 	conn, err := t.client.DialContext(ctx, metadata)

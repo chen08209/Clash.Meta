@@ -112,6 +112,14 @@ func (h *Hysteria2) ListenPacketContext(ctx context.Context, metadata *C.Metadat
 }
 
 // Close implements C.ProxyAdapter
+// ResetNetwork drops the QUIC connection every stream shares, which stays on
+// the network it was opened on; the next dial opens a new one.
+func (h *Hysteria2) ResetNetwork() {
+	if h.client != nil {
+		_ = h.client.CloseWithError(errors.New("network changed"))
+	}
+}
+
 func (h *Hysteria2) Close() error {
 	if h.client != nil {
 		return h.client.CloseWithError(errors.New("proxy removed"))
