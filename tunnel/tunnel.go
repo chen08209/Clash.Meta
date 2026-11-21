@@ -473,6 +473,7 @@ func handleUDPConn(packet C.PacketAdapter) {
 				logMetadataErr(metadata, rule, proxy, err)
 			})
 			if err != nil {
+				notifyDialFailure(metadata, rule, proxy, err)
 				return nil, nil, err
 			}
 			logMetadata(metadata, rule, rawPc)
@@ -609,6 +610,7 @@ func handleTCPConn(connCtx C.ConnContext) {
 		logMetadataErr(metadata, rule, proxy, err)
 	})
 	if err != nil {
+		notifyDialFailure(metadata, rule, proxy, err)
 		return
 	}
 	logMetadata(metadata, rule, remoteConn)
