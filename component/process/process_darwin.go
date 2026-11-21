@@ -106,7 +106,7 @@ func findProcessName(network string, ip netip.Addr, port int) (uint32, string, e
 		return 0, fallbackUDPProcess, nil
 	}
 
-	return 0, "", ErrNotFound
+	return findProcessByFd(network, ip, port)
 }
 
 func getExecPathFromPID(pid uint32) (string, error) {
